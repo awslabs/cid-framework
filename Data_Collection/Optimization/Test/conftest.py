@@ -24,7 +24,7 @@ def cloudformation():
 
 @pytest.fixture(scope='session')
 def s3():
-    return boto3.client('s3') 
+    return boto3.resource('s3')
 
 
 @pytest.fixture(scope='session')

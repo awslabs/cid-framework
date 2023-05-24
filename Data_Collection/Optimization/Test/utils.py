@@ -1,7 +1,6 @@
 import logging
 from pathlib import Path
 import time
-from textwrap import indent
 
 import boto3
 
@@ -21,7 +20,7 @@ UNDERLINE = '\033[4m'
 def clean_bucket(s3, account_id):
     try:
         bucket_name = f"costoptimizationdata{account_id}"
-        logger.info(f'Emptying the bucket {bucket_name}')
+        logger.info(f'Emptying the bucket {GREEN}{bucket_name}{END}')
         s3.Bucket(bucket_name).object_versions.delete()
     except Exception as exc:
         logger.exception(exc)
@@ -203,7 +202,7 @@ def trigger_update():
         logger.info('Invoking ' + name)
         response = boto3.client('lambda').invoke(FunctionName=name)
         stdout = response['Payload'].read().decode('utf-8')
-        print(indent(stdout, ' ' * 4))
+        logger.info(f'Response: {stdout}')
 
 
 def cleanup_stacks(cloudformation, account_id, s3, athena):
@@ -220,7 +219,7 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
             cloudformation.delete_stack(StackName=stack_name)
             logger.info(f'deleting {stack_name} initiated')
         except cloudformation.exceptions.ClientError as exc:
-            print (stack_name, exc.response)
+            logger.exception(stack_name)
 
     watch_stacks(cloudformation, [
         'OptimizationManagementDataRoleStack',
