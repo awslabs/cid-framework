@@ -104,8 +104,7 @@ def watch_stacks(cloudformation, stack_names = None):
         time.sleep(5)
 
 
-def initial_deploy_stacks(cloudformation, account_id, root, bucket):
-    logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
+def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[dict]):
     create_options = dict(
         TimeoutInMinutes=60,
         Capabilities=['CAPABILITY_IAM','CAPABILITY_NAMED_IAM'],
@@ -114,27 +113,36 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
     )
+    
     try:
-        with (root / 'Code' / 'Management.yaml').open() as fp:
+        with file.open() as fp:
             cloudformation.create_stack(
-                StackName='OptimizationManagementDataRoleStack',
+                StackName=stack_name,
                 TemplateBody=fp.read(),
-                Parameters=[
-                    {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
-                    {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-                    {'ParameterKey': 'RolePrefix',            'ParameterValue': "WA-"},
-                ],
+                Parameters=parameters,
                 **create_options,
             )
     except cloudformation.exceptions.AlreadyExistsException:
-        logger.info('OptimizationManagementDataRoleStack exists')
+        logger.info(f'{stack_name} exists')
+    
 
-    try:
-        with (root / 'Code' / 'optimisation_read_only_role.yaml').open() as fp:
-            cloudformation.create_stack(
-                StackName='OptimizationDataRoleStack',
-                TemplateBody=fp.read(),
-                Parameters=[
+def initial_deploy_stacks(cloudformation, account_id, root, bucket):
+    logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
+
+    deploy_stack(cloudformation=cloudformation, 
+                    stack_name='OptimizationManagementDataRoleStack', 
+                    file=root / 'Code' / 'Management.yaml',
+                    parameters=[
+                        {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
+                        {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+                        {'ParameterKey': 'RolePrefix',            'ParameterValue': "WA-"},
+                    ]
+    )
+
+    deploy_stack(cloudformation=cloudformation, 
+                 stack_name='OptimizationDataRoleStack', 
+                 file=root / 'Code' / 'optimisation_read_only_role.yaml',
+                 parameters=[
                     {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
                     {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
@@ -145,19 +153,13 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
                     {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
                     {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
                     {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
-                ],
-                **create_options,
-            )
-    except cloudformation.exceptions.AlreadyExistsException:
-        logger.info('OptimizationDataRoleStack exists')
+                 ]
+    )
 
-    try:
-        with (root / 'Code' / 'Optimization_Data_Collector.yaml').open() as fp:
-            cloudformation.create_stack(
-                StackName="OptimizationDataCollectionStack",
-                TemplateBody=fp.read(),
-                Parameters=[
-
+    deploy_stack(cloudformation=cloudformation, 
+                 stack_name='OptimizationDataCollectionStack', 
+                 file=root / 'Code' / 'Optimization_Data_Collector.yaml',
+                 parameters=[
                     {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
                     {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
                     {'ParameterKey': 'DestinationBucket',               'ParameterValue': "costoptimizationdata"},
@@ -174,12 +176,8 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
                     {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
                     {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
                     {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
-                ],
-                **create_options,
-            )
-    except cloudformation.exceptions.AlreadyExistsException:
-        logger.info('OptimizationDataCollectionStack exists')
-        pass
+                 ]
+    )
 
     logger.info('Waiting for stacks')
     watch_stacks(cloudformation, [
@@ -202,14 +200,15 @@ def trigger_update():
         logger.info('Invoking ' + name)
         response = boto3.client('lambda').invoke(FunctionName=name)
         stdout = response['Payload'].read().decode('utf-8')
-        logger.info(f'Response: {stdout}')
+        logger.info(f'{CYAN}Response: {stdout}{END}')
 
 
 def cleanup_stacks(cloudformation, account_id, s3, athena):
     try:
         clean_bucket(s3=s3, account_id=account_id)
-    except:
-        pass
+    except Exception as ex:
+        logger.warning(f'Exception: {ex}')
+        
     for stack_name in [
         'OptimizationManagementDataRoleStack',
         'OptimizationDataRoleStack',
