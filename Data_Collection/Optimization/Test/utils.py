@@ -20,7 +20,7 @@ UNDERLINE = '\033[4m'
 def clean_bucket(s3, account_id):
     try:
         bucket_name = f"costoptimizationdata{account_id}"
-        logger.info(f'Emptying the bucket {GREEN}{bucket_name}{END}')
+        logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
         s3.Bucket(bucket_name).object_versions.delete()
     except Exception as exc:
         logger.exception(exc)
