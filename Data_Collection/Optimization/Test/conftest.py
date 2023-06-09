@@ -26,6 +26,10 @@ def cloudformation():
 def s3():
     return boto3.resource('s3')
 
+@pytest.fixture(scope='session')
+def compute_optimizer():
+    return boto3.client('compute-optimizer')
+
 
 @pytest.fixture(scope='session')
 def account_id():

@@ -87,9 +87,8 @@ def test_transit_gateway_data(athena):
     assert len(data) > 0, 'transit_gateway_data is empty'
 
 
-def test_compute_optimizer_export_triggered(start_time):
-    co = boto3.client('compute-optimizer')
-    jobs = co.describe_recommendation_export_jobs()['recommendationExportJobs']
+def test_compute_optimizer_export_triggered(compute_optimizer, start_time):
+    jobs = compute_optimizer.describe_recommendation_export_jobs()['recommendationExportJobs']
     logger.debug(f'Jobs in: {jobs}')
     jobs_since_start = [job for job in jobs if job['creationTimestamp'].replace(tzinfo=None) > start_time.replace(tzinfo=None)]
     logger.info(f'Jobs: {len(jobs_since_start)}')
