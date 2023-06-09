@@ -161,3 +161,8 @@ cython_debug/
 
 .DS_Store
 .vscode
+
+# Packaged modules
+fof.zip
+ecs.zip
+ta.zip
