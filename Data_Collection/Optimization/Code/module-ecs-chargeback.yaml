@@ -88,13 +88,16 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
+                Resource: 
+                  - !Ref DestinationBucketARN
+                  - !Sub "${DestinationBucketARN}/*"
+              - Effect: "Allow"
+                Action:
                   - "sqs:ReceiveMessage"
                   - "sqs:DeleteMessage"
                   - "sqs:GetQueueAttributes"
                 Resource: 
                   - !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:EcsChargebackModule-TaskQueue"
-                  - !Ref DestinationBucketARN
-                  - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
                 Action:
                 - "ecs:ListAttributes"
