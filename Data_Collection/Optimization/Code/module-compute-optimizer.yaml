@@ -194,6 +194,15 @@ Resources:
                           s3:x-amz-acl:  bucket-owner-full-control
                           aws:SourceAccount: !Split [',', !Ref ManagementAccountID]
                   Resource: !Sub "arn:aws:s3:::${Name}-${AWS::Region}/*"
+                - Effect: Deny
+                  Principal: "*"
+                  Action: s3:*
+                  Condition:
+                    Bool:
+                      aws:SecureTransport: 'false'
+                  Resource:
+                    - !Sub "arn:aws:s3:::${Name}-${AWS::Region}"
+                    - !Sub "arn:aws:s3:::${Name}-${AWS::Region}/*"
           ReplicaRole:
             Type: AWS::IAM::Role
             Properties:
@@ -250,6 +259,11 @@ Resources:
                     Status: Enabled
               VersioningConfiguration:
                 Status: Enabled
+              PublicAccessBlockConfiguration:
+                BlockPublicAcls : true
+                BlockPublicPolicy : true
+                IgnorePublicAcls : true
+                RestrictPublicBuckets : true
               LifecycleConfiguration:
                 Rules:
                   - Id: Cleanup
