@@ -55,6 +55,22 @@ Resources:
                   - "organizations:ListOrganizationalUnitsForParent"
                   - "organizations:ListChildren"
                 Resource: "*"
+        - PolicyName: "RightsizingModule"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ce:GetRightsizingRecommendation"
+                Resource: "*"
+        - PolicyName: "AnomaliesModule"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ce:GetAnomalies"
+                Resource: "*"
         - PolicyName: "ComputeOptimizer-ExportLambdaFunctionRecommendations"
           PolicyDocument:
             Version: "2012-10-17"

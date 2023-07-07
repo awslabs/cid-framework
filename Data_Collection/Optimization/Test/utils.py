@@ -171,6 +171,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
                     {'ParameterKey': 'IncludeOrgDataModule',            'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
+                    {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
                     {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
                     {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
@@ -193,6 +194,7 @@ def trigger_update():
         f'Accounts-Collector-Function-{main_stack_name}',
         f'pricing-Lambda-Function-{main_stack_name}',
         f'cost-explorer-rightsizing-{main_stack_name}',
+        f'cost-explorer-cost-anomaly-{main_stack_name}',
         'WA-compute-optimizer-Trigger-Export',
         f'Organization-Data-{main_stack_name}',
     ]
