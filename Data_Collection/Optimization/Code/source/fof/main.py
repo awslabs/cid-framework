@@ -1,94 +1,150 @@
-import boto3
-import logging
-from datetime import date, datetime
-import json
+""" Scan linked accounts and store instances info to s3 bucket
+Supported types: ebs, snapshots, ami, rds instances
+"""
 import os
-from botocore.exceptions import ClientError
+import json
+from functools import partial, lru_cache
+from datetime import datetime, date
+
+import boto3
 from botocore.client import Config
 
-# Data code to import
-import ami
-import ebs
-import snapshot
+TMP_FILE = "/tmp/data.json"
+PREFIX = os.environ['PREFIX']
+BUCKET = os.environ["BUCKET_NAME"]
+ROLENAME = os.environ['ROLENAME']
 
-prefix = os.environ['PREFIX']
-bucket = os.environ["BUCKET_NAME"]
+def to_json(obj):
+    """json helper for date time data"""
+    return json.dumps(
+        obj,
+        default=lambda x:
+            x.isoformat() if isinstance(x, (date, datetime)) else None
+    )
 
-def lambda_handler(event, context):
-    # pass in account id
+@lru_cache(maxsize=10000)
+def assume_session(account_id):
+    """assume role in account"""
+    credentials = boto3.client('sts').assume_role(
+        RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}" ,
+        RoleSessionName="AssumeRoleRoot"
+    )['Credentials']
+    return boto3.session.Session(
+        aws_access_key_id=credentials['AccessKeyId'],
+        aws_secret_access_key=credentials['SecretAccessKey'],
+        aws_session_token=credentials['SessionToken']
+    )
+
+@lru_cache(maxsize=10000)
+def enabled_regions():
+    """list enabled regions"""
+    return set(reg['RegionName'] for reg in boto3.client('ec2').describe_regions()['Regions'])
+
+def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
+    """ paginated scan """
+    regions = set(boto3.session.Session().get_available_regions(service)) & enabled_regions()
+    session = assume_session(account_id)
+    obj_name = obj_name or function_name.split('_')[-1].capitalize()
+    for region in regions:
+        print(f"Collecting {service}.{obj_name} in {region}")
+        client = session.client(service, region_name=region)
+        try:
+            paginator = client.get_paginator(function_name)
+            for page in paginator.paginate(**(params or {})):
+                for obj in page[obj_name]:
+                    obj['region'] = region
+                    obj['accountid'] = account_id
+                    yield obj
+        except Exception as exc:  #pylint: disable=broad-exception-caught
+            print(f'scan {function_name}/{account_id}:', exc)
+
+def lambda_handler(event, context): #pylint: disable=unused-argument
+    """ this lambda collects ami, snapshots and volumes from linked accounts
+    must be called from SNS queue with event containing records {"account_id": xxx, "payer_id": yyy}
+    """
+    if 'Records' not in event:
+        raise ValueError(
+            "Please do not trigger this Lambda manually."
+            "Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda"
+            " and Trigger from there."
+        )
 
     sub_modules = {
-        'ami':      [ami.main,      os.environ.get("AMICrawler")],
-        'ebs':      [ebs.main,      os.environ.get("EBSCrawler")],
-        'snapshot': [snapshot.main, os.environ.get("SnapshotCrawler")],
+        # 'rds_instances': [
+        #     partial(
+        #         paginated_scan,
+        #         service='rds',
+        #         function_name='describe_db_instances',
+        #         obj_name='DBInstances'
+        #     ),
+        #     None],
+        'ebs': [
+            partial(
+                paginated_scan,
+                service='ec2',
+                function_name='describe_volumes'
+            ),
+            os.environ.get("EBSCrawler")
+        ],
+        'ami': [
+            partial(
+                paginated_scan,
+                service='ec2',
+                function_name='describe_images',
+                params={'Filters': [{'Name': 'owner-id', 'Values': ['self']}]}
+            ),
+            os.environ.get("AMICrawler")
+        ],
+        'snapshot': [
+            partial(
+                paginated_scan,
+                service='ec2',
+                function_name='describe_snapshots',
+                params={'Filters': [{'Name': 'owner-id', 'Values': ['self']}]}
+            ),
+            os.environ.get("SnapshotCrawler")
+        ],
     }
-    try:
-        if 'Records' not in event: 
-            raise Exception("Please do not trigger this Lambda manually. Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda  and Trigger from there.")
-        for record in event['Records']:
-            body = json.loads(record["body"])
-            account_id = body["account_id"]
-            payer_id = body["payer_id"]
-            print(account_id)
-            for name, (func, crawler) in sub_modules.items():
-                try:
-                    func(account_id)
-                    print(f"{name} response gathered")
-                    upload_to_s3(name, account_id, payer_id)
-                    start_crawler(crawler)
-                except Exception as e:
-                    logging.warning(f"{name}: {type(e)} - {e}" )
-    except Exception as e:
-        logging.warning(e)
+    for record in event['Records']:
+        body = json.loads(record["body"])
+        account_id = body["account_id"]
+        payer_id = body["payer_id"]
+        for name, (func, crawler) in sub_modules.items():
+            counter = 0
+            print(f"\nCollecting {name} in account {account_id}")
+            try:
+                with open(TMP_FILE, "w", encoding='utf-8') as file_:
+                    for counter, obj in enumerate(func(account_id=account_id), start=1):
+                        #print(obj) # for debug
+                        file_.write(to_json(obj) + "\n")
+                print(f"Collected {counter} {name} instances")
+                upload_to_s3(name, account_id, payer_id)
+                start_crawler(crawler)
+            except Exception as exc:   #pylint: disable=broad-exception-caught
+                print(f"{name}: {type(exc)} - {exc}" )
 
 def upload_to_s3(name, account_id, payer_id):
-    local_file = "/tmp/data.json"
-    if os.path.getsize(local_file) == 0:  
+    """upload"""
+    if os.path.getsize(TMP_FILE) == 0:
         print(f"No data in file for {name}")
         return
-    d = datetime.now()
-    month = d.strftime("%m")
-    year = d.strftime("%Y")
-    dt_string = d.strftime("%d%m%Y-%H%M%S")
+    key =  datetime.now().strftime(
+        f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
+        f"/year=%Y/month=%m/{account_id}-%d%m%Y-%H%M%S.json"
+    )
+    s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
     try:
-        key =  f"{prefix}/{prefix}-{name}-data/payer_id={payer_id}/year={year}/month={month}/{prefix}-{account_id}-{dt_string}.json"
-        s3 = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
-        s3.upload_file(local_file, bucket, key)
-        print(f"Data {account_id} in s3 - {bucket}/{key}")
-    except Exception as e:
-        print(e)
-
-
-def assume_role(account_id, service, region):
-    role_name = os.environ['ROLENAME']
-    role_arn = f"arn:aws:iam::{account_id}:role/{role_name}" #OrganizationAccountAccessRole
-    sts_client = boto3.client('sts')
-    
-    try:
-        assumedRoleObject = sts_client.assume_role(
-            RoleArn=role_arn,
-            RoleSessionName="AssumeRoleRoot"
-            )
-        
-        credentials = assumedRoleObject['Credentials']
-        client = boto3.client(
-            service,
-            aws_access_key_id=credentials['AccessKeyId'],
-            aws_secret_access_key=credentials['SecretAccessKey'],
-            aws_session_token=credentials['SessionToken'],
-            region_name = region
-        )
-        return client
-
-    except ClientError as e:
-        logging.warning(f"Unexpected error Account {account_id}: {e}")
-        return None
-
+        s3client.upload_file(TMP_FILE, BUCKET, key)
+        print(f"Data {account_id} in s3 - {BUCKET}/{key}")
+    except Exception as exc:  #pylint: disable=broad-exception-caught
+        print(exc)
 
 def start_crawler(crawler):
-    glue_client = boto3.client("glue")
+    """start crawler"""
     try:
-        glue_client.start_crawler(Name=crawler)
-    except Exception as e:
-        # Send some context about this error to Lambda Logs
-        logging.warning("%s" % e)
+        boto3.client("glue").start_crawler(Name=crawler)
+    except Exception as exc: #pylint: disable=broad-exception-caught
+        if 'has already started' in str(exc):
+            print('crawler {crawler}: has already started')
+        else:
+            print('crawler {crawler}:', exc)
