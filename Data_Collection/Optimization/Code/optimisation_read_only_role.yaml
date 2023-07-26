@@ -221,6 +221,7 @@ Resources:
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeSnapshotAttribute"
+              - "ec2:DescribeRegions"
             Resource: "*"
       Roles:
         - Ref: LambdaRole
