@@ -36,14 +36,14 @@ def assume_session(account_id):
     )
 
 @lru_cache(maxsize=10000)
-def enabled_regions():
+def enabled_regions(session):
     """list enabled regions"""
-    return set(reg['RegionName'] for reg in boto3.client('ec2').describe_regions()['Regions'])
+    return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
 
 def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
     """ paginated scan """
-    regions = set(boto3.session.Session().get_available_regions(service)) & enabled_regions()
     session = assume_session(account_id)
+    regions = set(session.get_available_regions(service)) & enabled_regions(session)
     obj_name = obj_name or function_name.split('_')[-1].capitalize()
     for region in regions:
         print(f"Collecting {service}.{obj_name} in {region}")
@@ -91,7 +91,7 @@ def lambda_handler(event, context): #pylint: disable=unused-argument
                 paginated_scan,
                 service='ec2',
                 function_name='describe_images',
-                params={'Filters': [{'Name': 'owner-id', 'Values': ['self']}]}
+                params={'Owners': ['self']}
             ),
             os.environ.get("AMICrawler")
         ],
@@ -100,7 +100,7 @@ def lambda_handler(event, context): #pylint: disable=unused-argument
                 paginated_scan,
                 service='ec2',
                 function_name='describe_snapshots',
-                params={'Filters': [{'Name': 'owner-id', 'Values': ['self']}]}
+                params={'OwnerIds': ['self']}
             ),
             os.environ.get("SnapshotCrawler")
         ],
@@ -145,6 +145,6 @@ def start_crawler(crawler):
         boto3.client("glue").start_crawler(Name=crawler)
     except Exception as exc: #pylint: disable=broad-exception-caught
         if 'has already started' in str(exc):
-            print('crawler {crawler}: has already started')
+            print(f'Crawler {crawler}: has already started')
         else:
-            print('crawler {crawler}:', exc)
+            print(f'Crawler {crawler}:', exc)
