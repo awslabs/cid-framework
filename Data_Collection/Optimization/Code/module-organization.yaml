@@ -142,7 +142,7 @@ Resources:
                   account  = response["Account"]          
                   tags_list = list_tags(client, account["Id"])
                   for org_tag in tags_list:
-                      tag = org_tag['Key']
+                      tag = "tag_" + org_tag['Key']
                       value = org_tag['Value']
                       kv = {tag : value}
                       account.update(kv)
