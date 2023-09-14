@@ -46,7 +46,7 @@ def upload_to_s3(prefix, account_id, payer_id, f_name):
         print(f"{type(e)}: {e}")
 
 def assume_role(account_id, service, region, role):
-    assumed = boto3.client('sts').assume_role(RoleArn=f"arn:aws:iam::{account_id}:role/{role}", RoleSessionName='--')
+    assumed = boto3.client('sts').assume_role(RoleArn=f"arn:aws:iam::{account_id}:role/{role}", RoleSessionName='data_collection')
     creds = assumed['Credentials']
     return boto3.client(service, region_name=region,
         aws_access_key_id=creds['AccessKeyId'],

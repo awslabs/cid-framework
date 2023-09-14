@@ -19,9 +19,6 @@ Parameters:
     Type: String
     AllowedPattern: ([a-z0-9\-, ]*?$)
     Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
-  MultiAccountRoleName:
-    Type: String
-    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
@@ -58,7 +55,7 @@ Resources:
   RightsizingLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-Cost-Explorer-Rightsizing-Execute-Lambda"
+      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -78,7 +75,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
         - PolicyName: "Rightsizing-S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -103,10 +100,8 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-          - '${CFDataName}-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
-      Description: LambdaFunction to retreive list of organization
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
+      Description: LambdaFunction to retrieve list of organization
       Runtime: python3.8
       Code:
         ZipFile: |
@@ -168,7 +163,7 @@ Resources:
                   try:
                       assumed_role = sts_connection.assume_role(
                                       RoleArn=ROLE_ARN,
-                                      RoleSessionName="cross_acct_lambda"
+                                      RoleSessionName="data_collection"
                                   )
                       ACCESS_KEY = assumed_role['Credentials']['AccessKeyId']
                       SECRET_KEY = assumed_role['Credentials']['SecretAccessKey']
@@ -251,14 +246,12 @@ Resources:
           S3_BUCKET: !Ref DestinationBucket
           CRAWLER_NAME: !Ref RightsizingCrawler
           RECOMMENDATION_TARGET: 'SAME_INSTANCE_FAMILY'
-          ROLE: !Ref MultiAccountRoleName
+          ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
   RightsizingCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub
-          - '${CFDataName}-Crawler-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:

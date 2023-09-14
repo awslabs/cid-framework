@@ -137,10 +137,16 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                -  !Sub "arn:aws:iam::${CostAccountID}:root"
-        Version: 2012-10-17
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+                - !Sub "arn:aws:iam::${CostAccountID}:root"
+            Condition:
+              ForAnyValue:ArnLike:
+                aws:PrincipalArn:
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-budgets"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-ecs-chargeback"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-inventory"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-rds_usage_data"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-transit-gateway"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-trusted-advisor"
       Path: /
   AMIPolicy:
     Type: 'AWS::IAM::Policy'

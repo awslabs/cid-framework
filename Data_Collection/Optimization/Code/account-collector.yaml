@@ -89,9 +89,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-          - 'Accounts-Collector-Function-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}accounts-collector-Lambda'
       Description: LambdaFunction of python3.8.
       Runtime: python3.8
       Code:
@@ -124,7 +122,7 @@ Resources:
                 sts_connection = boto3.client('sts')
                 acct_b = sts_connection.assume_role(
                     RoleArn=ROLE_ARN,
-                    RoleSessionName="cross_acct_lambda"
+                    RoleSessionName="data_collection"
                 )
                         
                 ACCESS_KEY = acct_b['Credentials']['AccessKeyId']

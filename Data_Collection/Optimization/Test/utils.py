@@ -189,15 +189,16 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
 
 
 def trigger_update():
-    main_stack_name = 'OptimizationDataCollectionStack'
     function_names = [
-        f'Accounts-Collector-Function-{main_stack_name}',
-        f'pricing-Lambda-Function-{main_stack_name}',
-        f'cost-explorer-rightsizing-{main_stack_name}',
-        f'cost-explorer-cost-anomaly-{main_stack_name}',
-        'WA-compute-optimizer-Trigger-Export',
-        f'Organization-Data-{main_stack_name}',
+        'WA-organization-Lambda-Collect',
+        'WA-accounts-collector-Lambda',
+        #'WA-pricing-Lambda-Collect-EC2Pricing', #Takes 10mins
+        'WA-compute-optimizer-Lambda-Trigger-Export',
+        'WA-cost-explorer-cost-anomaly-Lambda-Collect',
+        'WA-cost-explorer-rightsizing-Lambda-Collect',
     ]
+
+
     for name in function_names:
         logger.info('Invoking ' + name)
         response = boto3.client('lambda').invoke(FunctionName=name)

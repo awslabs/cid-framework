@@ -84,8 +84,8 @@ def assume_session(account_id):
         #region = sts_client.meta.region_name
         assumedRoleObject = sts_client.assume_role(
             RoleArn=role_arn,
-            RoleSessionName="AssumeRoleRoot"
-            )
+            RoleSessionName="data_collection"
+        )
         
         credentials = assumedRoleObject['Credentials']
         session = Session(

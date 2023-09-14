@@ -124,9 +124,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-          - '${CFDataName}-Lambda-Function-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.8
       Code:
@@ -151,9 +149,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub
-          - '${CFDataName}-Crawler-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleArn
       DatabaseName: !Ref DatabaseName
       Targets:
