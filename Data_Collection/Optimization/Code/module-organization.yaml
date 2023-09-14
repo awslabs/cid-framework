@@ -249,7 +249,7 @@ Resources:
                 Action:
                   - "s3:PutObject"
                 Resource: 
-                  - !Sub "arn:aws:s3:::${DestinationBucket}${AWS::AccountId}/*"
+                  - !Sub "arn:aws:s3:::${DestinationBucket}/*"
 
   CloudWatchTrigger:
     Type: AWS::Events::Rule
