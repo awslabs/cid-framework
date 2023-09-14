@@ -184,10 +184,7 @@ Resources:
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
-      Role:
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
@@ -244,6 +241,16 @@ Resources:
                 Action:
                   - "glue:StartCrawler"
                 Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${OrgCrawler}"
+        - PolicyName: !Sub "${CFDataName}-S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource: 
+                  - !Sub "arn:aws:s3:::${DestinationBucket}${AWS::AccountId}/*"
+
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
