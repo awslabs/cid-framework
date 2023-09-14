@@ -198,7 +198,6 @@ def trigger_update():
         'WA-cost-explorer-rightsizing-Lambda-Collect',
     ]
 
-
     for name in function_names:
         logger.info('Invoking ' + name)
         response = boto3.client('lambda').invoke(FunctionName=name)

@@ -1,9 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Organization data collections.
 Parameters:
-  RoleARN:
-    Type: String
-    Description: ARN of the IAM role deployed in the management accounts which can retrieve AWS Org data.
   ManagementRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -35,7 +32,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-Organization-Account-Collector-Role"
+      RoleName: !Sub "${RolePrefix}Lambda-Role-account-collector"
       AssumeRolePolicyDocument:
         Statement:
           - Action:

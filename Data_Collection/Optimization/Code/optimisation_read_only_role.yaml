@@ -139,7 +139,7 @@ Resources:
               AWS:
                 - !Sub "arn:aws:iam::${CostAccountID}:root"
             Condition:
-              ForAnyValue:ArnLike:
+              ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
                   - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-budgets"
                   - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-ecs-chargeback"

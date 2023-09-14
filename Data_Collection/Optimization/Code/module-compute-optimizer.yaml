@@ -20,9 +20,6 @@ Parameters:
     Type: String
     Description: Cron job to trigger the lambda using cloudwatch event
     Default: "rate(14 days)"
-  DestinationBucketARN:
-    Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
@@ -143,7 +140,7 @@ Resources:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "${BucketPrefix}${AWS::AccountId}-comp-optim-buckets"
-      AdministrationRoleARN: !GetAtt [StackSetAdminRole, Arn]
+      AdministrationRoleARN: !GetAtt StackSetAdminRole.Arn
       ExecutionRoleName: !Sub "${RolePrefix}ComputeOptimizer-StackSetExecutionRole"
       TemplateBody: |
         AWSTemplateFormatVersion: '2010-09-09'
