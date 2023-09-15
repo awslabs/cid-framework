@@ -76,6 +76,9 @@ def test_rds_usage_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_usage_data" LIMIT 10;')
     assert len(data) > 0, 'rds_usage_data is empty'
 
+def test_organization_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."organization_data" LIMIT 10;')
+    assert len(data) > 0, 'organization_data is empty'
 
 def test_trusted_advisor_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."trusted_advisor_data" LIMIT 10;')

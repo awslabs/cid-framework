@@ -55,7 +55,7 @@ Resources:
   CostAnomalyLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-Cost-Explorer-CostAnomaly-Execute-Lambda"
+      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -99,9 +99,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-        - "${CFDataName}-${Id}"
-        - Id: !Select [0, !Split ["-", !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
       Description: LambdaFunction to retreive AWS Cost Anomalies
       Runtime: python3.10
       Code:
@@ -206,7 +204,7 @@ Resources:
               for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
                   ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE}"
                   try:
-                      creds = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="cross_acct_lambda")['Credentials']
+                      creds = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="data_collection")['Credentials']
                       assumed_role_session = boto3.session.Session(
                           aws_access_key_id=creds['AccessKeyId'],
                           aws_secret_access_key=creds['SecretAccessKey'],
@@ -237,9 +235,7 @@ Resources:
   CostAnomalyCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub
-        - "${CFDataName}-Crawler-${Id}"
-        - Id: !Select [0, !Split ["-", !Ref AWS::StackName]]
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:

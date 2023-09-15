@@ -26,7 +26,7 @@ def org_accounts(role_name, payer_id):
     sts_connection = boto3.client('sts')
     acct_b = sts_connection.assume_role(
         RoleArn=ROLE_ARN,
-        RoleSessionName="cross_acct_lambda"
+        RoleSessionName="data_collection"
     )
             
     ACCESS_KEY = acct_b['Credentials']['AccessKeyId']

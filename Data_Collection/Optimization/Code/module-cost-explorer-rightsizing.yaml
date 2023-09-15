@@ -19,9 +19,6 @@ Parameters:
     Type: String
     AllowedPattern: ([a-z0-9\-, ]*?$)
     Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
-  MultiAccountRoleName:
-    Type: String
-    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
@@ -58,7 +55,7 @@ Resources:
   RightsizingLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-Cost-Explorer-Rightsizing-Execute-Lambda"
+      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -78,7 +75,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
         - PolicyName: "Rightsizing-S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -103,141 +100,100 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-          - '${CFDataName}-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
-      Description: LambdaFunction to retreive list of organization
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
+      Description: LambdaFunction to retrieve list of organization
       Runtime: python3.8
       Code:
         ZipFile: |
-          import boto3.session
-          import boto3
-          from boto3.s3.transfer import S3Transfer
+          """ Collect RightSizing info from Cost Explorer and Upload to S3
+          """
+          import os
+          import json
           import logging
           from datetime import date
-          import datetime
-          import json
-          import os
 
-          BENEFITS_CONSIDERED = True
-          bucket = os.environ['S3_BUCKET']
+          import boto3
+
+          logger = logging.getLogger(__name__)
+
+          BUCKET = os.environ['S3_BUCKET']
+          PREFIX = os.environ['PREFIX']
+          ROLE_NAME = os.environ['ROLE']
+          MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
           CRAWLER_NAME = os.environ['CRAWLER_NAME']
-          prefix = os.environ['PREFIX']
+          BENEFITS_CONSIDERED = True
+          TARGETS = {
+              "RightsizingRecommendationsSameFamily": 'SAME_INSTANCE_FAMILY',
+              "RightsizingRecommendationsCrossFamily": 'CROSS_INSTANCE_FAMILY',
+          }
 
-          def start_crawler():
-              glue_client = boto3.client('glue')
+          def start_crawler(name):
               try:
-                  glue_client.start_crawler(Name=CRAWLER_NAME)
-              except Exception as e:
-                  # Send some context about this error to Lambda Logs
-                  logging.warning("%s" % e)
+                  boto3.client('glue').start_crawler(Name=name)
+              except Exception as exc:
+                  logging.warning(exc)
 
-          def store_data_to_s3(data, path, payer_id):
-              today = date.today()
-              year = today.year
-              month = today.strftime('%m')
-              day = today.day
-              local_file = '/tmp/tmp.json'
-
-              with open(local_file, 'w') as f:
-                  json.dump(data, f, default=str)
-                  f.write('\n')
-
-              if os.path.getsize(local_file) == 0:
-                  print(f"No data in file for {path}")
+          def store_data_to_s3(data, payer_id):
+              if not data:
+                  logger.info("No data")
                   return
+              key = date.today().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              boto3.client('s3').put_object(
+                  Bucket=BUCKET,
+                  Key=key,
+                  Body=json.dumps(data, default=str)
+              )
+              logger.info(f'File upload successful to s3://{BUCKET}/{key}')
 
-              s3client = boto3.client('s3')
-              key = f"{path}/{path}-data/payer_id={payer_id}/year={year}/month={month}/day={day}/{year}-{month}-{day}.json"
-              print(f"Uploading file {local_file} to {bucket}/{key}")
-              S3Transfer(s3client).upload_file(local_file, bucket, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              print('file upload successful')
+          def process_one_management_acc(management_account_id):
+              logger.debug('assuming role')
+              cred = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE_NAME}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              cost_explorer = boto3.client(
+                  "ce",
+                  "us-east-1", #Must be "us-east-1"
+                  aws_access_key_id=cred['AccessKeyId'],
+                  aws_secret_access_key=cred['SecretAccessKey'],
+                  aws_session_token=cred['SessionToken'],
+              )
+              logger.debug('Pulling info')
+              #FIXME: propose a more athena friendly output format
+              result = {
+                  "RecommendationDate": date.today().strftime('%Y-%m-%d'),
+                  "RightsizingRecommendationsSameFamily": [],
+                  "RightsizingRecommendationsCrossFamily": [],
+              }
+              for key, target in TARGETS.items():
+                  token = None
+                  while True:
+                      params = {
+                          'Service': 'AmazonEC2',
+                          'Configuration': {
+                              'RecommendationTarget': target,
+                              'BenefitsConsidered': BENEFITS_CONSIDERED,
+                          },
+                          'PageSize': 5000,
+                      }
+                      if token:
+                          params["NextPageToken"] = token
+                      response = cost_explorer.get_rightsizing_recommendation(**params)
+                      result[key] += response["RightsizingRecommendations"]
+                      token = response.get("NextPageToken")
+                      if not token:
+                          break
+              store_data_to_s3(result, management_account_id)
 
           def lambda_handler(event, context):
-
-              logger = logging.getLogger()
               logger.setLevel(logging.INFO)
-
-              sts_connection = boto3.client('sts')
-
-              role_name = os.environ['ROLE']
-              MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-              
-              for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{role_name}"
+              for management_account_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
                   try:
-                      assumed_role = sts_connection.assume_role(
-                                      RoleArn=ROLE_ARN,
-                                      RoleSessionName="cross_acct_lambda"
-                                  )
-                      ACCESS_KEY = assumed_role['Credentials']['AccessKeyId']
-                      SECRET_KEY = assumed_role['Credentials']['SecretAccessKey']
-                      SESSION_TOKEN = assumed_role['Credentials']['SessionToken']
-
-                      assumed_role_session = boto3.session.Session(aws_access_key_id=ACCESS_KEY,
-                                                                  aws_secret_access_key=SECRET_KEY,
-                                                                  aws_session_token=SESSION_TOKEN)
-
-                      cost_explorer = assumed_role_session.client("ce", "us-east-1")
-
-                      today = date.today()
-                      datestr = today.strftime('%Y') + '-' + today.strftime('%m') + '-' + today.strftime('%d')
-                      
-                      RECOMMENDATION_TARGET = 'SAME_INSTANCE_FAMILY'
-                      
-                      token = None
-                      result = {"RecommendationDate": datestr,
-                                          "RightsizingRecommendationsSameFamily":[],
-                                          "RightsizingRecommendationsCrossFamily":[]
-                                  }
-                      while True:
-                          kwargs = {}
-                          if token:
-                              kwargs = {"NextPageToken": token}
-                          response = cost_explorer.get_rightsizing_recommendation(
-                                  Service='AmazonEC2',
-                                  Configuration={
-                                      'RecommendationTarget': RECOMMENDATION_TARGET,
-                                      'BenefitsConsidered': BENEFITS_CONSIDERED
-                                  },
-                                  PageSize=5000,
-                                  **kwargs)
-                          print("Same family Data")
-                          print(response)
-                          result["RightsizingRecommendationsSameFamily"] += response["RightsizingRecommendations"]
-                          print(response["RightsizingRecommendations"])
-                          
-                          RECOMMENDATION_TARGET = 'CROSS_INSTANCE_FAMILY'
-                          token = None
-                          kwargs = {}
-                          if token:
-                              kwargs = {"NextPageToken": token}
-                          response = cost_explorer.get_rightsizing_recommendation(
-                                  Service='AmazonEC2',
-                                  Configuration={
-                                      'RecommendationTarget': RECOMMENDATION_TARGET,
-                                      'BenefitsConsidered': BENEFITS_CONSIDERED
-                                  },
-                                  PageSize=5000,
-                                  **kwargs)
-                          print("Cross family Data")
-                          print(response)
-                          result["RightsizingRecommendationsCrossFamily"] += response["RightsizingRecommendations"]
-                          print(response["RightsizingRecommendations"])
-
-                          token = response.get("NextPageToken", None)
-                          if not token:
-                              break
-                      store_data_to_s3(result, prefix, payer_id)
-                      start_crawler()
-                      return "Successful"
-
-
-                  except Exception as e:
-                      # Send some context about this error to Lambda Logs
-                      logging.warning("%s" % e)
-                      continue 
-
+                      process_one_management_acc(management_account_id)
+                  except Exception as exc:
+                      logging.warning(f"{management_account_id} :  {exc}")
+              start_crawler(CRAWLER_NAME)
+              return "Successful"
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
@@ -250,15 +206,12 @@ Resources:
           PREFIX: !Ref CFDataName
           S3_BUCKET: !Ref DestinationBucket
           CRAWLER_NAME: !Ref RightsizingCrawler
-          RECOMMENDATION_TARGET: 'SAME_INSTANCE_FAMILY'
-          ROLE: !Ref MultiAccountRoleName
+          ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
   RightsizingCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub
-          - '${CFDataName}-Crawler-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:

@@ -27,7 +27,7 @@ def assume_session(account_id):
     """assume role in account"""
     credentials = boto3.client('sts').assume_role(
         RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}" ,
-        RoleSessionName="AssumeRoleRoot"
+        RoleSessionName="data_collection"
     )['Credentials']
     return boto3.session.Session(
         aws_access_key_id=credentials['AccessKeyId'],
