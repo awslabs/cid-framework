@@ -2,8 +2,6 @@
 # This script uploads CloudFormation files to S3 bucket. Can be used with any testing bucket or prod.
 # see also README.md
 
-echo "Isengard Acct: $OPTDATACOLL_ISENGARD_ACCOUNT"
-eval $(isengardcli credentials $OPTDATACOLL_ISENGARD_ACCOUNT)
 
 if [ -n "$1" ]; then
   bucket=$1

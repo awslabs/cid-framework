@@ -39,21 +39,15 @@ Parameters:
     Description: Arn of lambda for Analytics
 Outputs:
   LambdaFunctionName:
-    Value:
-      Ref: LambdaOrgData
+    Value: !Ref LambdaOrgData
   LambdaFunctionARN:
     Description: Lambda function ARN.
-    Value:
-      Fn::GetAtt:
-        - LambdaOrgData
-        - Arn
+    Value: !GetAtt LambdaOrgData.Arn
 Resources:
   LambdaOrgData:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-        - 'Organization-Data-${Id}'
-        - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
       Description: Well Architected Lab - Collecting Accounts
       Runtime: python3.8
       Code:
@@ -86,7 +80,7 @@ Resources:
                       sts_connection = boto3.client('sts')
                       acct_b = sts_connection.assume_role(
                           RoleArn=management_role_arn,
-                          RoleSessionName="cross_acct_lambda"
+                          RoleSessionName="data_collection"
                       )
                       ACCESS_KEY = acct_b['Credentials']['AccessKeyId']
                       SECRET_KEY = acct_b['Credentials']['SecretAccessKey']
@@ -190,10 +184,7 @@ Resources:
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
-      Role:
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
@@ -205,10 +196,7 @@ Resources:
   OrgCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name:  !Join
-          - '-'
-          - - !Ref CFDataName
-            - !Select [0, !Split ['-', !Ref AWS::StackName]]
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -217,7 +205,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-Organization-Data-Execute-Lambda"
+      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -253,6 +241,16 @@ Resources:
                 Action:
                   - "glue:StartCrawler"
                 Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${OrgCrawler}"
+        - PolicyName: !Sub "${CFDataName}-S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource: 
+                  - !Sub "arn:aws:s3:::${DestinationBucket}/*"
+
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:

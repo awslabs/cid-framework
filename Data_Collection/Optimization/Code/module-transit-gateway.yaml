@@ -104,9 +104,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Architectures: [arm64]
-      FunctionName: !Sub
-          - '${CFDataName}-Lambda-Function-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
       Description: LambdaFunction of python3.9.
       Runtime: python3.9
       Code:
@@ -233,7 +231,7 @@ Resources:
               try:
                   assumedRoleObject = sts_client.assume_role(
                       RoleArn=role_arn,
-                      RoleSessionName="cross_acct_lambda"
+                      RoleSessionName="data_collection"
                       )
                   
                   credentials = assumedRoleObject['Credentials']
@@ -283,9 +281,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub
-          - '${CFDataName}-Crawler-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleArn
       DatabaseName: !Ref DatabaseName
       Targets:
