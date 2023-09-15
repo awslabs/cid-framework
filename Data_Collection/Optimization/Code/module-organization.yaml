@@ -278,7 +278,7 @@ Resources:
     Type: AWS::Events::Rule
     Properties:
       Description: Monthly
-      Name: !Ref '${RolePrefix}Scheduler-For-Organization'
+      Name: !Sub '${RolePrefix}Scheduler-For-Organization'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       Targets:
@@ -297,8 +297,8 @@ Resources:
       Properties:
         Database: !Ref DatabaseName
         Description: Provides a cur extended with organization info
-        Name: !Ref '${RolePrefix}view cur_with_org_data'
-        QueryString: !Sub
+        Name: !Sub '${RolePrefix}view cur_with_org_data'
+        QueryString: !Sub |
           CREATE OR REPLACE VIEW cur_with_org_data AS
           SELECT *
           FROM ("${CURTable}" cur
