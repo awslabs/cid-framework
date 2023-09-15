@@ -41,13 +41,13 @@ Metadata:
       RolePrefix:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
-        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-well-architected-labs'"
+        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
         default: 'Include Rightsizing Recommendations Data Collection Module'
       IncludeCostAnomalyModule:
-        default: 'Include Cost Anomalies ightsizing Recommendations Data Collection Module'
+        default: 'Include Cost Anomalies Data Collection Module'
       IncludeInventoryCollectorModule:
         default: 'Include Inventory Collector Module'
       IncludeComputeOptimizerModule:
@@ -204,36 +204,16 @@ Outputs:
           - !If [DeployBudgetsModule, !Sub "${BudgetsModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
           - !If [DeployTransitGatewayModule, !Sub "${TransitGatewayModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
 Conditions:
-  DeployTAModule: !Equals
-    - !Ref IncludeTAModule
-    - "yes"
-  DeployRightsizingModule: !Equals
-    - !Ref IncludeRightsizingModule
-    - "yes"
-  DeployCostAnomalyModule: !Equals
-    - !Ref IncludeCostAnomalyModule
-    - "yes"
-  DeployInventoryCollectorModule: !Equals
-    - !Ref IncludeInventoryCollectorModule
-    - "yes"
-  DeployComputeOptimizerModule: !Equals
-    - !Ref IncludeComputeOptimizerModule
-    - "yes"
-  DeployEcsChargebackModule: !Equals
-    - !Ref IncludeECSChargebackModule
-    - "yes"
-  DeployRDSUtilizationModule: !Equals
-    - !Ref IncludeRDSUtilizationModule
-    - "yes"
-  DeployOrgDataModule: !Equals
-    - !Ref IncludeOrgDataModule
-    - "yes"
-  DeployBudgetsModule: !Equals
-    - !Ref IncludeBudgetsModule
-    - "yes"
-  DeployTransitGatewayModule: !Equals
-    - !Ref IncludeTransitGatewayModule
-    - "yes"
+  DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
+  DeployRightsizingModule: !Equals [ !Ref IncludeRightsizingModule, "yes"]
+  DeployCostAnomalyModule: !Equals [ !Ref IncludeCostAnomalyModule, "yes"]
+  DeployInventoryCollectorModule: !Equals [ !Ref IncludeInventoryCollectorModule, "yes"]
+  DeployComputeOptimizerModule: !Equals [ !Ref IncludeComputeOptimizerModule, "yes"]
+  DeployEcsChargebackModule: !Equals [ !Ref IncludeECSChargebackModule, "yes"]
+  DeployRDSUtilizationModule: !Equals [ !Ref IncludeRDSUtilizationModule, "yes"]
+  DeployOrgDataModule: !Equals [ !Ref IncludeOrgDataModule, "yes"]
+  DeployBudgetsModule: !Equals [ !Ref IncludeBudgetsModule, "yes"]
+  DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -249,7 +229,7 @@ Conditions:
     - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
     - ""
   ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-well-architected-labs' ]
-#Reusable Resources:
+
 Resources:
   S3CrawlerQue:
     Type: AWS::SQS::Queue
@@ -429,7 +409,6 @@ Resources:
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -479,12 +458,9 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-compute-optimizer.yaml"
       Parameters:
-        DestinationBucketARN: !GetAtt S3Bucket.Arn
         DestinationBucket: !Ref S3Bucket
-        GlueRoleARN: !GetAtt GlueRole.Arn
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
-        S3CrawlerQue: !GetAtt S3CrawlerQue.Arn
         Schedule: !Ref Schedule
         RolePrefix: !Ref RolePrefix
         BucketPrefix:  !Ref DestinationBucket
@@ -562,7 +538,6 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/account-collector.yaml"
       Parameters:
-        RoleARN: !Sub "arn:aws:iam::${ManagementAccountID}:role/${RolePrefix}${ManagementAccountRole}"
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix

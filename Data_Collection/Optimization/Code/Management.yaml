@@ -15,16 +15,14 @@ Parameters:
 Outputs:
   LambdaRole:
     Description: Role for lambda to assume in cost account 
-    Value:
-      Fn::GetAtt:
-        - LambdaRole
-        - Arn 
+    Value: !GetAtt LambdaRole.Arn
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
       AssumeRolePolicyDocument:
+        Version: 2012-10-17
         Statement:
           - Action:
               - sts:AssumeRole
@@ -32,7 +30,14 @@ Resources:
             Principal:
               AWS:
                 -  !Sub "arn:aws:iam::${CostAccountID}:root"
-        Version: 2012-10-17
+            Condition:
+              ForAnyValue:ArnEquals:
+                aws:PrincipalArn:
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-account-collector"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-organization"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-compute-optimizer"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-cost-anomaly"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-rightsizing"
       Path: /
       Policies:
         - PolicyName: "Management-Account-permissions"

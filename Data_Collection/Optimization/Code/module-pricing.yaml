@@ -79,9 +79,7 @@ Resources:
   EC2LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-          - '${CFDataName}-Lambda-Function-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect-EC2Pricing'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.8
       Architectures: [arm64]
@@ -154,23 +152,14 @@ Resources:
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       Targets:
-        - Arn:
-            Fn::GetAtt:
-              - EC2LambdaFunction
-              - Arn
+        - Arn: !GetAtt EC2LambdaFunction.Arn
           Id: WeeklyTriggerForEC2Pricing
-        - Arn:
-            Fn::GetAtt:
-              - RDSLambdaFunction
-              - Arn
+        - Arn: !GetAtt RDSLambdaFunction.Arn
           Id: WeeklyTriggerForRDSPricing
   EC2EventPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName:  
-          Fn::GetAtt:
-              - EC2LambdaFunction
-              - Arn
+      FunctionName: !GetAtt EC2LambdaFunction.Arn
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
@@ -178,10 +167,7 @@ Resources:
   RDSEventPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName:  
-          Fn::GetAtt:
-              - RDSLambdaFunction
-              - Arn
+      FunctionName: !GetAtt RDSLambdaFunction.Arn
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
@@ -328,9 +314,7 @@ Resources:
   RDSLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub
-          - '${CFDataName}-RDS-Lambda-Function-${Id}'
-          - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect-RDS'
       Description: !Sub "LambdaFunction to retrieve RDS ${CFDataName}"
       Runtime: python3.8
       Architectures: [arm64]
