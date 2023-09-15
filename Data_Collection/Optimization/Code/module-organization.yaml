@@ -215,9 +215,7 @@ Resources:
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
-      Role: !GetAtt
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
