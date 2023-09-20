@@ -8,11 +8,22 @@ from datetime import datetime, date
 
 import boto3
 from botocore.client import Config
+import logging
 
 TMP_FILE = "/tmp/data.json"
 PREFIX = os.environ['PREFIX']
 BUCKET = os.environ["BUCKET_NAME"]
 ROLENAME = os.environ['ROLENAME']
+
+
+logger = logging.getLogger()
+if "LOG_LEVEL" in os.environ:
+    numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % numeric_level)
+    logger.setLevel(level=numeric_level)
+else:
+    logger.setLevel(logging.INFO)
 
 def to_json(obj):
     """json helper for date time data"""
@@ -46,7 +57,7 @@ def paginated_scan(service, account_id, function_name, params=None, obj_name=Non
     regions = set(session.get_available_regions(service)) & enabled_regions(session)
     obj_name = obj_name or function_name.split('_')[-1].capitalize()
     for region in regions:
-        print(f"Collecting {service}.{obj_name} in {region}")
+        logger.info(f"Collecting {service}.{obj_name} in {region}")
         client = session.client(service, region_name=region)
         try:
             paginator = client.get_paginator(function_name)
@@ -56,17 +67,17 @@ def paginated_scan(service, account_id, function_name, params=None, obj_name=Non
                     obj['accountid'] = account_id
                     yield obj
         except Exception as exc:  #pylint: disable=broad-exception-caught
-            print(f'scan {function_name}/{account_id}:', exc)
+            logger.info(f'scan {function_name}/{account_id}:', exc)
 
 def lambda_handler(event, context): #pylint: disable=unused-argument
     """ this lambda collects ami, snapshots and volumes from linked accounts
-    must be called from SNS queue with event containing records {"account_id": xxx, "payer_id": yyy}
+    and must be called from the corresponding Step Function to orchestrate
     """
-    if 'Records' not in event:
+    collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if 'account' not in event:
         raise ValueError(
             "Please do not trigger this Lambda manually."
-            "Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda"
-            " and Trigger from there."
+            "Find the corresponding state machine in Step Functions and Trigger from there."
         )
 
     sub_modules = {
@@ -76,57 +87,47 @@ def lambda_handler(event, context): #pylint: disable=unused-argument
         #         service='rds',
         #         function_name='describe_db_instances',
         #         obj_name='DBInstances'
-        #     ),
-        #     None],
-        'ebs': [
-            partial(
+        #     )
+        # ],
+        'ebs': partial(
                 paginated_scan,
                 service='ec2',
                 function_name='describe_volumes'
-            ),
-            os.environ.get("EBSCrawler")
-        ],
-        'ami': [
-            partial(
+        ),
+        'ami': partial(
                 paginated_scan,
                 service='ec2',
                 function_name='describe_images',
                 params={'Owners': ['self']}
-            ),
-            os.environ.get("AMICrawler")
-        ],
-        'snapshot': [
-            partial(
+        ),
+        'snapshot': partial(
                 paginated_scan,
                 service='ec2',
                 function_name='describe_snapshots',
                 params={'OwnerIds': ['self']}
-            ),
-            os.environ.get("SnapshotCrawler")
-        ],
+        )
     }
-    for record in event['Records']:
-        body = json.loads(record["body"])
-        account_id = body["account_id"]
-        payer_id = body["payer_id"]
-        for name, (func, crawler) in sub_modules.items():
-            counter = 0
-            print(f"\nCollecting {name} in account {account_id}")
-            try:
-                with open(TMP_FILE, "w", encoding='utf-8') as file_:
-                    for counter, obj in enumerate(func(account_id=account_id), start=1):
-                        #print(obj) # for debug
-                        file_.write(to_json(obj) + "\n")
-                print(f"Collected {counter} {name} instances")
-                upload_to_s3(name, account_id, payer_id)
-                start_crawler(crawler)
-            except Exception as exc:   #pylint: disable=broad-exception-caught
-                print(f"{name}: {type(exc)} - {exc}" )
+
+    account = json.loads(event["account"])
+    account_id = account["account_id"]
+    payer_id = account["payer_id"]
+    for name, (func) in sub_modules.items():
+        counter = 0
+        logger.info(f"\nCollecting {name} in account {account_id}")
+        try:
+            with open(TMP_FILE, "w", encoding='utf-8') as file_:
+                for counter, obj in enumerate(func(account_id=account_id), start=1):
+                    #logger.info(obj) # for debug
+                    file_.write(to_json(obj) + "\n")
+            logger.info(f"Collected {counter} {name} instances")
+            upload_to_s3(name, account_id, payer_id)
+        except Exception as exc:   #pylint: disable=broad-exception-caught
+            logger.info(f"{name}: {type(exc)} - {exc}" )
 
 def upload_to_s3(name, account_id, payer_id):
     """upload"""
     if os.path.getsize(TMP_FILE) == 0:
-        print(f"No data in file for {name}")
+        logger.info(f"No data in file for {name}")
         return
     key =  datetime.now().strftime(
         f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
@@ -135,16 +136,6 @@ def upload_to_s3(name, account_id, payer_id):
     s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
     try:
         s3client.upload_file(TMP_FILE, BUCKET, key)
-        print(f"Data {account_id} in s3 - {BUCKET}/{key}")
+        logger.info(f"Data {account_id} in s3 - {BUCKET}/{key}")
     except Exception as exc:  #pylint: disable=broad-exception-caught
-        print(exc)
-
-def start_crawler(crawler):
-    """start crawler"""
-    try:
-        boto3.client("glue").start_crawler(Name=crawler)
-    except Exception as exc: #pylint: disable=broad-exception-caught
-        if 'has already started' in str(exc):
-            print(f'Crawler {crawler}: has already started')
-        else:
-            print(f'Crawler {crawler}:', exc)
+        logger.info(exc)

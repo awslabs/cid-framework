@@ -3,21 +3,14 @@ import logging
 import os
 import json
 
-def sqs_message(account_data, QueueUrl):
-    #posts message to que
-    client = boto3.client('sqs')
-    (account_id,account_name,payer_id) = account_data
-    message = {
-        "account_id": account_id,
-        "account_name": account_name, 
-        "payer_id": payer_id
-        
-    }
-    response = client.send_message(
-        QueueUrl=QueueUrl,
-        MessageBody=json.dumps(message)
-    )
-    return response
+logger = logging.getLogger()
+if "LOG_LEVEL" in os.environ:
+    numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % numeric_level)
+    logger.setLevel(level=numeric_level)
+else:
+    logger.setLevel(logging.INFO)
 
 
 def org_accounts(role_name, payer_id):
@@ -46,30 +39,40 @@ def org_accounts(role_name, payer_id):
     for account in response_iterator:
         for ids in account['Accounts']:
             account_ids.append(ids)
-    logging.info("AWS Org data Gathered")
+    logger.info("AWS Org data Gathered")
     return account_ids
 
 
 def lambda_handler(event, context):
     role_name = os.environ['ROLE']
     MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-    for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-        account_info = org_accounts(role_name, payer_id)
-        
-        for account in account_info:
-            if  account['Status'] == 'ACTIVE':
-                try:
-                    account_id = account['Id']
-                    account_name = account['Name']
-                    payer_id = payer_id #check format of show this sends to que, need to have in sqs for data output
-                    account_data = (account_id, account_name, payer_id)
-                    for que in os.environ.get("SQS_URL").split(","):
-                        print(que)
-                        sqs_message(account_data, que)
-                        logging.info(f"SQS message sent for {account_id}:{account_name} to TA")
 
-                except Exception as e:
-                    pass
-                    logging.warning("%s" % e)
-            else:
-                logging.info(f"account {account['Id']} is not active")
+    accountlist = []
+    for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
+        try: 
+            account_info = org_accounts(role_name, payer_id)
+            
+            for account in account_info:
+                if  account['Status'] == 'ACTIVE':
+                    try:
+                        account_data = {}
+                        account_data['account_id'] = account['Id']
+                        account_data['account_name'] = account['Name']
+                        account_data['payer_id'] = payer_id
+
+                        accountlist.append({"account" : json.dumps(account_data)})
+                    except Exception as e:
+                        logger.warning("%s" % e)
+                else:
+                    logger.info(f"account {account['Id']} is not active")
+            logger.info(f"AWS Org data gathered and found {len(accountlist)} accounts")
+        except Exception as e:
+            # Send some context about this error to Lambda Logs
+            logger.warning("%s" % e)
+            continue 
+    if len(accountlist) == 0:
+        raise ValueError("No accounts were collected.")
+    return {
+        'statusCode': 200,
+        'accountList': accountlist
+    }

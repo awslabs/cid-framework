@@ -11,21 +11,34 @@ import logging
 prefix = os.environ["PREFIX"]
 bucket = os.environ["BUCKET_NAME"]
 role_name = os.environ['ROLENAME']
-crawler = os.environ["CRAWLER_NAME"]
 costonly = os.environ.get('COSTONLY', 'no').lower() == 'yes'
 
+logger = logging.getLogger()
+if "LOG_LEVEL" in os.environ:
+    numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError('Invalid log level: %s' % numeric_level)
+    logger.setLevel(level=numeric_level)
+else:
+    logger.setLevel(logging.INFO)
+
 def lambda_handler(event, context):
+    collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if 'account' not in event:
+        raise ValueError(
+            "Please do not trigger this Lambda manually."
+            "Find the corresponding state machine in Step Functions and Trigger from there."
+        )
+    
     try:
-        if 'Records' not in event: 
-            raise Exception("Please do not trigger this Lambda manually. Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda  and Trigger from there.")
-        for r in event['Records']:
-            body = json.loads(r["body"])
-            account_id = body["account_id"]
-            account_name = body["account_name"]
-            f_name = "/tmp/data.json"
-            read_ta(account_id, account_name, f_name)
-            upload_to_s3(prefix, account_id, body.get("payer_id"), f_name)
-            start_crawler(crawler)
+        account = json.loads(event["account"])
+        account_id = account["account_id"]
+        account_name = account["account_name"]
+        payer_id = account["payer_id"]
+        logger.info(f"Collecting data for account: {account_id}")
+        f_name = "/tmp/data.json"
+        read_ta(account_id, account_name, f_name)
+        upload_to_s3(prefix, account_id, payer_id, f_name)
     except Exception as e:
         logging.warning(e)
 
@@ -53,16 +66,6 @@ def assume_role(account_id, service, region, role):
         aws_secret_access_key=creds['SecretAccessKey'],
         aws_session_token=creds['SessionToken'],
     )
-
-def start_crawler(crawler):
-    glue = boto3.client("glue")
-    try:
-        glue.start_crawler(Name=crawler)
-    except Exception as e:
-        if ('has already started' in str(e)):
-            print('crawler has already started')
-        else:
-            print(f"{type(e)}: {e}")
 
 def _json_serial(self, obj):
     if isinstance(obj, (datetime, date)): return obj.isoformat()

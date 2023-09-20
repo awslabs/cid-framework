@@ -2,43 +2,52 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Main CF template that builds shared resources and other stacks
 Parameters:
-  DestinationBucket:
-    Type: String
-    Description: Name of the S3 Bucket that is created to hold tgw data
-    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
-  CFDataName:
-    Type: String
-    Description: The name of what this cf is doing.
-    Default: transit-gateway
   DatabaseName:
     Type:  String
     Description: Name of the Athena database to hold lambada information
     Default: optimization_data
-    MinLength: 1
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket that is created to hold tgw data
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+  MultiAccountRoleName:
+    Type: String
+    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: transit-gateway
+  GlueRoleARN:
+    Type: String
+    Description: ARN of the IAM role deployed to use for glue.
+  Schedule:
+    Type: String
+    Description: Cloud watch event Schedule to trigger the lambda 
+    Default: "rate(14 days)"
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the lambda for the Accounts Collector function
   CURTable:
     Type: String
     Description: The name of your Cost and Usage Report table in Athena
     Default: cid_cur.cur
-  DestinationBucketARN:
-    Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
-  GlueRoleArn:
-    Type: String
-    Description: ARN of the IAM role deployed to use for glue.
-  RolePrefix:
-    Type: String
-    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
-  MultiAccountRoleName:
-    Type: String
-    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
-  LambdaAnalyticsARN:
-    Type: String
-    Description: Arn of lambda for Analytics
-Outputs:
-  SQSUrl:
-    Description: TaskQueue URL the account collector lambda
-    Value: !Ref TaskQueue
 
+Outputs:
+  LambdaRoleARN:
+    Description: Role for Lambda execution of collection data.
+    Value: !GetAtt LambdaRole.Arn
+  LambdaFunctionARN:
+    Description: ARN for the module's primary Lambda function
+    Value: !GetAtt LambdaFunction.Arn
 
 Resources:
   LambdaRole:
@@ -77,31 +86,17 @@ Resources:
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
                 Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${Crawler}"
-              - Effect: "Allow"
-                Action:
-                  - "sqs:ReceiveMessage"
-                  - "sqs:DeleteMessage"
-                  - "sqs:GetQueueAttributes"
-                Resource: !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:TransitGatewayModule-TaskQueue
-              - Effect: "Allow"
-                Action:
-                  - "cloudwatch:*"
+                  - "cloudwatch:GetMetricData"
                 Resource: "*"
-              - Effect: "Allow"
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "logs:DescribeLogStreams"
-                Resource: "arn:aws:logs:*:*:*"
               - Effect: "Allow"
                 Action:
                   - "ec2:DescribeRegions"
                 Resource: "*"
+  
   LambdaFunction:
     Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaRole
     Properties:
       Architectures: [arm64]
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
@@ -109,207 +104,171 @@ Resources:
       Runtime: python3.9
       Code:
         ZipFile: |
-          import json
-          import boto3
-          from datetime import datetime
-          from botocore.client import Config
-          from botocore.exceptions import ClientError
-          from datetime import date, timedelta
-          import os 
-          import logging
+            import json
+            import boto3
+            from botocore.client import Config
+            from botocore.exceptions import ClientError
+            from datetime import date, timedelta, datetime
+            import os 
+            import logging
 
-          bucket = os.environ['BUCKET_NAME']
+            bucket = os.environ['BUCKET_NAME']
 
-          last_day_of_prev_month = date.today().replace(day=1) - timedelta(days=1)
-          start_day_of_prev_month = date.today().replace(day=1) - timedelta(days=last_day_of_prev_month.day)
-         
-          s3_client = boto3.client('s3')
-          today = date.today()
-          year = today.year
-          month = today.month
+            logger = logging.getLogger()
+            if "LOG_LEVEL" in os.environ:
+                numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+                if not isinstance(numeric_level, int):
+                    raise ValueError('Invalid log level: %s' % loglevel)
+                logger.setLevel(level=numeric_level)
+            else:
+                logger.setLevel(logging.INFO)
 
-          def lambda_handler(event, context):
-              try:
-                  if 'Records' not in event: 
-                      raise Exception("Please do not trigger this Lambda manually. Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda  and Trigger from there.")
-                  for record in event['Records']:
-                      body = json.loads(record["body"])
-                      account_id = body["account_id"]
-                      account_name = body["account_name"]
-                      payer_id = body["payer_id"]
-                      print(account_id)
-                      regions = get_supported_regions()
-                      for region_name in regions: 
-                          print(region_name)
-                          try:
-                              cw_client = assume_role('cloudwatch', account_id, region_name['RegionName'])
-                              ec2_client = assume_role('ec2', account_id, region_name['RegionName'])
-                              tgw_attachment_results = []
-                              final_result = []
-                              list_tgw_attachments = ec2_client.describe_transit_gateway_attachments()
-                              for item in list_tgw_attachments['TransitGatewayAttachments']:
-                                  tgw_attachment_results.append(item)
-                              
-                              cw_result = []
-                              for item in tgw_attachment_results:
-                                  response_in = metrics(cw_client, 'BytesIn', item)
-                                  
-                                  with open("/tmp/data.json", "w") as f:
-                                      
-                                      for cwitem in response_in['MetricDataResults']:
-                                          cw_results = {
-                                                  'TGW': item['TransitGatewayId'],
-                                                  'NetworkingAccount': item['TransitGatewayOwnerId'],
-                                                  'CustomerAccount': item['ResourceOwnerId'],
-                                                  'TGW-Attachment': item['TransitGatewayAttachmentId'],
-                                                  'BytesIn': cwitem['Values'],
-                                                  'Region': region_name['RegionName']
-                                              }
-                                  
-                                      response_out = metrics(cw_client, 'BytesOut', item)
-                                          
-                                      for cwitemout in response_out['MetricDataResults']:
-                                          cw_results['BytesOut']= cwitemout['Values']
-                                          print (cw_results)
-                                          jsondata = json.dumps(cw_results) 
-                                          f.write(jsondata)
-                                          f.write('\n')
-                                                              
-                                  s3 = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
-                                  s3.upload_file(
-                                      "/tmp/data.json",
-                                      bucket,
-                                      f"{os.environ['PREFIX']}/{os.environ['PREFIX']}-data/payer_id={payer_id}/year={year}/month={month}/tgw-{item['TransitGatewayAttachmentId']}-{region_name['RegionName']}.json")
+            last_day_of_prev_month = date.today().replace(day=1) - timedelta(days=1)
+            start_day_of_prev_month = date.today().replace(day=1) - timedelta(days=last_day_of_prev_month.day)
 
-                          except Exception as e:
-                              # Send some context about this error to Lambda Logs
-                              logging.warning("%s" % e)
-                              continue
-                          
-                  start_crawler()
-                  print("Done")
-              except Exception as e:
-                  logging.warning(e)
+            s3_client = boto3.client('s3')
+            today = date.today()
+            year = today.year
+            month = today.month
 
-          def metrics(cw_client, byte, item):
-              cw_data = cw_client.get_metric_data(
-                      MetricDataQueries=[
-                              {
-                                  'Id': 'tgwMetric',
-                                  'MetricStat': {
-                                      'Metric': {
-                                          'Namespace': 'AWS/TransitGateway',
-                                          'MetricName': f'{byte}',
-                                          'Dimensions': [
-                                              {
-                                                  'Name': 'TransitGatewayAttachment',
-                                                  'Value': item['TransitGatewayAttachmentId']
-                                              },
-                                              {
-                                                  'Name': 'TransitGateway',
-                                                  'Value': item['TransitGatewayId']
-                                              },
-                                          ]
-                                      },
-                                      'Period': 2592000,
-                                      'Stat': 'Sum',
-                                  },
-                                  'ReturnData': True},
-                          ],
-                          StartTime=start_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                          EndTime=last_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                          ScanBy='TimestampDescending'
-                      )
+            def lambda_handler(event, context):
+                collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if 'account' not in event:
+                    raise ValueError(
+                        "Please do not trigger this Lambda manually."
+                        "Find the corresponding state machine in Step Functions and Trigger from there."
+                    )
 
-              return cw_data
+                try:
+                    account = json.loads(event["account"])
+                    account_id = account["account_id"]
+                    account_name = account["account_name"]
+                    payer_id = account["payer_id"]
+                    logger.info(f"Collecting data for account: {account_id}")
+                    regions = get_supported_regions()
+                    for region_name in regions: 
+                        logger.info(region_name)
+                        try:
+                            cw_client = assume_role('cloudwatch', account_id, region_name['RegionName'])
+                            ec2_client = assume_role('ec2', account_id, region_name['RegionName'])
+                            tgw_attachment_results = []
+                            final_result = []
+                            list_tgw_attachments = ec2_client.describe_transit_gateway_attachments()
+                            for item in list_tgw_attachments['TransitGatewayAttachments']:
+                                tgw_attachment_results.append(item)
+                            
+                            cw_result = []
+                            for item in tgw_attachment_results:
+                                response_in = metrics(cw_client, 'BytesIn', item)
+                                
+                                with open("/tmp/data.json", "w") as f:
+                                    
+                                    for cwitem in response_in['MetricDataResults']:
+                                        cw_results = {
+                                                'TGW': item['TransitGatewayId'],
+                                                'NetworkingAccount': item['TransitGatewayOwnerId'],
+                                                'CustomerAccount': item['ResourceOwnerId'],
+                                                'TGW-Attachment': item['TransitGatewayAttachmentId'],
+                                                'BytesIn': cwitem['Values'],
+                                                'Region': region_name['RegionName']
+                                            }
+                                
+                                    response_out = metrics(cw_client, 'BytesOut', item)
+                                        
+                                    for cwitemout in response_out['MetricDataResults']:
+                                        cw_results['BytesOut']= cwitemout['Values']
+                                        logger.info (cw_results)
+                                        jsondata = json.dumps(cw_results) 
+                                        f.write(jsondata)
+                                        f.write('\n')
+                                                            
+                                s3 = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
+                                s3.upload_file(
+                                    "/tmp/data.json",
+                                    bucket,
+                                    f"{os.environ['PREFIX']}/{os.environ['PREFIX']}-data/payer_id={payer_id}/year={year}/month={month}/tgw-{item['TransitGatewayAttachmentId']}-{region_name['RegionName']}.json")
 
-          def assume_role(service, account_id, region_name):
-              role_name = os.environ['ROLENAME']
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-              sts_client = boto3.client('sts')
-              
-              try:
-                  assumedRoleObject = sts_client.assume_role(
-                      RoleArn=role_arn,
-                      RoleSessionName="data_collection"
-                      )
-                  
-                  credentials = assumedRoleObject['Credentials']
-                  client = boto3.client(
-                      service, 
-                      region_name=region_name,
-                      aws_access_key_id=credentials['AccessKeyId'],
-                      aws_secret_access_key=credentials['SecretAccessKey'],
-                      aws_session_token=credentials['SessionToken']
-                  )
-                  return client
-              
-              except ClientError as e:
-                  logging.warning(f"Unexpected error Account {account_id}: {e}")
-                  return None
+                        except Exception as e:
+                            # Send some context about this error to Lambda Logs
+                            logger.warning("%s" % e)
+                            continue
+                            
+                    logger.info("Done")
+                except Exception as e:
+                    logger.warning(e)
 
-          def start_crawler():
-              glue_client = boto3.client("glue")
-              Crawler_Name = os.environ["CRAWLER_NAME"]
-              try:
-                  glue_client.start_crawler(Name=Crawler_Name)
-                  print(f"{Crawler_Name} has been started")
-              except Exception as e:
-                  # Send some context about this error to Lambda Logs
-                  logging.warning("%s" % e)
+            def metrics(cw_client, byte, item):
+                cw_data = cw_client.get_metric_data(
+                        MetricDataQueries=[
+                                {
+                                    'Id': 'tgwMetric',
+                                    'MetricStat': {
+                                        'Metric': {
+                                            'Namespace': 'AWS/TransitGateway',
+                                            'MetricName': f'{byte}',
+                                            'Dimensions': [
+                                                {
+                                                    'Name': 'TransitGatewayAttachment',
+                                                    'Value': item['TransitGatewayAttachmentId']
+                                                },
+                                                {
+                                                    'Name': 'TransitGateway',
+                                                    'Value': item['TransitGatewayId']
+                                                },
+                                            ]
+                                        },
+                                        'Period': 2592000,
+                                        'Stat': 'Sum',
+                                    },
+                                    'ReturnData': True},
+                            ],
+                            StartTime=start_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            EndTime=last_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                            ScanBy='TimestampDescending'
+                        )
 
-          def get_supported_regions():
-              response = []              
-              ec2_c = boto3.client('ec2')
-              response = ec2_c.describe_regions()
-              return response['Regions'] if response['Regions'] else []
+                return cw_data
+
+            def assume_role(service, account_id, region_name):
+                role_name = os.environ['ROLENAME']
+                role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+                sts_client = boto3.client('sts')
+                
+                try:
+                    assumedRoleObject = sts_client.assume_role(
+                        RoleArn=role_arn,
+                        RoleSessionName="data_collection"
+                        )
+                    
+                    credentials = assumedRoleObject['Credentials']
+                    client = boto3.client(
+                        service, 
+                        region_name=region_name,
+                        aws_access_key_id=credentials['AccessKeyId'],
+                        aws_secret_access_key=credentials['SecretAccessKey'],
+                        aws_session_token=credentials['SessionToken']
+                    )
+                    return client
+                
+                except ClientError as e:
+                    logger.warning(f"Unexpected error Account {account_id}: {e}")
+                    return None
+
+            def get_supported_regions():
+                response = []              
+                ec2_c = boto3.client('ec2')
+                response = ec2_c.describe_regions()
+                return response['Regions'] if response['Regions'] else []
 
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
-      Role:
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          ROLENAME: !Ref MultiAccountRoleName
-          CRAWLER_NAME: !Ref Crawler
           PREFIX: !Ref CFDataName
-
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleArn
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: sqs.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt TaskQueue.Arn
-  TaskQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      KmsMasterKeyId: "alias/aws/sqs"
-      QueueName: 'TransitGatewayModule-TaskQueue'
-  EventSourceMapping:
-    DependsOn:
-      - EventPermission
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      EventSourceArn: !GetAtt TaskQueue.Arn
-      FunctionName: !GetAtt LambdaFunction.Arn
+          ROLENAME: !Ref MultiAccountRoleName
 
   AthenaQueryCUR:
     Type: AWS::Athena::NamedQuery
@@ -427,6 +386,183 @@ Resources:
           , ("total_Networking_cost" * (usage_account_dx_total / total_data_transfer)) as chargeback_cost_final
           FROM
             summary
+
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    DependsOn:
+      - LambdaFunction
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref AccountCollectorLambdaARN
+                  - !Sub 
+                    - '${Lambda}'
+                    - Lambda: !GetAtt LambdaFunction.Arn
+
+  StepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    DependsOn:
+      - StepFunctionExecutionRole
+    Properties: 
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+      DefinitionString: |-
+        {
+          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
+          "StartAt": "Account Collector Invoke",
+          "States": {
+            "Account Collector Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${AccountCollectorLambdaARN}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Module Map"
+            },
+            "Module Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "Module Invoke",
+                "States": {
+                  "Module Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName": "${LambdaFunction}",
+                      "Payload": {
+                        "account.$": "$.account"
+                      }
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 2,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ItemsPath": "$.accountList",
+              "Next": "Start Crawler"
+            },
+            "Start Crawler": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${Crawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 1200
+        }
+      DefinitionSubstitutions: 
+        CFDataName: !Ref CFDataName
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        LambdaFunction: !GetAtt LambdaFunction.Arn
+        Crawler: !Sub '${RolePrefix}${CFDataName}-Crawler'
+
+  ScheduleExecutionRole:
+    DependsOn:
+      - StepFunction
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: 
+                  - !GetAtt StepFunction.Arn
+
+  ModuleRefreshScheduleRule:
+    DependsOn:
+      - ScheduleExecutionRole
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: !Sub "Scheduler-For-${CFDataName}"
+      Name: !Sub '${CFDataName}-ModuleRefreshRule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      Targets:
+        - Id: !Sub '${CFDataName}-ModuleRefresh'
+          Arn: !GetAtt StepFunction.Arn
+          RoleArn: !GetAtt ScheduleExecutionRole.Arn
+
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:

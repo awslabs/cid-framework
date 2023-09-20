@@ -8,13 +8,6 @@ Parameters:
     Type: String
     AllowedPattern: ([a-z0-9\-, ]*?$)
     Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
-  TaskQueuesUrl:
-    Type: String
-    Description: the Ques URL that will get the accounts messages, split by comers
-  Schedule:
-    Type: String
-    Description: Cron job to trigger the lambda using cloudwatch event
-    Default: "rate(14 days)"
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
@@ -28,6 +21,8 @@ Outputs:
       Fn::GetAtt:
         - LambdaFunction
         - Arn
+    Export:
+      Name: AccountCollectorLambdaARN
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -64,23 +59,6 @@ Resources:
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/AWS-Organization-Account-Collector*"
-        - PolicyName: "Sqs-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                 - sqs:SendMessage
-                 - sqs:ReceiveMessage
-                 - sqs:DeleteMessage
-                 - sqs:GetQueueAttributes
-                Resource:
-                 - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:TrustedAdvisorModule-TaskQueue
-                 - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:InventoryCollectorModul-TaskQueue
-                 - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:EcsChargebackModule-TaskQueue
-                 - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:RDSUtilizationModule-TaskQueue
-                 - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:BudgetsModule-TaskQueue
-                 - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:TransitGatewayModule-TaskQueue
                  
 
   LambdaFunction:
@@ -96,21 +74,14 @@ Resources:
             import os
             import json
 
-            def sqs_message(account_data, QueueUrl):
-                #posts message to que
-                client = boto3.client('sqs')
-                (account_id,account_name,payer_id) = account_data
-                message = {
-                    "account_id": account_id,
-                    "account_name": account_name, 
-                    "payer_id": payer_id
-                    
-                }
-                response = client.send_message(
-                    QueueUrl=QueueUrl,
-                    MessageBody=json.dumps(message)
-                )
-                return response
+            logger = logging.getLogger()
+            if "LOG_LEVEL" in os.environ:
+                numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+                if not isinstance(numeric_level, int):
+                    raise ValueError('Invalid log level: %s' % numeric_level)
+                logger.setLevel(level=numeric_level)
+            else:
+                logger.setLevel(logging.INFO)
 
 
             def org_accounts(role_name, payer_id):
@@ -139,13 +110,15 @@ Resources:
                 for account in response_iterator:
                     for ids in account['Accounts']:
                         account_ids.append(ids)
-                logging.info("AWS Org data Gathered")
+                logger.info("AWS Org data Gathered")
                 return account_ids
 
 
             def lambda_handler(event, context):
                 role_name = os.environ['ROLE']
                 MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
+
+                accountlist = []
                 for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
                     try: 
                         account_info = org_accounts(role_name, payer_id)
@@ -153,56 +126,32 @@ Resources:
                         for account in account_info:
                             if  account['Status'] == 'ACTIVE':
                                 try:
-                                    account_id = account['Id']
-                                    account_name = account['Name']
-                                    payer_id = payer_id #check format of show this sends to que, need to have in sqs for data output
-                                    account_data = (account_id, account_name, payer_id)
-                                    for que in os.environ.get("SQS_URL").split(","):
-                                        print(que)
-                                        sqs_message(account_data, que)
-                                        logging.info(f"SQS message sent for {account_id}:{account_name} from {payer_id} to {que}")
+                                    account_data = {}
+                                    account_data['account_id'] = account['Id']
+                                    account_data['account_name'] = account['Name']
+                                    account_data['payer_id'] = payer_id
 
+                                    accountlist.append({"account" : json.dumps(account_data)})
                                 except Exception as e:
-                                    pass
-                                    logging.warning("%s" % e)
+                                    logger.warning("%s" % e)
                             else:
-                                logging.info(f"account {account['Id']} is not active")
+                                logger.info(f"account {account['Id']} is not active")
+                        logger.info(f"AWS Org data gathered and found {len(accountlist)} accounts")
                     except Exception as e:
                         # Send some context about this error to Lambda Logs
-                        logging.warning("%s" % e)
+                        logger.warning("%s" % e)
                         continue 
-
+                if len(accountlist) == 0:
+                    raise ValueError("No accounts were collected.")
+                return {
+                    'statusCode': 200,
+                    'accountList': accountlist
+                }
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
-      Role: 
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          SQS_URL: !Ref TaskQueuesUrl
           ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
-
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: Scheduler-For-Accounts
-      Name: Scheduler-For-Accounts
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      Targets:
-        - Arn:
-            Fn::GetAtt:
-              - LambdaFunction
-              - Arn
-          Id: WeeklyTriggerForGetAccounts
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
