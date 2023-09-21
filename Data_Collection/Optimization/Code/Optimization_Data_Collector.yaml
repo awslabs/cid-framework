@@ -383,8 +383,6 @@ Resources:
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTAModule
-    DependsOn:
-      - AccountCollector
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-trusted-advisor.yaml"
       Parameters:
@@ -428,8 +426,6 @@ Resources:
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
-    DependsOn:
-      - AccountCollector
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-inventory.yaml"
       Parameters:
@@ -476,8 +472,6 @@ Resources:
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEcsChargebackModule
-    DependsOn:
-      - AccountCollector
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-ecs-chargeback.yaml"
       Parameters:
@@ -493,8 +487,6 @@ Resources:
   RDSUtilizationModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRDSUtilizationModule
-    DependsOn:
-      - AccountCollector
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-rds-usage.yaml"
       Parameters:
@@ -523,8 +515,6 @@ Resources:
   BudgetsModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
-    DependsOn:
-      - AccountCollector
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-budgets.yaml"
       Parameters:
@@ -539,8 +529,6 @@ Resources:
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTransitGatewayModule
-    DependsOn:
-      - AccountCollector
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-transit-gateway.yaml"
       Parameters:
