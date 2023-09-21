@@ -695,8 +695,6 @@ Resources:
   
   StepFunctionExecutionRole:
     Type: AWS::IAM::Role
-    DependsOn:
-      - LambdaFunction
     Properties:
       Path: /
       RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
@@ -729,8 +727,6 @@ Resources:
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
-    DependsOn:
-      - StepFunctionExecutionRole
     Properties: 
       StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
@@ -819,8 +815,6 @@ Resources:
         Crawler: !Sub '${RolePrefix}${CFDataName}-Crawler'
 
   ScheduleExecutionRole:
-    DependsOn:
-      - StepFunction
     Type: AWS::IAM::Role
     Properties:
       Path: /
@@ -846,8 +840,6 @@ Resources:
                   - !GetAtt StepFunction.Arn
 
   ModuleRefreshScheduleRule:
-    DependsOn:
-      - ScheduleExecutionRole
     Type: 'AWS::Events::Rule'
     Properties:
       Description: !Sub "Scheduler-For-${CFDataName}"
