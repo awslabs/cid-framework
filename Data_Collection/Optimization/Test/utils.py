@@ -210,7 +210,7 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
         executions = stepfunctions.list_executions(
             stateMachineArn=state_machine_arn,
         )['executions']
-        logger.info(f'{execution_arn} has : {executions}')
+        logger.info(f'{state_machine_arn} has : {executions}')
 
 
         executions = stepfunctions.list_executions(
@@ -218,7 +218,7 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
             statusFilter='RUNNING'  # Filter for running executions
         )['executions']
         if executions:
-            logger.info(f'{execution_arn} has already started: {executions}')
+            logger.info(f'{state_machine_arn} has already started: {executions}')
             continue
 
         execution_arn = stepfunctions.start_execution(stateMachineArn=state_machine_arn)['executionArn']
