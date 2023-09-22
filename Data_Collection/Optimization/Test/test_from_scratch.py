@@ -33,7 +33,6 @@ Python:
 import logging
 
 
-import boto3
 import pytest
 
 from utils import athena_query

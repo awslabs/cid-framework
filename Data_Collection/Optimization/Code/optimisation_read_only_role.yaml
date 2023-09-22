@@ -172,12 +172,12 @@ Resources:
         Statement:
           - Effect: "Allow"
             Action:
-              - "trustedadvisor:Describe*"
-              - "trustedadvisor:List*"
-              - "trustedadvisor:GenerateReport"
-              - "trustedadvisor:IncludeCheckItems"
-              - "trustedadvisor:ExcludeCheckItems"
-              - "trustedadvisor:RefreshCheck"                   
+              # - "trustedadvisor:Describe*"
+              # - "trustedadvisor:List*"
+              # - "trustedadvisor:GenerateReport"
+              # - "trustedadvisor:IncludeCheckItems"
+              # - "trustedadvisor:ExcludeCheckItems"
+              # - "trustedadvisor:RefreshCheck"
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
             Resource: "*" ## only * can be used as a Resource for this action
@@ -257,9 +257,10 @@ Resources:
               - "ecs:DescribeTasks"
               - "ecs:ListTaskDefinitions"
               - "ecs:ListClusters"
+              - "ec2:DescribeRegions"
             Resource: "*"
       Roles:
-        - Ref: LambdaRole 
+        - Ref: LambdaRole
   RDSUtilizationPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeRDSUtilizationModulePolicy
