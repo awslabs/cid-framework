@@ -146,7 +146,6 @@ Resources:
                     logger.info(f"Collecting data for account: {account_id}")
                     regions = get_supported_regions() #FIXME: use intersection with ec2 regions
                     for region in regions:
-                        logger.info(region_name)
                         try:
                             cw_client = assume_role('cloudwatch', account_id, region)
                             ec2_client = assume_role('ec2', account_id, region)
@@ -174,16 +173,16 @@ Resources:
                                     response_out = metrics(cw_client, 'BytesOut', item)
 
                                     for cwitemout in response_out['MetricDataResults']:
-                                        cw_results['BytesOut']= cwitemout['Values']
+                                        cw_results['BytesOut'] = cwitemout['Values']
                                         logger.info (cw_results)
                                         jsondata = json.dumps(cw_results)
                                         f.write(jsondata)
                                         f.write('\n')
-
+                                #FIXME: check file size
                                 boto3.client("s3").upload_file(
                                     "/tmp/data.json",
                                     bucket,
-                                    f"{os.environ['PREFIX']}/{os.environ['PREFIX']}-data/payer_id={payer_id}/year={year}/month={month}/tgw-{item['TransitGatewayAttachmentId']}-{region_name['RegionName']}.json"
+                                    f"{os.environ['PREFIX']}/{os.environ['PREFIX']}-data/payer_id={payer_id}/year={year}/month={month}/tgw-{item['TransitGatewayAttachmentId']}-{region}.json"
                                 )
 
                         except Exception as e:
