@@ -84,14 +84,8 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
-                  - !Ref DestinationBucketARN
+                Resource:
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "support:DescribeTrustedAdvisorChecks"
-                  - "support:DescribeTrustedAdvisorCheckResult"                
-                Resource: "*" ## only * can be used as a Resource for this action
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -99,7 +93,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.8
-      Code: # S3Bucket: !Ref CodeBucket S3Key: !Ref CodeKey
+      Code:
         ZipFile: |
           import os
           import json
@@ -132,7 +126,6 @@ Resources:
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              
               try:
                   account = json.loads(event["account"])
                   account_id = account["account_id"]
@@ -162,7 +155,10 @@ Resources:
                   print(f"{type(e)}: {e}")
 
           def assume_role(account_id, service, region, role):
-              assumed = boto3.client('sts').assume_role(RoleArn=f"arn:aws:iam::{account_id}:role/{role}", RoleSessionName='data_collection')
+              assumed = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role}",
+                  RoleSessionName='data_collection'
+              )
               creds = assumed['Credentials']
               return boto3.client(service, region_name=region,
                   aws_access_key_id=creds['AccessKeyId'],
@@ -363,7 +359,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: 
+                Resource:
                   - !GetAtt StepFunction.Arn
 
   ModuleRefreshScheduleRule:

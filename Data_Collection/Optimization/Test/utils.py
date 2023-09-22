@@ -1,8 +1,12 @@
+
+import json
+import time
 import logging
 from pathlib import Path
-import time
+from datetime import datetime
 
 import boto3
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +60,7 @@ def watch_stacks(cloudformation, stack_names = None):
     ''' watch stacks while they are IN_PROGRESS and/or until they are deleted'''
     if stack_names is None:
         stack_names = []
-        
+
     last_update = {stack_name: None for stack_name in stack_names}
     while True:
         in_progress = False
@@ -113,7 +117,7 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
     )
-    
+
     try:
         with file.open() as fp:
             cloudformation.create_stack(
@@ -124,13 +128,12 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
             )
     except cloudformation.exceptions.AlreadyExistsException:
         logger.info(f'{stack_name} exists')
-    
 
 def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
 
-    deploy_stack(cloudformation=cloudformation, 
-                    stack_name='OptimizationManagementDataRoleStack', 
+    deploy_stack(cloudformation=cloudformation,
+                    stack_name='OptimizationManagementDataRoleStack',
                     file=root / 'Code' / 'Management.yaml',
                     parameters=[
                         {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
@@ -139,8 +142,8 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
                     ]
     )
 
-    deploy_stack(cloudformation=cloudformation, 
-                 stack_name='OptimizationDataRoleStack', 
+    deploy_stack(cloudformation=cloudformation,
+                 stack_name='OptimizationDataRoleStack',
                  file=root / 'Code' / 'optimisation_read_only_role.yaml',
                  parameters=[
                     {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
@@ -156,8 +159,8 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
                  ]
     )
 
-    deploy_stack(cloudformation=cloudformation, 
-                 stack_name='OptimizationDataCollectionStack', 
+    deploy_stack(cloudformation=cloudformation,
+                 stack_name='OptimizationDataCollectionStack',
                  file=root / 'Code' / 'Optimization_Data_Collector.yaml',
                  parameters=[
                     {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
@@ -188,21 +191,114 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     ])
 
 
-def trigger_update():
-    function_names = [
-        'WA-organization-Lambda-Collect',
-        'WA-accounts-collector-Lambda',
-        #'WA-pricing-Lambda-Collect-EC2Pricing', #Takes 10mins
-        'WA-compute-optimizer-Lambda-Trigger-Export',
-        'WA-cost-explorer-cost-anomaly-Lambda-Collect',
-        'WA-cost-explorer-rightsizing-Lambda-Collect',
-    ]
+def launch_(state_machine_arns, lambda_arns=None, wait=True):
+    stepfunctions = boto3.client('stepfunctions')
+    logs_client = boto3.client('logs')
 
-    for name in function_names:
-        logger.info('Invoking ' + name)
-        response = boto3.client('lambda').invoke(FunctionName=name)
-        stdout = response['Payload'].read().decode('utf-8')
-        logger.info(f'{CYAN}Response: {stdout}{END}')
+    # Execute lambdas
+    lambda_arns = set(lambda_arns or [])
+    for lambda_arn in lambda_arns:
+        boto3.client('lambda').invoke(
+            FunctionName=lambda_arn.split(':')[-1],
+            InvocationType='Event', # Async
+        )
+
+    # Execute sate machines
+    execution_arns = []
+    for state_machine_arn in state_machine_arns:
+
+        executions = stepfunctions.list_executions(
+            stateMachineArn=state_machine_arn,
+        )['executions']
+        logger.info(f'{execution_arn} has : {executions}')
+
+
+        executions = stepfunctions.list_executions(
+            stateMachineArn=state_machine_arn,
+            statusFilter='RUNNING'  # Filter for running executions
+        )['executions']
+        if executions:
+            logger.info(f'{execution_arn} has already started: {executions}')
+            continue
+
+        execution_arn = stepfunctions.start_execution(stateMachineArn=state_machine_arn)['executionArn']
+        logger.info(f'Starting {execution_arn}')
+        execution_arns.append(execution_arn)
+
+        # Extract Lambda function ARNs from the state machine definition
+        state_machine_definition = json.loads(stepfunctions.describe_state_machine(stateMachineArn=state_machine_arn)['definition'])
+        def _extract_lambda_arns(state):
+            if str(state).startswith('arn:aws:lambda:'):
+                lambda_arns.add(state)
+            elif isinstance(state, dict):
+                for value in state.values():
+                    _extract_lambda_arns(value)
+            elif isinstance(state, list):
+                for item in state:
+                    _extract_lambda_arns(item)
+        _extract_lambda_arns(state_machine_definition)
+
+    if not wait:
+        return
+
+    # Wait for state machines to complete
+    last_log_time = {lambda_arn: int(time.time()) * 1000 for lambda_arn in lambda_arns}
+    execution_results = {execution_arn: None for execution_arn in execution_arns}
+    running = True
+    while running:
+        # check if there are still running
+        running = False
+        for execution_arn in execution_arns:
+            res = stepfunctions.describe_execution(executionArn=execution_arn)
+            if res['status'] == 'RUNNING':
+                running = True
+            else:
+                if not execution_results[execution_arn]:
+                    execution_results[execution_arn] = res['status']
+                    print(res['executionArn'], res['status'])
+        # read logs of all lambdas
+        for lambda_arn in lambda_arns:
+            function_name = lambda_arn.split(':')[-1]
+            log_groups = logs_client.describe_log_groups(logGroupNamePrefix='/aws/lambda/' + function_name)
+            for log_group in log_groups['logGroups']:
+                events = logs_client.filter_log_events(
+                    logGroupName=log_group['logGroupName'],
+                    startTime=last_log_time[lambda_arn]
+                )['events']
+                if events:
+                    last_log_time[lambda_arn] = events[-1]['timestamp'] + 1
+                for event in events:
+                    if 'error' in event['message'].lower() or 'exception' in event['message'].lower():
+                        print(event['timestamp'])
+                        print(
+                            datetime.utcfromtimestamp(event['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S') + ' ' +
+                            function_name  + ': ' +
+                            event['message'][:-1]
+                        )
+    # Show results
+    for arn, res in execution_results.items():
+        print(arn, res)
+
+
+def trigger_update(account_id):
+    region = boto3.session.Session().region_name
+    state_machine_arns = [
+       # f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-ecs-chargeback-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds_usage_data-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-transit-gateway-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
+    ]
+    lambda_arns = [
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-compute-optimizer-Lambda-Trigger-Export",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
+        #f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-RDS",
+    ]
+    launch_(state_machine_arns, lambda_arns, wait=True)
 
 
 def cleanup_stacks(cloudformation, account_id, s3, athena):
@@ -210,7 +306,7 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
         clean_bucket(s3=s3, account_id=account_id)
     except Exception as ex:
         logger.warning(f'Exception: {ex}')
-        
+
     for stack_name in [
         'OptimizationManagementDataRoleStack',
         'OptimizationDataRoleStack',
@@ -220,7 +316,7 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
             cloudformation.delete_stack(StackName=stack_name)
             logger.info(f'deleting {stack_name} initiated')
         except cloudformation.exceptions.ClientError as exc:
-            logger.exception(stack_name)
+            logger.error(f'{stack_name} {exc}')
 
     watch_stacks(cloudformation, [
         'OptimizationManagementDataRoleStack',
@@ -237,11 +333,8 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
 
 def prepare_stacks(cloudformation, account_id, s3, bucket):
     root = Path(__file__).parent.parent
-    
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, account_id=account_id)
-    trigger_update()
+    trigger_update(account_id=account_id)
     logger.info('Waiting 1 min')
-    time.sleep(1 * 60)
-    logger.info('and another 1 min')
     time.sleep(1 * 60)
