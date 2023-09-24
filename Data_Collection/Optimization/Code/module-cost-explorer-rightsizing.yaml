@@ -25,8 +25,8 @@ Parameters:
     Default: cost-explorer-rightsizing
   Schedule:
     Type: String
-    Default: "cron(30 12 L * ? *)"
-    Description: Cloud watch event Schedule to trigger the lambda 
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
   GlueRoleARN:
     Type: String
   RolePrefix:
@@ -447,23 +447,17 @@ Resources:
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
-      Description: Weekly Notification Event for lambda data
-      Name: !Sub "${CFDataName}-Weekly-Scheduler"
+      Description: !Sub "Notification Event for ${RolePrefix}${CFDataName} data collection"
+      Name: !Sub "${RolePrefix}${CFDataName}-Scheduler"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       Targets:
-        - Arn:
-            Fn::GetAtt:
-              - LambdaFunction
-              - Arn
-          Id: WeeklyTriggerForEBSUtilization
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: TriggerLambda
   EventPermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName:  
-          Fn::GetAtt:
-              - LambdaFunction
-              - Arn
+      FunctionName: !GetAtt LambdaFunction.Arn
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'

@@ -376,13 +376,11 @@ Resources:
                   - lambda:InvokeFunction
                 Resource:
                   - !Ref AccountCollectorLambdaARN
-                  - !Sub 
-                    - '${Lambda}'
-                    - Lambda: !GetAtt LambdaFunction.Arn
+                  - !GetAtt LambdaFunction.Arn
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
-    Properties: 
+    Properties:
       StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !GetAtt StepFunctionExecutionRole.Arn
@@ -463,7 +461,7 @@ Resources:
           },
           "TimeoutSeconds": 1200
         }
-      DefinitionSubstitutions: 
+      DefinitionSubstitutions:
         CFDataName: !Ref CFDataName
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         LambdaFunction: !GetAtt LambdaFunction.Arn
@@ -491,7 +489,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: 
+                Resource:
                   - !GetAtt StepFunction.Arn
 
   ModuleRefreshScheduleRule:
