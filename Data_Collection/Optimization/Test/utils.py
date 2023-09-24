@@ -206,12 +206,10 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
     # Execute sate machines
     execution_arns = []
     for state_machine_arn in state_machine_arns:
-
         executions = stepfunctions.list_executions(
             stateMachineArn=state_machine_arn,
         )['executions']
         logger.info(f'{state_machine_arn} has : {executions}')
-
 
         executions = stepfunctions.list_executions(
             stateMachineArn=state_machine_arn,

@@ -18,7 +18,7 @@ Parameters:
     Default: compute-optimizer
   Schedule:
     Type: String
-    Description: Cron job to trigger the lambda using cloudwatch event
+    Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
   RolePrefix:
     Type: String
