@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda to collect Org data and store in S3 
+Description: Lambda to collect Org data and store in S3
 Parameters:
   DestinationBucket:
     Type: String
@@ -39,12 +39,12 @@ Parameters:
     Description: Arn of lambda for Analytics
 Outputs:
   LambdaFunctionName:
-    Value: !Ref LambdaOrgData
+    Value: !Ref LambdaFunction
   LambdaFunctionARN:
     Description: Lambda function ARN.
-    Value: !GetAtt LambdaOrgData.Arn
+    Value: !GetAtt LambdaFunction.Arn
 Resources:
-  LambdaOrgData:
+  LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
@@ -72,7 +72,7 @@ Resources:
           MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
 
           logger = logging.getLogger(__name__)
-
+          logger.setLevel(logging.INFO)
 
           def lambda_handler(event, context):
               print(json.dumps(event))
@@ -124,13 +124,13 @@ Resources:
                   logging.warning(exc)
 
           def json_converter(obj):
-              """ Help json encode date""" 
+              """ Help json encode date"""
               if isinstance(obj, datetime.datetime):
                   return obj.strftime("%Y-%d-%m %H:%M:%S")
               return obj
 
           class OrgController():
-              """ AWS Organizations controller """ 
+              """ AWS Organizations controller """
               def __init__(self, client):
                   self.org = client
 
@@ -272,27 +272,8 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
+                Resource:
                   - !Sub "arn:aws:s3:::${DestinationBucket}/*"
-
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: Monthly
-      Name: !Sub '${RolePrefix}Scheduler-For-Organization'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      Targets:
-        - Arn: !GetAtt LambdaOrgData.Arn
-          Id: TriggerForGetAccounts
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaOrgData.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
   AthenaQuery:
       Type: AWS::Athena::NamedQuery
       Properties:
@@ -304,7 +285,25 @@ Resources:
           SELECT *
           FROM ("${CURTable}" cur
           INNER JOIN "${DatabaseName}"."organization_data"
-            ON ("cur"."line_item_usage_account_id" = "${DatabaseName}"."organization_data"."id")) 
+            ON ("cur"."line_item_usage_account_id" = "${DatabaseName}"."organization_data"."id"))
+  CloudWatchTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub "Notification Event for ${RolePrefix}${CFDataName} data collection"
+      Name: !Sub "${RolePrefix}${CFDataName}-Scheduler"
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt LambdaFunction.Arn
+          Id: TriggerLambda
+  EventPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceAccount: !Ref 'AWS::AccountId'
+      SourceArn: !GetAtt CloudWatchTrigger.Arn
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:

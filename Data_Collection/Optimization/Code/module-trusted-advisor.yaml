@@ -9,6 +9,9 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
   MultiAccountRoleName:
     Type: String
     Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
@@ -16,9 +19,22 @@ Parameters:
     Type: String
     Description: The name of what this cf is doing.
     Default: trusted-advisor
-  DestinationBucketARN:
+  GlueRoleARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the lambda for the Accounts Collector function
   CodeBucket:
     Type: String
     Description: S3 Bucket that exists and holds code
@@ -27,27 +43,15 @@ Parameters:
     Type: String
     Description: file name of ZipFile with data code
     Default: Cost/Labs/300_Optimization_Data_Collection/ta.zip
-  RolePrefix:
-    Type: String
-    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
-  GlueRoleARN:
-    Type: String
-  LambdaAnalyticsARN:
-    Type: String
-    Description: Arn of lambda for Analytics
+
 Outputs:
   LambdaRoleARN:
-    Description: Role for Lambda execution of lambda data.
-    Value:
-      Fn::GetAtt:
-        - LambdaRole
-        - Arn
-  GlueCrawler:
-    Value:
-      Fn::Sub: "${CFDataName}Crawler"
-  SQSUrl:
-    Description: TaskQueue URL the account collector lambda
-    Value: !Ref TaskQueue
+    Description: Role for Lambda execution of collection data.
+    Value: !GetAtt LambdaRole.Arn
+  LambdaFunctionARN:
+    Description: ARN for the module's primary Lambda function
+    Value: !GetAtt LambdaFunction.Arn
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -80,19 +84,9 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
-                  - !Ref DestinationBucketARN
+                Resource:
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${Crawler}"
-              - Effect: "Allow"
-                Action:
-                  - "sqs:ReceiveMessage"
-                  - "sqs:DeleteMessage"
-                  - "sqs:GetQueueAttributes"
-                Resource: !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:TrustedAdvisorModule-TaskQueue
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -100,19 +94,117 @@ Resources:
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.8
       Code:
-         S3Bucket: !Ref CodeBucket
-         S3Key: !Ref CodeKey
-      Handler: 'main.lambda_handler'
+        ZipFile: |
+          import os
+          import json
+          from datetime import date, datetime
+          from json import JSONEncoder
+
+          import boto3
+          from botocore.client import Config
+          from botocore.exceptions import ClientError
+          import logging
+
+          PREFIX = os.environ["PREFIX"]
+          BUCKET = os.environ["BUCKET_NAME"]
+          ROLE_NAME = os.environ['ROLENAME']
+          COSTONLY = os.environ.get('COSTONLY', 'no').lower() == 'yes'
+          TMP_FILE = "/tmp/data.json"
+
+          logger = logging.getLogger()
+          if "LOG_LEVEL" in os.environ:
+              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+              if not isinstance(numeric_level, int):
+                  raise ValueError('Invalid log level: %s' % numeric_level)
+              logger.setLevel(level=numeric_level)
+          else:
+              logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              try:
+                  account = json.loads(event["account"])
+                  account_id = account["account_id"]
+                  account_name = account["account_name"]
+                  payer_id = account["payer_id"]
+                  logger.info(f"Collecting data for account: {account_id}")
+                  read_ta(account_id, account_name)
+                  upload_to_s3(account_id, payer_id)
+              except Exception as e:
+                  logging.warning(e)
+
+          def upload_to_s3(account_id, payer_id):
+              if os.path.getsize(TMP_FILE) == 0:
+                  print(f"No data in file for {PREFIX}")
+                  return
+              d = datetime.now()
+              month = d.strftime("%m")
+              year = d.strftime("%Y")
+              _date = d.strftime("%d%m%Y-%H%M%S")
+              key = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
+              try:
+                  boto3.client("s3").upload_file(TMP_FILE, BUCKET, key)
+                  print(f"Data for {account_id} in s3 - {key}")
+              except Exception as e:
+                  print(f"{type(e)}: {e}")
+
+          def assume_role(account_id, service, region, role):
+              assumed = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role}",
+                  RoleSessionName='data_collection'
+              )
+              creds = assumed['Credentials']
+              return boto3.client(service, region_name=region,
+                  aws_access_key_id=creds['AccessKeyId'],
+                  aws_secret_access_key=creds['SecretAccessKey'],
+                  aws_session_token=creds['SessionToken'],
+              )
+
+          def _json_serial(self, obj):
+              if isinstance(obj, (datetime, date)): return obj.isoformat()
+              return JSONEncoder.default(self, obj)
+
+          def read_ta(account_id, account_name):
+              f = open(TMP_FILE, "w")
+              support = assume_role(account_id, "support", "us-east-1", ROLE_NAME)
+              checks = support.describe_trusted_advisor_checks(language="en")["checks"]
+              for check in checks:
+                  #print(json.dumps(check))
+                  if (COSTONLY and check.get("category") != "cost_optimizing"): continue
+                  try:
+                      result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
+                      #print(json.dumps(result))
+                      if result.get("status") == "not_available": continue
+                      dt = result['timestamp']
+                      ts = datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ').strftime('%s')
+                      for resource in result["flaggedResources"]:
+                          output = {}
+                          if "metadata" in resource:
+                              output.update(dict(zip(check["metadata"], resource["metadata"])))
+                              del resource['metadata']
+                          resource["Region"] = resource.pop("region") if "region" in resource else '-'
+                          resource["Status"] = resource.pop("status") if "status" in resource else '-'
+                          output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
+                          output.update(resource)
+                          f.write(json.dumps(output, default=_json_serial) + "\n")
+                  except Exception as e:
+                      print(f'{type(e)}: {e}')
+      Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          ROLENAME: !Ref MultiAccountRoleName
           PREFIX: !Ref CFDataName
-          CRAWLER_NAME: !Ref Crawler
+          ROLENAME: !Ref MultiAccountRoleName
           COSTONLY: "no"
+
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
@@ -122,31 +214,166 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-  EventPermission:
-    Type: AWS::Lambda::Permission
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
     Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: sqs.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt TaskQueue.Arn
-  TaskQueue:
-    Type: AWS::SQS::Queue
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref AccountCollectorLambdaARN
+                  - !GetAtt LambdaFunction.Arn
+
+  StepFunction:
+    Type: AWS::StepFunctions::StateMachine
     Properties:
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      KmsMasterKeyId: "alias/aws/sqs"
-      QueueName: 'TrustedAdvisorModule-TaskQueue'
-  EventSourceMapping:
-    DependsOn:
-      - EventPermission
-    Type: AWS::Lambda::EventSourceMapping
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+      DefinitionString: |-
+        {
+          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
+          "StartAt": "Account Collector Invoke",
+          "States": {
+            "Account Collector Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${AccountCollectorLambdaARN}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Module Map"
+            },
+            "Module Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "Module Invoke",
+                "States": {
+                  "Module Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName": "${LambdaFunction}",
+                      "Payload": {
+                        "account.$": "$.account"
+                      }
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 2,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ItemsPath": "$.accountList",
+              "Next": "Start Crawler"
+            },
+            "Start Crawler": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${Crawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 1200
+        }
+      DefinitionSubstitutions: 
+        CFDataName: !Ref CFDataName
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        LambdaFunction: !GetAtt LambdaFunction.Arn
+        Crawler: !Sub '${RolePrefix}${CFDataName}-Crawler'
+
+  ScheduleExecutionRole:
+    Type: AWS::IAM::Role
     Properties:
-      EventSourceArn: !GetAtt TaskQueue.Arn
-      FunctionName: !GetAtt LambdaFunction.Arn
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !GetAtt StepFunction.Arn
+
+  ModuleRefreshScheduleRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: !Sub "Scheduler-For-${CFDataName}"
+      Name: !Sub '${CFDataName}-ModuleRefreshRule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      Targets:
+        - Id: !Sub '${CFDataName}-ModuleRefresh'
+          Arn: !GetAtt StepFunction.Arn
+          RoleArn: !GetAtt ScheduleExecutionRole.Arn
+
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
+

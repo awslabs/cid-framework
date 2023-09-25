@@ -9,19 +9,31 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
   MultiAccountRoleName:
     Type: String
     Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
-  LambdaAnalyticsARN:
-    Type: String
-    Description: Arn of lambda for Analytics
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
     Default: inventory
-  DestinationBucketARN:
+  GlueRoleARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the lambda for the Accounts Collector function
   CodeBucket:
       Type: String
       Description: S3 Bucket that exists and holds code
@@ -30,20 +42,15 @@ Parameters:
     Type: String
     Description: file name of ZipFile with data code
     Default: Cost/Labs/300_Optimization_Data_Collection/fof.zip
-  GlueRoleARN:
-    Type: String
-  RolePrefix:
-    Type: String
-    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+
 Outputs:
   LambdaRoleARN:
-    Description: Role for Lambda execution of lambda data.
+    Description: Role for Lambda execution of collection data.
     Value: !GetAtt LambdaRole.Arn
-  GlueCrawler:
-    Value: !Sub "${CFDataName}Crawler" #FIXME get reference 
-  SQSUrl:
-    Description: TaskQueue URL the account collector lambda
-    Value: !Ref TaskQueue
+  LambdaFunctionARN:
+    Description: ARN for the module's primary Lambda function
+    Value: !GetAtt LambdaFunction.Arn
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -76,33 +83,170 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
+                Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "glue:StartCrawler"
-                Resource: "*"
               - Effect: "Allow"
                 Action:
                   - "lambda:InvokeFunction"
                 Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:pricing-Lambda-Function"
               - Effect: "Allow"
                 Action:
-                  - "sqs:ReceiveMessage"
-                  - "sqs:DeleteMessage"
-                  - "sqs:GetQueueAttributes"
-                Resource: arn:aws:sqs:*:*:InventoryCollectorModul-TaskQueue
+                  - "ec2:DescribeRegions"
+                Resource: "*"  ## only * can be used as a Resource for this action
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
-      Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
-      Runtime: python3.8
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda Function to retrieve ${CFDataName}"
+      Runtime: python3.11
+      Architectures: [arm64]
       Code:
-         S3Bucket: !Ref CodeBucket
-         S3Key: !Ref CodeKey
-      Handler: 'main.lambda_handler'
+        ZipFile: |
+          """ Scan linked accounts and store instances info to s3 bucket
+          Supported types: ebs, snapshots, ami, rds instances
+          """
+          import os
+          import json
+          import logging
+          from functools import partial, lru_cache
+          from datetime import datetime, date
+
+          import boto3
+          from botocore.client import Config
+
+          TMP_FILE = "/tmp/data.json"
+          PREFIX = os.environ['PREFIX']
+          BUCKET = os.environ["BUCKET_NAME"]
+          ROLENAME = os.environ['ROLENAME']
+
+
+          logger = logging.getLogger()
+          if "LOG_LEVEL" in os.environ:
+              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+              if not isinstance(numeric_level, int):
+                  raise ValueError('Invalid log level: %s' % numeric_level)
+              logger.setLevel(level=numeric_level)
+          else:
+              logger.setLevel(logging.INFO)
+
+          def to_json(obj):
+              """json helper for date time data"""
+              return json.dumps(
+                  obj,
+                  default=lambda x:
+                      x.isoformat() if isinstance(x, (date, datetime)) else None
+              )
+
+          @lru_cache(maxsize=10000)
+          def assume_session(account_id):
+              """assume role in account"""
+              credentials = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}" ,
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              return boto3.session.Session(
+                  aws_access_key_id=credentials['AccessKeyId'],
+                  aws_secret_access_key=credentials['SecretAccessKey'],
+                  aws_session_token=credentials['SessionToken']
+              )
+
+          @lru_cache(maxsize=10000)
+          def enabled_regions(session):
+              """list enabled regions"""
+              return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
+
+          def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
+              """ paginated scan """
+              session = assume_session(account_id)
+              regions = set(session.get_available_regions(service)) & enabled_regions(session)
+              obj_name = obj_name or function_name.split('_')[-1].capitalize()
+              for region in regions:
+                  logger.info(f"Collecting {service}.{obj_name} in {region}")
+                  client = session.client(service, region_name=region)
+                  try:
+                      paginator = client.get_paginator(function_name)
+                      for page in paginator.paginate(**(params or {})):
+                          for obj in page[obj_name]:
+                              obj['region'] = region
+                              obj['accountid'] = account_id
+                              yield obj
+                  except Exception as exc:  #pylint: disable=broad-exception-caught
+                      logger.info(f'scan {function_name}/{account_id}:', exc)
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ this lambda collects ami, snapshots and volumes from linked accounts
+              and must be called from the corresponding Step Function to orchestrate
+              """
+              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+
+              sub_modules = {
+                  # 'rds_instances': [
+                  #     partial(
+                  #         paginated_scan,
+                  #         service='rds',
+                  #         function_name='describe_db_instances',
+                  #         obj_name='DBInstances'
+                  #     )
+                  # ],
+                  'ebs': partial(
+                          paginated_scan,
+                          service='ec2',
+                          function_name='describe_volumes'
+                  ),
+                  'ami': partial(
+                          paginated_scan,
+                          service='ec2',
+                          function_name='describe_images',
+                          params={'Owners': ['self']}
+                  ),
+                  'snapshot': partial(
+                          paginated_scan,
+                          service='ec2',
+                          function_name='describe_snapshots',
+                          params={'OwnerIds': ['self']}
+                  )
+              }
+
+              account = json.loads(event["account"])
+              account_id = account["account_id"]
+              payer_id = account["payer_id"]
+              for name, (func) in sub_modules.items():
+                  counter = 0
+                  logger.info(f"\nCollecting {name} in account {account_id}")
+                  try:
+                      with open(TMP_FILE, "w", encoding='utf-8') as file_:
+                          for counter, obj in enumerate(func(account_id=account_id), start=1):
+                              #logger.info(obj) # for debug
+                              file_.write(to_json(obj) + "\n")
+                      logger.info(f"Collected {counter} {name} instances")
+                      upload_to_s3(name, account_id, payer_id)
+                  except Exception as exc:   #pylint: disable=broad-exception-caught
+                      logger.info(f"{name}: {type(exc)} - {exc}" )
+
+          def upload_to_s3(name, account_id, payer_id):
+              """upload"""
+              if os.path.getsize(TMP_FILE) == 0:
+                  logger.info(f"No data in file for {name}")
+                  return
+              key =  datetime.now().strftime(
+                  f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
+                  f"/year=%Y/month=%m/{account_id}-%d%m%Y-%H%M%S.json"
+              )
+              s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
+              try:
+                  s3client.upload_file(TMP_FILE, BUCKET, key)
+                  logger.info(f"Data {account_id} in s3 - {BUCKET}/{key}")
+              except Exception as exc:  #pylint: disable=broad-exception-caught
+                  logger.info(exc)
+
+      Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
       Role: !GetAtt LambdaRole.Arn
@@ -111,62 +255,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           ROLENAME: !Ref MultiAccountRoleName
           PREFIX: !Ref CFDataName
-          AMICrawler: !Ref AMICrawler
-          SnapshotCrawler: !Ref SnapshotCrawler
-          EBSCrawler: !Ref EBSCrawler
-  AMICrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-AMI'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-  SnapshotCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-Snapshot'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-  EBSCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-EBS'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: sqs.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt TaskQueue.Arn
-  TaskQueue: 
-    Type: AWS::SQS::Queue
-    Properties: 
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      KmsMasterKeyId: "alias/aws/sqs"
-      QueueName: 'InventoryCollectorModul-TaskQueue'
-  EventSourceMapping:
-    DependsOn:
-      - EventPermission
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      EventSourceArn: !GetAtt TaskQueue.Arn
-      FunctionName: !GetAtt LambdaFunction.Arn
+
   AthenaSnaphotAMI:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -565,6 +654,238 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
+
+  AMICrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-AMI'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  SnapshotCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-Snapshot'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  EBSCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-EBS'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                Resource: 
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler-AMI'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler-Snapshot'
+                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler-EBS'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref AccountCollectorLambdaARN
+                  - !GetAtt LambdaFunction.Arn
+
+  StepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties: 
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+      DefinitionString: |-
+        {
+          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
+          "StartAt": "Account Collector Invoke",
+          "States": {
+            "Account Collector Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${AccountCollectorLambdaARN}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Module Map"
+            },
+            "Module Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "Module Invoke",
+                "States": {
+                  "Module Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName": "${LambdaFunction}",
+                      "Payload": {
+                        "account.$": "$.account"
+                      }
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 2,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ItemsPath": "$.accountList",
+              "Next": "Start Crawler"
+            },
+            "Start Crawler": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "StartAt": "Start AMI Crawler",
+                  "States": {
+                    "Start AMI Crawler": {
+                      "Type": "Task",
+                      "Parameters": {
+                        "Name": "${AMICrawler}"
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Start Snapshot Crawler",
+                  "States": {
+                    "Start Snapshot Crawler": {
+                      "Type": "Task",
+                      "End": true,
+                      "Parameters": {
+                        "Name": "${SnapshotCrawler}"
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler"
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Start EBS Crawler",
+                  "States": {
+                    "Start EBS Crawler": {
+                      "Type": "Task",
+                      "End": true,
+                      "Parameters": {
+                        "Name": "${EBSCrawler}"
+                      },
+                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler"
+                    }
+                  }
+                }
+              ],
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 1200
+        }
+      DefinitionSubstitutions:
+        CFDataName: !Ref CFDataName
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        LambdaFunction: !GetAtt LambdaFunction.Arn
+        AMICrawler: !Sub '${RolePrefix}${CFDataName}-Crawler-AMI'
+        SnapshotCrawler: !Sub '${RolePrefix}${CFDataName}-Crawler-Snapshot'
+        EBSCrawler: !Sub '${RolePrefix}${CFDataName}-Crawler-EBS'
+
+  ScheduleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !GetAtt StepFunction.Arn
+
+  ModuleRefreshScheduleRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: !Sub "Scheduler-For-${CFDataName}"
+      Name: !Sub '${CFDataName}-ModuleRefreshRule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      Targets:
+        - Id: !Sub '${CFDataName}-ModuleRefresh'
+          Arn: !GetAtt StepFunction.Arn
+          RoleArn: !GetAtt ScheduleExecutionRole.Arn
+
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:

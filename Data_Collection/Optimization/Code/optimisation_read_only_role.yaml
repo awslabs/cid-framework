@@ -193,6 +193,7 @@ Resources:
               - "ecs:ListServices"
               - "ecs:DescribeServices"
               - "ecs:ListClusters"
+              - "ec2:DescribeRegions"
             Resource: "*"
       Roles:
         - Ref: LambdaRole

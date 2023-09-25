@@ -18,7 +18,7 @@ Parameters:
     Default: compute-optimizer
   Schedule:
     Type: String
-    Description: Cron job to trigger the lambda using cloudwatch event
+    Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
   RolePrefix:
     Type: String
@@ -358,7 +358,10 @@ Resources:
                                   )
                                   result_messages.append(f"{region} {name} export queued. JobId: {res['jobId']}")
                               except Exception as exc:
-                                  error_messages.append(f"ERROR: {region} {name} - {exc}")
+                                  if 'LimitExceededException' in str(exc):
+                                      result_messages.append(f"{region} {name} export is already in progress.")
+                                  else:
+                                      error_messages.append(f"ERROR: {region} {name} - {exc}")
                       if result_messages:
                           print("Success:\n"+"\n".join(result_messages))
                       if error_messages:

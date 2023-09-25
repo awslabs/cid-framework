@@ -19,30 +19,35 @@ Parameters:
     Type: String
     Description: The name of what this cf is doing.
     Default: budgets
-  GlueRoleArn:
+  GlueRoleARN:
     Type: String
-    Default: "cron(30 12 1 * ? *)"
-    Description: Cloud watch event Schedule to trigger the lambda 
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the lambda for the Accounts Collector function
+
 Outputs:
   AthenaSavedQuery:
     Description: This saved query will provide you a summary of your lambda data
     Value:
       Ref: AthenaQuery
   LambdaRoleARN:
-    Description: Role for Lambda execution of lambda data.
-    Value:
-      Fn::GetAtt:
-        - LambdaRole
-        - Arn
-  SQSUrl:
-    Description: TaskQueue URL the account collector lambda
-    Value: !Ref TaskQueue
+    Description: Role for Lambda execution of collection data.
+    Value: !GetAtt LambdaRole.Arn
+  LambdaFunctionARN:
+    Description: ARN for the module's primary Lambda function
+    Value: !GetAtt LambdaFunction.Arn
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -77,23 +82,9 @@ Resources:
                   - "s3:PutObject"
                   - "s3:ListBucket"
                   - "s3:GetBucketLocation"
-                Resource: 
+                Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${Crawler}"
-              - Effect: "Allow"
-                Action:
-                  - "cloudwatch:GetMetricStatistics"
-                Resource: "*"  ## only * can be used as a Resource for this action
-              - Effect: "Allow"
-                Action:
-                  - "sqs:ReceiveMessage"
-                  - "sqs:DeleteMessage"
-                  - "sqs:GetQueueAttributes"
-                Resource: !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:BudgetsModule-TaskQueue
               - Effect: "Allow"
                 Action:
                   - "budgets:ViewBudget"
@@ -108,134 +99,110 @@ Resources:
       Code:
         ZipFile: |
           #Author Stephanie Gooch 2021
-          import boto3
           import os
           import json
+          import logging
           import datetime
           from json import JSONEncoder
-          import logging
-          from botocore.client import Config
-          from botocore.exceptions import ClientError
 
-          bucket = os.environ["BUCKET_NAME"]
-          prefix = os.environ["PREFIX"]
-          crawler = os.environ["CRAWLER_NAME"]
-          role_name = os.environ['ROLENAME']
+          import boto3
+
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
+          ROLE_NAME = os.environ['ROLENAME']
+          TMP_FILE = "/tmp/data.json"
+
+          logger = logging.getLogger()
+          if "LOG_LEVEL" in os.environ:
+              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+              if not isinstance(numeric_level, int):
+                  raise ValueError('Invalid log level: %s' % numeric_level)
+              logger.setLevel(level=numeric_level)
+          else:
+              logger.setLevel(logging.INFO)
 
           # subclass JSONEncoder
           class DateTimeEncoder(JSONEncoder):
-            # Override the default method
-            def default(self, obj):
-                if isinstance(obj, (datetime.date, datetime.datetime)):
-                    return obj.isoformat()
+              # Override the default method
+              def default(self, obj):
+                  if isinstance(obj, (datetime.date, datetime.datetime)):
+                      return obj.isoformat()
 
           def assume_role(account_id, service):
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-              sts_client = boto3.client('sts')
-              
-              try:
-                assumedRoleObject = sts_client.assume_role(
-                    RoleArn=role_arn,
-                    RoleSessionName="data_collection"
-                )
-                
-                credentials = assumedRoleObject['Credentials']
-                client = boto3.client(
-                    service,
-                    aws_access_key_id=credentials['AccessKeyId'],
-                    aws_secret_access_key=credentials['SecretAccessKey'],
-                    aws_session_token=credentials['SessionToken']
-                )
-                return client
-              
-              except ClientError as e:
-                logging.warning(f"Unexpected error Account {account_id}: {e}")
-                return None
+              cred = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              return boto3.client(
+                  service,
+                  aws_access_key_id=cred['AccessKeyId'],
+                  aws_secret_access_key=cred['SecretAccessKey'],
+                  aws_session_token=cred['SessionToken']
+              )
 
           def lambda_handler(event, context):
+              print(json.dumps(event))
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
-                  if 'Records' not in event: 
-                      raise Exception("Please do not trigger this Lambda manually. Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda  and Trigger from there.")
-                  for record in event['Records']:
-                      body = json.loads(record["body"])
-                      account_id = body["account_id"]
-                      account_name = body["account_name"]
-                      payer_id = body["payer_id"]
-                      print(account_id)
-                      budgets_client = assume_role(account_id, "budgets")
-                      paginator = budgets_client.get_paginator("describe_budgets") #Paginator for a large list of accounts
-                      response_iterator = paginator.paginate(AccountId=account_id)
-                      with open("/tmp/data.json", "w") as f:
-                          for budgets in response_iterator:
-                              for budget in budgets['Budgets']:
-                                  print(budget)
-                                  budget.update({'Account_ID': account_id, 'Account_Name': account_name})
-                                  if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
-                                      budget.update({'CostFilters': {'Filter': ['None']}})
-                                  dataJSONData = json.dumps(budget, cls=DateTimeEncoder)
-                                  f.write(dataJSONData)
-                                  f.write("\n")
-                      s3_upload(account_id, payer_id)
-                      start_crawler()
-              except Exception as e:
-                  logging.warning(e)
+                  account = json.loads(event["account"])
+                  account_id = account["account_id"]
+                  account_name = account["account_name"]
+                  payer_id = account["payer_id"]
+                  logger.info(f"Collecting data for account: {account_id}")
+                  budgets_client = assume_role(account_id, "budgets")
+                  paginator = budgets_client.get_paginator("describe_budgets") #Paginator for a large list of accounts
+                  response_iterator = paginator.paginate(AccountId=account_id)
+                  count = 0
+                  with open(TMP_FILE, "w") as f:
+                      for budgets in response_iterator:
+                          if not 'Budgets' in budgets: continue
+                          for budget in budgets['Budgets']:
+                              count += 1
+                              budget['collection_time'] = collection_time
+                              logger.debug(budget)
+                              budget.update({'Account_ID': account_id, 'Account_Name': account_name})
+                              if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
+                                  budget.update({'CostFilters': {'Filter': ['None']}})
+                              dataJSONData = json.dumps(budget, cls=DateTimeEncoder)
+                              f.write(dataJSONData)
+                              f.write("\n")
+                  logger.info(f"Budgets collected: {count}")
+                  s3_upload(account_id, payer_id)
+              except Exception as exc:
+                  logger.warning(f"Error: {type(e)} {exc}")
 
           def s3_upload(account_id, payer_id):
-              if os.path.getsize("/tmp/data.json") == 0:
-                  print(f"No data in file for {prefix}")
+              if os.path.getsize(TMP_FILE) == 0:
+                  logger.info(f"No data in file for {PREFIX}")
                   return
-              d = datetime.datetime.now()
-              month = d.strftime("%m")
-              year = d.strftime("%Y")
-              dt_string = d.strftime("%d%m%Y-%H%M%S")
-              today = datetime.date.today()
-              year = today.year
-              month = today.month
+              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/budgets-{account_id}.json")
               try:
-                  s3 = boto3.client('s3', config=Config(s3={'addressing_style': 'path'}))
-                  s3.upload_file(f'/tmp/data.json', bucket, f"{prefix}/{prefix}-data/payer_id={payer_id}/year={year}/month={month}/budgets-{account_id}.json")
-                  print(f"Budget data in s3 {bucket}")
-              except Exception as e:
-                  logging.warning("%s" % e)
-
-          def start_crawler():
-              glue_client = boto3.client("glue")
-              try:
-                  glue_client.start_crawler(Name=crawler)
-                  print(f"{crawler} has been started")
-              except Exception as e:
-                  logging.warning("%s" % e)
-
+                  res = boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
+                  logger.info(f'res={res}')
+                  logger.info(f"Budget data for {account_id} stored at s3://{BUCKET}/{key}")
+              except Exception as exc:
+                  logger.warning(exc)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
-      Role:
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          BUCKET_NAME:
-            !Ref DestinationBucket
-          ACCOUNT_ID: AWS::AccountId
-          CRAWLER_NAME: !Ref Crawler
+          BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleArn
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
   AthenaQuery:
     Type: AWS::Athena::NamedQuery
     Properties:
-      Database: optimization_data
-      Description: Provides a summary view of the budgets
-      Name: budgets_view
+      Database: !Ref DatabaseName
+      Description: !Sub "Provides a summary view of the ${CFDataName}"
+      Name: !Sub "${CFDataName}_view"
       QueryString:
         CREATE OR REPLACE VIEW budgets_view AS
         SELECT
@@ -253,29 +220,173 @@ Resources:
         FROM
           optimization_data.budgets_data
         WHERE (budgettype = 'COST')  AND costfilters.filter[1] = 'None'
-  EventPermission:
-    Type: AWS::Lambda::Permission
+
+  Crawler:
+    Type: AWS::Glue::Crawler
     Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: sqs.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt TaskQueue.Arn
-  TaskQueue:
-    Type: AWS::SQS::Queue
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
     Properties:
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      KmsMasterKeyId: "alias/aws/sqs"
-      QueueName: 'BudgetsModule-TaskQueue'
-  EventSourceMapping:
-    DependsOn:
-      - EventPermission
-    Type: AWS::Lambda::EventSourceMapping
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref AccountCollectorLambdaARN
+                  - !GetAtt LambdaFunction.Arn
+
+  StepFunction:
+    Type: AWS::StepFunctions::StateMachine
     Properties:
-      EventSourceArn: !GetAtt TaskQueue.Arn
-      FunctionName: !GetAtt LambdaFunction.Arn
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+      DefinitionString: |-
+        {
+          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
+          "StartAt": "Account Collector Invoke",
+          "States": {
+            "Account Collector Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${AccountCollectorLambdaARN}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Module Map"
+            },
+            "Module Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "Module Invoke",
+                "States": {
+                  "Module Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName": "${LambdaFunction}",
+                      "Payload": {
+                        "account.$": "$.account"
+                      }
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 2,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ItemsPath": "$.accountList",
+              "Next": "Start Crawler"
+            },
+            "Start Crawler": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${Crawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 1200
+        }
+      DefinitionSubstitutions:
+        CFDataName: !Ref CFDataName
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        LambdaFunction: !GetAtt LambdaFunction.Arn
+        Crawler: !Sub '${RolePrefix}${CFDataName}-Crawler'
+
+  ScheduleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !GetAtt StepFunction.Arn
+
+  ModuleRefreshScheduleRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: !Sub "Scheduler-For-${CFDataName}"
+      Name: !Sub '${CFDataName}-ModuleRefreshRule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      Targets:
+        - Id: !Sub '${CFDataName}-ModuleRefresh'
+          Arn: !GetAtt StepFunction.Arn
+          RoleArn: !GetAtt ScheduleExecutionRole.Arn
+
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:

@@ -19,33 +19,35 @@ Parameters:
     Type: String
     Description: The name of what this cf is doing.
     Default: rds_usage_data
-  DAYS:
-    Type: Number
-    Description: Number of days going back that you want to get data for
-    Default: 1
-  GlueRoleArn:
+  GlueRoleARN:
     Type: String
     Description: ARN of the IAM role deployed to use for glue.
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the lambda for the Accounts Collector function
+  DAYS:
+    Type: Number
+    Description: Number of days going back that you want to get data for
+    Default: 1
+
 Outputs:
-  AthenaSavedQuery:
-    Description: This saved query will provide you a summary of your lambda data
-    Value:
-      Ref: AthenaQuery
   LambdaRoleARN:
-    Description: Role for Lambda execution of lambda data.
-    Value:
-      Fn::GetAtt:
-        - LambdaRole
-        - Arn
-  SQSUrl:
-    Description: TaskQueue URL the account collector lambda
-    Value: !Ref TaskQueue
+    Description: Role for Lambda execution of collection data.
+    Value: !GetAtt LambdaRole.Arn
+  LambdaFunctionARN:
+    Description: ARN for the module's primary Lambda function
+    Value: !GetAtt LambdaFunction.Arn
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -80,23 +82,13 @@ Resources:
                   - "s3:PutObject"
                   - "s3:ListBucket"
                   - "s3:GetBucketLocation"
-                Resource: 
+                Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
                 Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${Crawler}"
-              - Effect: "Allow"
-                Action:
                   - "cloudwatch:GetMetricStatistics"
                 Resource: "*"  ## only * can be used as a Resource for this action
-              - Effect: "Allow"
-                Action:
-                  - "sqs:ReceiveMessage"
-                  - "sqs:DeleteMessage"
-                  - "sqs:GetQueueAttributes"
-                Resource: !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:RDSUtilizationModule-TaskQueue
               - Effect: "Allow"
                 Action:
                   - "rds:DescribeDBProxyTargetGroups"
@@ -111,7 +103,6 @@ Resources:
                   - "rds:DescribeDBClusterBacktracks"
                   - "rds:DescribeReservedDBInstancesOfferings"
                   - "rds:DescribeDBProxyTargets"
-                  - "rds:DownloadDBLogFilePortion"
                   - "rds:DescribeDBInstances"
                   - "rds:DescribeSourceRegions"
                   - "rds:DescribeEngineDefaultClusterParameters"
@@ -153,247 +144,229 @@ Resources:
       Runtime: python3.8
       Code:
         ZipFile: |
-          import boto3
-          from botocore.exceptions import ClientError
-          import os
-          from boto3.s3.transfer import S3Transfer
-          from datetime import datetime, timedelta, date
-          import json
-          from re import sub
-          import logging
+            import boto3
+            from botocore.exceptions import ClientError
+            import os
+            from boto3.s3.transfer import S3Transfer
+            from datetime import datetime, timedelta, date
+            import json
+            from re import sub
+            import logging
 
-          #Environment Variables
-          bucket = os.environ['S3_BUCKET']
-          prefix = os.environ['PREFIX']
-          crawler = os.environ["CRAWLER_NAME"]
+            #Environment Variables
+            bucket = os.environ['BUCKET_NAME']
+            prefix = os.environ['PREFIX']
 
-          functions = {'rds':
-                          {'regional' : 1,
-                          'api' : 'rds',
-                          'functions' : [
-                              {'name' : 'get_rds_stats',
-                              'output_path' : 'rds-usage-data',
-                              'output_file_name' : 'rds_stats.json' }
-                          ]
-                          }
-                      }
+            logger = logging.getLogger()
+            if "LOG_LEVEL" in os.environ:
+                numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
+                if not isinstance(numeric_level, int):
+                    raise ValueError('Invalid log level: %s' % numeric_level)
+                logger.setLevel(level=numeric_level)
+            else:
+                logger.setLevel(logging.INFO)
 
-          METRICS_FOR_VOLUMES = [
-              'FreeableMemory',
-              'CPUUtilization',
-              'NetworkReceiveThroughput',
-              'NetworkTransmitThroughput',
-              'ReadIOPS',
-              'WriteIOPS',
-              'FreeStorageSpace'
-              ]
+            functions = {'rds':
+                            {'regional' : 1,
+                            'api' : 'rds',
+                            'functions' : [
+                                {'name' : 'get_rds_stats',
+                                'output_path' : 'rds-usage-data',
+                                'output_file_name' : 'rds_stats.json' }
+                            ]
+                            }
+                        }
 
-          TAGS_TO_RETRIEVE = [
-              'Environment',
-              'Schedule',
-              'Application',
-              'Project',
-          ]
+            METRICS_FOR_VOLUMES = [
+                'FreeableMemory',
+                'CPUUtilization',
+                'NetworkReceiveThroughput',
+                'NetworkTransmitThroughput',
+                'ReadIOPS',
+                'WriteIOPS',
+                'FreeStorageSpace'
+                ]
 
-
-          now = datetime.utcnow()
-          DAYS = int(os.environ['DAYS'])
-          past = now - timedelta(days=DAYS)
-          today = datetime.today().strftime('%Y-%m-%d')
-          tod = date.today()
-          year = tod.year
-          month = tod.strftime('%m')
-          future = now# + timedelta(minutes=10)
-          period = 3600
-
-          def format_rds(rds):
-
-              if len(rds["Attachments"]) == 0:
-                  instance_id = "unattached"
-                  device = ""
-              else:
-                  instance_id = rds["Attachments"][0]["InstanceId"] if rds["Attachments"][0]["InstanceId"] else ""
-                  device = rds["Attachments"][0]["Device"] if rds["Attachments"][0]["Device"] else ""
-
-              output = {
-                  "az": rds["AvailabilityZone"],
-                  "instanceId": instance_id,
-                  "rdsId": rds["VolumeId"],
-                  "device": device,
-                  "rdsType": rds["VolumeType"],
-                  "sizeGB": rds["Size"],
-                  "IOPS": rds["Iops"],
-                  "rdsCreateTime": rds["CreateTime"]
-              }
-
-              tags = {}
-              filtered_tags = {}
-              if "Tags" in rds:
-                  for tag in rds["Tags"]:
-                      tags[sub('[^a-zA-Z0-9-_ *.]', '', tag["Key"].replace(",", " "))] = sub('[^a-zA-Z0-9-_ *.]', '', tag["Value"].replace(",", " "))
-              for tags_required in TAGS_TO_RETRIEVE:
-                  filtered_tags[tags_required] = tags[tags_required] if tags_required in tags else ''
-
-              output["tags"] = filtered_tags
-
-              return output
+            TAGS_TO_RETRIEVE = [
+                'Environment',
+                'Schedule',
+                'Application',
+                'Project',
+            ]
 
 
-          def get_rds_ids(rds_client):
-              rds_inventory = []
-              rds_information = rds_client.describe_rds(Filters=[{'Name': 'status','Values':['in-use','available']}])
-              if not rds_information or not rds_information['Volumes']:
-                  rds_information = []
-              else:
-                  rds_information = rds_information['Volumes']
+            now = datetime.utcnow()
+            DAYS = int(os.environ['DAYS'])
+            past = now - timedelta(days=DAYS)
+            today = datetime.today().strftime('%Y-%m-%d')
+            tod = date.today()
+            year = tod.year
+            month = tod.strftime('%m')
+            future = now# + timedelta(minutes=10)
+            period = 3600
 
-              for rds in rds_information:
-                  rds_inventory.append(format_rds(rds))
+            def format_rds(rds):
 
-              return rds_inventory
+                if len(rds["Attachments"]) == 0:
+                    instance_id = "unattached"
+                    device = ""
+                else:
+                    instance_id = rds["Attachments"][0]["InstanceId"] if rds["Attachments"][0]["InstanceId"] else ""
+                    device = rds["Attachments"][0]["Device"] if rds["Attachments"][0]["Device"] else ""
 
-  
-          def store_data_to_s3(data, region, service, path, resource_type, resource_value, filename, accountID, payer_id):
-              local_file = f"/tmp/{region}-{filename}"
-              with open(local_file, 'w') as f:
-                  json.dump(data, f, default=str)
-                  f.write('\n')
-              if os.path.getsize(local_file) == 0:
-                  print(f"No data in file for {path}")
-                  return
-              key = f"{prefix}/{path}/payer_id={payer_id}/accountid={accountID}/region={region}/{resource_type}={resource_value}/year={year}/month={month}/{today}-{filename}"
-              s3client = boto3.client('s3')
-              print("Uploading file %s to %s/%s" %(local_file, bucket, key))
-              S3Transfer(s3client).upload_file(local_file, bucket, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              print('file upload successful')
+                output = {
+                    "az": rds["AvailabilityZone"],
+                    "instanceId": instance_id,
+                    "rdsId": rds["VolumeId"],
+                    "device": device,
+                    "rdsType": rds["VolumeType"],
+                    "sizeGB": rds["Size"],
+                    "IOPS": rds["Iops"],
+                    "rdsCreateTime": rds["CreateTime"]
+                }
 
-          def start_crawler():
-              glue_client = boto3.client('glue')
-              try:
-                  glue_client.start_crawler(Name=crawler)
-                  print("crawler started")
-              except Exception as e:
-                  # Send some context about this error to Lambda Logs
-                  print("%s" % e)
+                tags = {}
+                filtered_tags = {}
+                if "Tags" in rds:
+                    for tag in rds["Tags"]:
+                        tags[sub('[^a-zA-Z0-9-_ *.]', '', tag["Key"].replace(",", " "))] = sub('[^a-zA-Z0-9-_ *.]', '', tag["Value"].replace(",", " "))
+                for tags_required in TAGS_TO_RETRIEVE:
+                    filtered_tags[tags_required] = tags[tags_required] if tags_required in tags else ''
 
-          def get_rds_stats(cwclient, client, s3client, region, service, path, filename, accountID, payer_id):
-              datapoints = {}
-              data = {}
-              rds_inventory = client.describe_db_instances()
+                output["tags"] = filtered_tags
 
-              for rds in rds_inventory['DBInstances']:
-                  
-                  for metric in METRICS_FOR_VOLUMES:
-                      results = cwclient.get_metric_statistics(StartTime=past, EndTime=future, MetricName=metric,
-                      Namespace='AWS/RDS',Statistics=['Average','Maximum','Minimum'],Period=period,
-                      Dimensions=[{"Name": "DBInstanceIdentifier", "Value": rds["DBInstanceIdentifier"]}])
-                      datapoints.update({metric:results['Datapoints']})
-                  rds["Datapoints"] = datapoints
-                  store_data_to_s3(rds, region, service, path, 'rds_id', rds['DBInstanceIdentifier'], filename, accountID, payer_id)
-          
-          def assume_role(account_id, service, region):
-            role_name = os.environ['ROLENAME']
-            role_arn = f"arn:aws:iam::{account_id}:role/{role_name}" 
-            sts_client = boto3.client('sts')
-            
-            try:
-                assumedRoleObject = sts_client.assume_role(
-                    RoleArn=role_arn,
-                    RoleSessionName="data_collection"
+                return output
+
+
+            def get_rds_ids(rds_client):
+                rds_inventory = []
+                rds_information = rds_client.describe_rds(Filters=[{'Name': 'status','Values':['in-use','available']}])
+                if not rds_information or not rds_information['Volumes']:
+                    rds_information = []
+                else:
+                    rds_information = rds_information['Volumes']
+
+                for rds in rds_information:
+                    rds_inventory.append(format_rds(rds))
+
+                return rds_inventory
+
+
+            def store_data_to_s3(data, region, service, path, resource_type, resource_value, filename, accountID, payer_id):
+                local_file = f"/tmp/{region}-{filename}"
+                with open(local_file, 'w') as f:
+                    json.dump(data, f, default=str)
+                    f.write('\n')
+                if os.path.getsize(local_file) == 0:
+                    logger.info(f"No data in file for {path}")
+                    return
+                key = f"{prefix}/{path}/payer_id={payer_id}/accountid={accountID}/region={region}/{resource_type}={resource_value}/year={year}/month={month}/{today}-{filename}"
+                s3client = boto3.client('s3')
+                logger.info("Uploading file %s to %s/%s" %(local_file, bucket, key))
+                S3Transfer(s3client).upload_file(local_file, bucket, key, extra_args={'ACL': 'bucket-owner-full-control'})
+                logger.info('file upload successful')
+
+            def get_rds_stats(cwclient, client, s3client, region, service, path, filename, accountID, payer_id):
+                datapoints = {}
+                data = {}
+                rds_inventory = client.describe_db_instances()
+
+                for rds in rds_inventory['DBInstances']:
+                    
+                    for metric in METRICS_FOR_VOLUMES:
+                        results = cwclient.get_metric_statistics(StartTime=past, EndTime=future, MetricName=metric,
+                        Namespace='AWS/RDS',Statistics=['Average','Maximum','Minimum'],Period=period,
+                        Dimensions=[{"Name": "DBInstanceIdentifier", "Value": rds["DBInstanceIdentifier"]}])
+                        datapoints.update({metric:results['Datapoints']})
+                    rds["Datapoints"] = datapoints
+                    store_data_to_s3(rds, region, service, path, 'rds_id', rds['DBInstanceIdentifier'], filename, accountID, payer_id)
+
+            def assume_role(account_id, service, region):
+                role_name = os.environ['ROLENAME']
+                role_arn = f"arn:aws:iam::{account_id}:role/{role_name}" 
+                sts_client = boto3.client('sts')
+
+                try:
+                    assumedRoleObject = sts_client.assume_role(
+                        RoleArn=role_arn,
+                        RoleSessionName="data_collection"
+                        )
+                    
+                    credentials = assumedRoleObject['Credentials']
+                    client = boto3.client(
+                        service,
+                        aws_access_key_id=credentials['AccessKeyId'],
+                        aws_secret_access_key=credentials['SecretAccessKey'],
+                        aws_session_token=credentials['SessionToken'],
+                        region_name = region
                     )
-                
-                credentials = assumedRoleObject['Credentials']
-                client = boto3.client(
-                    service,
-                    aws_access_key_id=credentials['AccessKeyId'],
-                    aws_secret_access_key=credentials['SecretAccessKey'],
-                    aws_session_token=credentials['SessionToken'],
-                    region_name = region
-                )
-                return client
+                    return client
 
-            except ClientError as e:
-                logging.warning(f"Unexpected error Account {account_id}: {e}")
-                return None
+                except ClientError as e:
+                    logger.warning(f"Unexpected error Account {account_id}: {e}")
+                    return None
 
 
-          def lambda_handler(event, context):
-              try:
-                  if 'Records' not in event: 
-                      raise Exception("Please do not trigger this Lambda manually. Find an Accounts-Collector-Function-OptimizationDataCollectionStack Lambda  and Trigger from there.")
-                  
-                  for record in event['Records']:
-                      body = json.loads(record["body"])
-                      account_id = body["account_id"]
-                      payer_id = body["payer_id"]
-                      print(account_id)
-                      s3client = boto3.client('s3')
-                      regions = get_supported_regions('ec2')
-                      
-                      
-                      for service in functions.keys():
-                          if functions[service]['regional']:
-                              for region in regions:
-                                  client = assume_role(account_id, functions[service]['api'], region['RegionName'])
-                                  for f in functions[service]['functions']:
-                                      cw_client = assume_role(account_id, 'cloudwatch', region['RegionName'])
-                                      try:
-                                          data = globals()[f['name']](cw_client, client, s3client, region['RegionName'], service, f['output_path'], f['output_file_name'], account_id, payer_id)
-                                      except Exception as e:
-                                          # Send some context about this error to Lambda Logs
-                                          logging.warning(e)
-                          else:
-                              client=boto3.client(service)
-                              for f in functions[service]['functions']:
-                                  cw_client = boto3.client('cloudwatch', region_name = 'us-east-1')
-                                  try:
-                                      data = globals()[f['name']](cw_client, client, s3client, 'us-east-1', service, f['output_path'], f['output_file_name'], account_id)
-                                  except Exception as e:
-                                      # Send some context about this error to Lambda Logs
-                                      logging.warning(e)
-                      start_crawler()
-                      return "Successful"
-              except Exception as e:
-                  # Send some context about this error to Lambda Logs
-                  logging.warning(e)
+            def lambda_handler(event, context):
+                collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if 'account' not in event:
+                    raise ValueError(
+                        "Please do not trigger this Lambda manually."
+                        "Find the corresponding state machine in Step Functions and Trigger from there."
+                    )
+
+                try:
+                    account = json.loads(event["account"])
+                    account_id = account["account_id"]
+                    account_name = account["account_name"]
+                    payer_id = account["payer_id"]
+                    logger.info(f"Collecting data for account: {account_id}")
+                    s3client = boto3.client('s3')
+                    regions = get_supported_regions('ec2')
+                    
+                    for service in functions.keys():
+                        if functions[service]['regional']:
+                            for region in regions:
+                                client = assume_role(account_id, functions[service]['api'], region['RegionName'])
+                                for f in functions[service]['functions']:
+                                    cw_client = assume_role(account_id, 'cloudwatch', region['RegionName'])
+                                    try:
+                                        data = globals()[f['name']](cw_client, client, s3client, region['RegionName'], service, f['output_path'], f['output_file_name'], account_id, payer_id)
+                                    except Exception as e:
+                                        # Send some context about this error to Lambda Logs
+                                        logger.warning(e)
+                        else:
+                            client=boto3.client(service)
+                            for f in functions[service]['functions']:
+                                cw_client = boto3.client('cloudwatch', region_name = 'us-east-1')
+                                try:
+                                    data = globals()[f['name']](cw_client, client, s3client, 'us-east-1', service, f['output_path'], f['output_file_name'], account_id)
+                                except Exception as e:
+                                    # Send some context about this error to Lambda Logs
+                                    logger.warning(e)
+                    return "Successful"
+                except Exception as e:
+                    # Send some context about this error to Lambda Logs
+                    logger.warning(e)
 
 
-
-          def get_supported_regions(service):
-              response = []
-              if service == 'ec2':
-                  ec2_c = boto3.client('ec2')
-                  response = ec2_c.describe_regions()
-              return response['Regions'] if response['Regions'] else []
-
-
+            def get_supported_regions(service):
+                response = []
+                if service == 'ec2':
+                    ec2_c = boto3.client('ec2')
+                    response = ec2_c.describe_regions()
+                return response['Regions'] if response['Regions'] else []
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
-      Role:
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          S3_BUCKET:
-            !Ref DestinationBucket
-          ACCOUNT_ID: AWS::AccountId
-          DAYS:
-            !Ref DAYS
-          CRAWLER_NAME: !Ref Crawler
+          BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleArn
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/rds-usage-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+          DAYS: !Ref DAYS
+
   AthenaQuery:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -428,34 +401,7 @@ Resources:
         SELECT dbinstanceidentifier, 'FreeStorageSpace' as Metric, FreeStorageSpace.timestamp, FreeStorageSpace.maximum
         FROM ${DatabaseName}.${CFDataName}
         cross join unnest(datapoints.FreeStorageSpace) as t(FreeStorageSpace)
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: sqs.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt TaskQueue.Arn
-  TaskQueue: 
-    Type: AWS::SQS::Queue
-    Properties: 
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      KmsMasterKeyId: "alias/aws/sqs"
-      QueueName: 'RDSUtilizationModule-TaskQueue'
-  EventSourceMapping:
-    DependsOn:
-      - EventPermission
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      EventSourceArn: !GetAtt TaskQueue.Arn
-      FunctionName: !GetAtt LambdaFunction.Arn
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
+
   GravitonMappingTable:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -735,3 +681,176 @@ Resources:
               )
             )
           )
+
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/rds-usage-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+  
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Ref AccountCollectorLambdaARN
+                  - !GetAtt LambdaFunction.Arn
+
+  StepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties: 
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+      DefinitionString: |-
+        {
+          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
+          "StartAt": "Account Collector Invoke",
+          "States": {
+            "Account Collector Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${AccountCollectorLambdaARN}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Module Map"
+            },
+            "Module Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "Module Invoke",
+                "States": {
+                  "Module Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName": "${LambdaFunction}",
+                      "Payload": {
+                        "account.$": "$.account"
+                      }
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 2,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ItemsPath": "$.accountList",
+              "Next": "Start Crawler"
+            },
+            "Start Crawler": {
+              "Type": "Task",
+              "Parameters": {
+                "Name": "${Crawler}"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 1200
+        }
+      DefinitionSubstitutions: 
+        CFDataName: !Ref CFDataName
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        LambdaFunction: !GetAtt LambdaFunction.Arn
+        Crawler: !Sub '${RolePrefix}${CFDataName}-Crawler'
+
+  ScheduleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - events.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: 
+                  - !GetAtt StepFunction.Arn
+
+  ModuleRefreshScheduleRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Description: !Sub "Scheduler-For-${CFDataName}"
+      Name: !Sub '${CFDataName}-ModuleRefreshRule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      Targets:
+        - Id: !Sub '${CFDataName}-ModuleRefresh'
+          Arn: !GetAtt StepFunction.Arn
+          RoleArn: !GetAtt ScheduleExecutionRole.Arn
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName

@@ -181,28 +181,14 @@ Parameters:
 Outputs:
   S3Bucket:
     Description: Name of S3 Bucket which will store the AWS Cost Explorer Rightsizing recommendations
-    Value:
-      Ref: S3Bucket
+    Value: !Ref S3Bucket
   S3BucketARN:
     Description: ARN of S3 Bucket which will store the AWS Cost Explorer Rightsizing recommendations
-    Value:
-      Fn::GetAtt:
-        - S3Bucket
-        - Arn
+    Value: !GetAtt S3Bucket.Arn
   RoleARN:
     Description: "The arn of the IAM role that deployed in the management account which can retrieve AWS Organization data"
     Value: !Sub "arn:aws:iam::${ManagementAccountID}:role/${ManagementAccountRole}"
-  TaskQueuesUrl:
-    Description: "SQS topics created for deployed modules"
-    Value:
-      Fn::Join:
-        - ','
-        - - !If [DeployTAModule, !Sub "${TrustedAdvisorModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-          - !If [DeployInventoryCollectorModule, !Sub "${InventoryCollectorModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-          - !If [DeployEcsChargebackModule, !Sub "${EcsChargebackModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-          - !If [DeployRDSUtilizationModule, !Sub "${RDSUtilizationModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-          - !If [DeployBudgetsModule, !Sub "${BudgetsModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-          - !If [DeployTransitGatewayModule, !Sub "${TransitGatewayModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
+
 Conditions:
   DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
   DeployRightsizingModule: !Equals [ !Ref IncludeRightsizingModule, "yes"]
@@ -258,6 +244,7 @@ Resources:
               aws:SourceArn: !Sub "arn:aws:s3:::${DestinationBucket}${AWS::AccountId}"
             StringEquals:
                 'aws:SourceAccount': !Sub '${AWS::AccountId}'
+  
   S3Bucket:
     DependsOn:
       - CrawlerSQSPolicy
@@ -280,12 +267,13 @@ Resources:
       NotificationConfiguration:
         QueueConfigurations:
           - Event: s3:ObjectCreated:*
-            Queue: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:S3CrawlerQue"
+            Queue: !GetAtt S3CrawlerQue.Arn #!Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:ODC-S3CrawlerQue" #ADDED ODC
             Filter:
               S3Key:
                 Rules:
                 - Name: prefix
                   Value: Compute_Optimizer/
+  
   GlueRole:
     Type: AWS::IAM::Role
     Properties:
@@ -315,6 +303,7 @@ Resources:
                           - ''
                           - - !GetAtt S3Bucket.Arn
                             - '*'
+  
   LambdaAnalyticsRole: #Execution role for the custom resource
     Type: AWS::IAM::Role
     Properties:
@@ -331,6 +320,7 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  
   LambdaAnalytics:
     Type: AWS::Lambda::Function
     Properties:
@@ -389,6 +379,7 @@ Resources:
                   print(f"Status code: {response}")
               except Exception as exc:
                   print("Failed sending PUT to CFN: " + str(exc))
+  
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTAModule
@@ -402,10 +393,13 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+          
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
     Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-cost-explorer-rightsizing.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -414,11 +408,12 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-cost-explorer-rightsizing.yaml"
+  
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
     Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-cost-explorer-cost-anomaly.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -427,7 +422,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-cost-explorer-cost-anomaly.yaml"
+  
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
@@ -441,6 +436,8 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+  
   PricingModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployPricingModule
@@ -452,6 +449,7 @@ Resources:
         RolePrefix: !Ref RolePrefix
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+  
   ComputeOptimizerModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployComputeOptimizerModule
@@ -470,6 +468,7 @@ Resources:
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+  
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEcsChargebackModule
@@ -478,11 +477,13 @@ Resources:
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        GlueRoleArn: !GetAtt GlueRole.Arn
+        GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+  
   RDSUtilizationModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRDSUtilizationModule
@@ -491,10 +492,12 @@ Resources:
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        GlueRoleArn: !GetAtt GlueRole.Arn
+        GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+  
   OrgDataModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployOrgDataModule
@@ -508,30 +511,35 @@ Resources:
         ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+  
   BudgetsModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
     Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-budgets.yaml"
       Parameters:
           DestinationBucket: !Ref S3Bucket
           DestinationBucketARN: !GetAtt S3Bucket.Arn
-          GlueRoleArn: !GetAtt GlueRole.Arn
+          GlueRoleARN: !GetAtt GlueRole.Arn
           MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
           RolePrefix: !Ref RolePrefix
           LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-budgets.yaml"
+          AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+  
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTransitGatewayModule
     Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-transit-gateway.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        GlueRoleArn: !GetAtt GlueRole.Arn
+        GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-transit-gateway.yaml"
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+  
   AccountCollector:
     Type: AWS::CloudFormation::Stack
     Condition: DeployAccountCollector
@@ -541,13 +549,3 @@ Resources:
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix
-        Schedule: !Ref Schedule
-        TaskQueuesUrl:
-          Fn::Join:
-            - ','
-            - - !If [DeployTAModule, !Sub "${TrustedAdvisorModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-              - !If [DeployInventoryCollectorModule, !Sub "${InventoryCollectorModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-              - !If [DeployEcsChargebackModule, !Sub "${EcsChargebackModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-              - !If [DeployRDSUtilizationModule, !Sub "${RDSUtilizationModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-              - !If [DeployBudgetsModule, !Sub "${BudgetsModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
-              - !If [DeployTransitGatewayModule, !Sub "${TransitGatewayModule.Outputs.SQSUrl}", Ref: AWS::NoValue]
