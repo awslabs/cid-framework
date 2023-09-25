@@ -88,28 +88,8 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
-                  - !Ref DestinationBucketARN
+                Resource:
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                - "ecs:ListAttributes"
-                - "ecs:DescribeTaskSets"
-                - "ecs:DescribeTaskDefinition"
-                - "ecs:DescribeClusters"
-                - "ecs:ListServices"
-                - "ecs:ListAccountSettings"
-                - "ecs:DescribeCapacityProviders"
-                - "ecs:ListTagsForResource"
-                - "ecs:ListTasks"
-                - "ecs:ListTaskDefinitionFamilies"
-                - "ecs:DescribeServices"
-                - "ecs:ListContainerInstances"
-                - "ecs:DescribeContainerInstances"
-                - "ecs:DescribeTasks"
-                - "ecs:ListTaskDefinitions"
-                - "ecs:ListClusters"
-                Resource: !Sub "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:*"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -119,17 +99,19 @@ Resources:
       Runtime: python3.8
       Code:
         ZipFile: |
-          import boto3
-          from boto3.session import Session
+          import os
+          import json
           import logging
           from datetime import date, datetime
-          import json
-          import os
+
+          import boto3
           from botocore.exceptions import ClientError
+          from boto3.session import Session
 
           bucket = os.environ["BUCKET_NAME"]
           prefix = os.environ["PREFIX"]
           role_name = os.environ['ROLENAME']
+          local_file = "/tmp/data.json"
 
           logger = logging.getLogger()
           if "LOG_LEVEL" in os.environ:
@@ -154,49 +136,50 @@ Resources:
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account: {account_id}")
-                  list_region = list_regions()
-                  local_file = "/tmp/data.json"
-                  f = open(local_file, "w")
                   session = assume_session(account_id)
-                  for region in list_region:
-                      logger.info(f"Region is: {region}")
-                      client = session.client("ecs", region_name = region)
-                      paginator = client.get_paginator("list_clusters")
-                      response_iterator = paginator.paginate()
+                  ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
+                  ecs_regions = boto3.Session().get_available_regions('ecs')
+                  regions = list(set(ec2_regions).intersection(ecs_regions))
 
-                      try:
-                          for response in response_iterator:
-                              for cluster in response["clusterArns"]:
-                                  listservices = client.list_services(
-                                      cluster=cluster.split("/")[1],
-                                      maxResults=100
-                                  )
-                                  for i in listservices["serviceArns"]:
-                                      # print (i)
-                                      services = client.describe_services(
+                  with open(local_file, "w") as f:
+                      for region in regions:
+                          services_counter = 0
+                          try:
+                              client = session.client("ecs", region_name=region)
+                              for page in client.get_paginator("list_clusters").paginate():
+                                  for cluster in page["clusterArns"]:
+                                      services_list = client.list_services(
                                           cluster=cluster.split("/")[1],
-                                          services=[i.split("/")[2],],
-                                          include=["TAGS"],
+                                          maxResults=100
                                       )
-                                      for service in services["services"]:
-                                          data = {
-                                              "cluster": cluster.split("/")[1],
-                                              "services": service.get("serviceName"),
-                                              "servicesARN": i, #.split("/")[2]
-                                              "tags": service.get("tags"),
-                                              "account_id":account_id
-                                          }
-                                          jsondata = json.dumps(data)
-                                          print(jsondata)
-                                          f.write(jsondata + "\n")
-                      except Exception as e:
-                          print(region, account_id, type(e), e)
-                      print("respose gathered")
-                      f.close()
+                                      for i in services_list["serviceArns"]:
+                                          services = client.describe_services(
+                                              cluster=cluster.split("/")[1],
+                                              services=[i.split("/")[2],],
+                                              include=["TAGS"],
+                                          )
+                                          for service in services["services"]:
+                                              data = {
+                                                  "cluster": cluster.split("/")[1],
+                                                  "services": service.get("serviceName"),
+                                                  "servicesARN": i, #.split("/")[2]
+                                                  "tags": service.get("tags"),
+                                                  "account_id":account_id
+                                              }
+                                              jsondata = json.dumps(data)
+                                              services_counter += 1
+                                              #print(jsondata)
+                                              f.write(jsondata + "\n")
+                              print(f"{services_counter} services gathered in {region}")
+                          except Exception as exc:
+                              if 'The security token included in the request is invalid' in str(exc):
+                                  logging.info(f'region {region} is not activated in {account_id}')
+                              else:
+                                  print(region, account_id, type(exc), exc)
 
-                      if os.path.getsize(local_file) == 0:
-                          print(f"No data in file for {prefix}")
-                          continue
+                  if os.path.getsize(local_file) == 0:
+                      print(f"No data in file for {prefix}")
+                  else:
                       today = date.today()
                       year = today.year
                       month = today.month
@@ -205,36 +188,23 @@ Resources:
                       client = boto3.client("s3")
                       client.upload_file(local_file, bucket, key)
                       print(f"Data in s3 - {key}")
-              except Exception as e:
-                  logging.warning(e)
-                  
+              except Exception as exc:
+                  logging.warning(exc)
+
           def assume_session(account_id):
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}" #OrganizationAccountAccessRole
-              sts_client = boto3.client('sts')
-              
-              try:
-                  #region = sts_client.meta.region_name
-                  assumedRoleObject = sts_client.assume_role(
-                      RoleArn=role_arn,
-                      RoleSessionName="data_collection"
-                  )
-                  
-                  credentials = assumedRoleObject['Credentials']
-                  session = Session(
-                      aws_access_key_id=credentials['AccessKeyId'],
-                      aws_secret_access_key=credentials['SecretAccessKey'],
-                      aws_session_token=credentials['SessionToken']
-                  )
-                  return session
+              cred = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              return boto3.Session(
+                  aws_access_key_id=cred['AccessKeyId'],
+                  aws_secret_access_key=cred['SecretAccessKey'],
+                  aws_session_token=cred['SessionToken']
+              )
 
-              except ClientError as e:
-                  logging.warning(f"Unexpected error Account {account_id}: {e}")
-                  return None
+          def list_ecs_regions():
+              return boto3.Session().get_available_regions('ecs')
 
-          def list_regions():
-              s = Session()
-              ecs_regions = s.get_available_regions('ecs')
-              return ecs_regions    
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -406,13 +376,11 @@ Resources:
                   - lambda:InvokeFunction
                 Resource:
                   - !Ref AccountCollectorLambdaARN
-                  - !Sub 
-                    - '${Lambda}'
-                    - Lambda: !GetAtt LambdaFunction.Arn
+                  - !GetAtt LambdaFunction.Arn
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
-    Properties: 
+    Properties:
       StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !GetAtt StepFunctionExecutionRole.Arn
@@ -493,7 +461,7 @@ Resources:
           },
           "TimeoutSeconds": 1200
         }
-      DefinitionSubstitutions: 
+      DefinitionSubstitutions:
         CFDataName: !Ref CFDataName
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         LambdaFunction: !GetAtt LambdaFunction.Arn
@@ -521,7 +489,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: 
+                Resource:
                   - !GetAtt StepFunction.Arn
 
   ModuleRefreshScheduleRule:

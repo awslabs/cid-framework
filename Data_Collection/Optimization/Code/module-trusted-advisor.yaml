@@ -24,7 +24,7 @@ Parameters:
     Description: Arn for the Glue Crawler role
   Schedule:
     Type: String
-    Description: Cloud watch event Schedule to trigger the lambda 
+    Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
   RolePrefix:
     Type: String
@@ -84,14 +84,8 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
-                  - !Ref DestinationBucketARN
+                Resource:
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "support:DescribeTrustedAdvisorChecks"
-                  - "support:DescribeTrustedAdvisorCheckResult"                
-                Resource: "*" ## only * can be used as a Resource for this action
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -99,7 +93,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.8
-      Code: # S3Bucket: !Ref CodeBucket S3Key: !Ref CodeKey
+      Code:
         ZipFile: |
           import os
           import json
@@ -111,10 +105,11 @@ Resources:
           from botocore.exceptions import ClientError
           import logging
 
-          prefix = os.environ["PREFIX"]
-          bucket = os.environ["BUCKET_NAME"]
-          role_name = os.environ['ROLENAME']
-          costonly = os.environ.get('COSTONLY', 'no').lower() == 'yes'
+          PREFIX = os.environ["PREFIX"]
+          BUCKET = os.environ["BUCKET_NAME"]
+          ROLE_NAME = os.environ['ROLENAME']
+          COSTONLY = os.environ.get('COSTONLY', 'no').lower() == 'yes'
+          TMP_FILE = "/tmp/data.json"
 
           logger = logging.getLogger()
           if "LOG_LEVEL" in os.environ:
@@ -132,37 +127,37 @@ Resources:
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              
               try:
                   account = json.loads(event["account"])
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account: {account_id}")
-                  f_name = "/tmp/data.json"
-                  read_ta(account_id, account_name, f_name)
-                  upload_to_s3(prefix, account_id, payer_id, f_name)
+                  read_ta(account_id, account_name)
+                  upload_to_s3(account_id, payer_id)
               except Exception as e:
                   logging.warning(e)
 
-          def upload_to_s3(prefix, account_id, payer_id, f_name):
-              if os.path.getsize(f_name) == 0:
-                  print(f"No data in file for {prefix}")
+          def upload_to_s3(account_id, payer_id):
+              if os.path.getsize(TMP_FILE) == 0:
+                  print(f"No data in file for {PREFIX}")
                   return
               d = datetime.now()
               month = d.strftime("%m")
               year = d.strftime("%Y")
               _date = d.strftime("%d%m%Y-%H%M%S")
-              path = f"{prefix}/{prefix}-data/payer_id={payer_id}/year={year}/month={month}/{prefix}-{account_id}-{_date}.json"
+              key = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
               try:
-                  s3 = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
-                  s3.upload_file(f_name, bucket, path )
-                  print(f"Data for {account_id} in s3 - {path}")
+                  boto3.client("s3").upload_file(TMP_FILE, BUCKET, key)
+                  print(f"Data for {account_id} in s3 - {key}")
               except Exception as e:
                   print(f"{type(e)}: {e}")
 
           def assume_role(account_id, service, region, role):
-              assumed = boto3.client('sts').assume_role(RoleArn=f"arn:aws:iam::{account_id}:role/{role}", RoleSessionName='data_collection')
+              assumed = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role}",
+                  RoleSessionName='data_collection'
+              )
               creds = assumed['Credentials']
               return boto3.client(service, region_name=region,
                   aws_access_key_id=creds['AccessKeyId'],
@@ -174,13 +169,13 @@ Resources:
               if isinstance(obj, (datetime, date)): return obj.isoformat()
               return JSONEncoder.default(self, obj)
 
-          def read_ta(account_id, account_name, f_name):
-              f = open(f_name, "w")
-              support = assume_role(account_id, "support", "us-east-1", role_name)
+          def read_ta(account_id, account_name):
+              f = open(TMP_FILE, "w")
+              support = assume_role(account_id, "support", "us-east-1", ROLE_NAME)
               checks = support.describe_trusted_advisor_checks(language="en")["checks"]
               for check in checks:
                   #print(json.dumps(check))
-                  if (costonly and check.get("category") != "cost_optimizing"): continue
+                  if (COSTONLY and check.get("category") != "cost_optimizing"): continue
                   try:
                       result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
                       #print(json.dumps(result))
@@ -248,9 +243,7 @@ Resources:
                   - lambda:InvokeFunction
                 Resource:
                   - !Ref AccountCollectorLambdaARN
-                  - !Sub 
-                    - '${Lambda}'
-                    - Lambda: !GetAtt LambdaFunction.Arn
+                  - !GetAtt LambdaFunction.Arn
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -363,7 +356,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: 
+                Resource:
                   - !GetAtt StepFunction.Arn
 
   ModuleRefreshScheduleRule:
@@ -383,3 +376,4 @@ Resources:
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
+

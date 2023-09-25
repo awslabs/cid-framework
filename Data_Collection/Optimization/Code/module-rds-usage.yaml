@@ -24,7 +24,7 @@ Parameters:
     Description: ARN of the IAM role deployed to use for glue.
   Schedule:
     Type: String
-    Description: Cloud watch event Schedule to trigger the lambda 
+    Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
   RolePrefix:
     Type: String
@@ -82,7 +82,7 @@ Resources:
                   - "s3:PutObject"
                   - "s3:ListBucket"
                   - "s3:GetBucketLocation"
-                Resource: 
+                Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
@@ -721,9 +721,7 @@ Resources:
                   - lambda:InvokeFunction
                 Resource:
                   - !Ref AccountCollectorLambdaARN
-                  - !Sub 
-                    - '${Lambda}'
-                    - Lambda: !GetAtt LambdaFunction.Arn
+                  - !GetAtt LambdaFunction.Arn
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine

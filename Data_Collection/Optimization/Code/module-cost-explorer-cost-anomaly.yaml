@@ -25,8 +25,8 @@ Parameters:
     Default: cost-explorer-cost-anomaly
   Schedule:
     Type: String
-    Default: "cron(15 0 * * ? *)"
-    Description: CloudWatch event Schedule to trigger the lambda
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
   GlueRoleARN:
     Type: String
   RolePrefix:
@@ -245,8 +245,8 @@ Resources:
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
-      Description: Notification Event for lambda trigger
-      Name: !Sub "${CFDataName}-Scheduler"
+      Description: !Sub "Notification Event for ${RolePrefix}${CFDataName} data collection"
+      Name: !Sub "${RolePrefix}${CFDataName}-Scheduler"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       Targets:
@@ -258,7 +258,7 @@ Resources:
       FunctionName: !GetAtt LambdaFunction.Arn
       Action: lambda:InvokeFunction
       Principal: events.amazonaws.com
-      SourceAccount: !Ref "AWS::AccountId"
+      SourceAccount: !Ref 'AWS::AccountId'
       SourceArn: !GetAtt CloudWatchTrigger.Arn
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor

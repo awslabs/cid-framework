@@ -24,8 +24,8 @@ Parameters:
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   Schedule:
     Type: String
-    Default: "cron(30 12 L * ? *)"
-    Description: Cloud watch event Schedule to trigger the lambda 
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -64,7 +64,7 @@ Resources:
                   - "s3:GetObject"
                   - "s3:ListBucket"
                   - "s3:GetBucketLocation"
-                Resource: 
+                Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
                   - !Sub "arn:aws:s3:::${CodeBucket}"
@@ -96,41 +96,37 @@ Resources:
           import os
           import logging
           CODE_BUCKET = os.environ['CODE_BUCKET']
-
+          BUCKET_NAME = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["DEST_PREFIX"]
           def lambda_handler(event, context):
 
-              s3=boto3.resource('s3')
+              s3 = boto3.resource('s3')
               http=urllib3.PoolManager()
 
               url = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/index.csv'
-              s3Bucket =  os.environ["BUCKET_NAME"]
-              key = f'{os.environ["DEST_PREFIX"]}/{os.environ["DEST_PREFIX"]}-ec2/ec2_prices.csv'
+              key = f'{PREFIX}/{PREFIX}-ec2/ec2_prices.csv'
 
-              urllib.request.urlopen(url)   #Provide URL
-              s3.meta.client.upload_fileobj(http.request('GET', url, preload_content=False), s3Bucket, key)
+              urllib.request.urlopen(url)
+              s3.meta.client.upload_fileobj(http.request('GET', url, preload_content=False), BUCKET_NAME, key)
 
-              region_data(s3Bucket, s3)
+              s3copy(
+                  CODE_BUCKET, 'Cost/Labs/300_Optimization_Data_Collection/Region/regions.csv',
+                  BUCKET_NAME, 'pricing/pricing-region/regions.csv',
+              )
 
               return {
                   'statusCode': 200,
                   'body': json.dumps('AmazonEC2 Pricing Complete')
               }
-          def region_data(s3Bucket, s3):
 
-            #Create a Source Dictionary That Specifies Bucket Name and Key Name of the Object to Be Copied
-            copy_source = {
-                'Bucket': CODE_BUCKET,
-                'Key': 'Cost/Labs/300_Optimization_Data_Collection/Region/regions.csv'
-            }
-            
-            bucket = s3.Bucket(s3Bucket)
-            
-            bucket.copy(copy_source, 'pricing/pricing-region/regions.csv')
-            
-            # Printing the Information That the File Is Copied.
-            print('Single File is copied')
-
-
+          def s3copy(src_bucket, src_key, dest_bucket, dest_key):
+              boto3.resource('s3').Bucket(dest_bucket).copy({
+                    'Bucket': src_bucket,
+                    'Key': src_key
+                  },
+                  dest_key
+              )
+              print(f'added file {dest_key}')
       Handler: 'index.lambda_handler'
       MemorySize: 2880
       Timeout: 300
@@ -330,51 +326,39 @@ Resources:
           import urllib.request
           import os
           import logging
+          CODE_BUCKET = os.environ['CODE_BUCKET']
+          BUCKET_NAME = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["DEST_PREFIX"]
 
           def lambda_handler(event, context):
 
-              s3=boto3.resource('s3')
-              http=urllib3.PoolManager()
-
+              http = urllib3.PoolManager()
               url = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/index.csv'
-              s3Bucket =  os.environ["BUCKET_NAME"]
-              key = f'{os.environ["DEST_PREFIX"]}/{os.environ["DEST_PREFIX"]}-rds/rds_prices.csv'
+              #FIXME: Skip first lines
+              urllib.request.urlopen(url)
+              boto3.resource('s3').meta.client.upload_fileobj(
+                  http.request('GET', url, preload_content=False),
+                  BUCKET_NAME,
+                  f'{PREFIX}/{PREFIX}-rds/rds_prices.csv'
+              )
 
-              urllib.request.urlopen(url)   #Provide URL
-              s3.meta.client.upload_fileobj(http.request('GET', url, preload_content=False), s3Bucket, key)
+              s3copy(
+                  CODE_BUCKET, 'Cost/Labs/300_Optimization_Data_Collection/graviton/rds_graviton_mapping.csv',
+                  BUCKET_NAME, 'pricing/graviton/rds_graviton_mapping.csv',
+              )
+              s3copy(
+                  CODE_BUCKET, 'Cost/Labs/300_Optimization_Data_Collection/Region/regions.csv',
+                  BUCKET_NAME, 'pricing/pricing-region/regions.csv',
+              )
 
-              graviton_data(s3Bucket, s3)
-              region_data(s3Bucket, s3)
-
-          def graviton_data(s3Bucket, s3):
-
-              #Create a Source Dictionary That Specifies Bucket Name and Key Name of the Object to Be Copied
-              copy_source = {
-                  'Bucket': 'aws-well-architected-labs',
-                  'Key': 'Cost/Labs/300_Optimization_Data_Collection/graviton/rds_graviton_mapping.csv'
-              }
-              
-              bucket = s3.Bucket(s3Bucket)
-              
-              bucket.copy(copy_source, 'pricing/graviton/rds_graviton_mapping.csv')
-              
-              # Printing the Information That the File Is Copied.
-              print('Single File is copied')
-          
-          def region_data(s3Bucket, s3):
-
-              #Create a Source Dictionary That Specifies Bucket Name and Key Name of the Object to Be Copied
-              copy_source = {
-                  'Bucket': 'aws-well-architected-labs',
-                  'Key': 'Cost/Labs/300_Optimization_Data_Collection/Region/regions.csv'
-              }
-              
-              bucket = s3.Bucket(s3Bucket)
-              
-              bucket.copy(copy_source, 'pricing/pricing-region/regions.csv')
-              
-              # Printing the Information That the File Is Copied.
-              print('Single File is copied')
+          def s3copy(src_bucket, src_key, dest_bucket, dest_key):
+              boto3.resource('s3').Bucket(dest_bucket).copy({
+                    'Bucket': src_bucket,
+                    'Key': src_key
+                  },
+                  dest_key
+              )
+              print(f'added file {dest_key}')
 
       Handler: 'index.lambda_handler'
       MemorySize: 2880
@@ -385,8 +369,8 @@ Resources:
           - Arn
       Environment:
         Variables:
-          BUCKET_NAME:
-            !Ref DestinationBucket
+          BUCKET_NAME: !Ref DestinationBucket
+          CODE_BUCKET: !Ref CodeBucket
           ACCOUNT_ID: AWS::AccountId
           DEST_PREFIX: !Ref CFDataName
   AthenaRDSPricingTable:

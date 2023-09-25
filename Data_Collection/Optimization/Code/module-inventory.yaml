@@ -23,7 +23,7 @@ Parameters:
     Type: String
   Schedule:
     Type: String
-    Description: Cloud watch event Schedule to trigger the lambda 
+    Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
   RolePrefix:
     Type: String
@@ -83,7 +83,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
+                Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
@@ -93,7 +93,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "ec2:DescribeRegions"
-                Resource: "*"  ## only * can be used as a Resource for this action                
+                Resource: "*"  ## only * can be used as a Resource for this action
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -101,7 +101,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda Function to retrieve ${CFDataName}"
       Runtime: python3.11
-      Architectures: [arm64]      
+      Architectures: [arm64]
       Code:
         ZipFile: |
           """ Scan linked accounts and store instances info to s3 bucket
@@ -109,12 +109,12 @@ Resources:
           """
           import os
           import json
+          import logging
           from functools import partial, lru_cache
           from datetime import datetime, date
 
           import boto3
           from botocore.client import Config
-          import logging
 
           TMP_FILE = "/tmp/data.json"
           PREFIX = os.environ['PREFIX']
@@ -719,9 +719,7 @@ Resources:
                   - lambda:InvokeFunction
                 Resource:
                   - !Ref AccountCollectorLambdaARN
-                  - !Sub 
-                    - '${Lambda}'
-                    - Lambda: !GetAtt LambdaFunction.Arn
+                  - !GetAtt LambdaFunction.Arn
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -843,7 +841,7 @@ Resources:
           },
           "TimeoutSeconds": 1200
         }
-      DefinitionSubstitutions: 
+      DefinitionSubstitutions:
         CFDataName: !Ref CFDataName
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         LambdaFunction: !GetAtt LambdaFunction.Arn
@@ -873,7 +871,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: 
+                Resource:
                   - !GetAtt StepFunction.Arn
 
   ModuleRefreshScheduleRule:
