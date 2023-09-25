@@ -152,7 +152,6 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
                     {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
                     {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
                     {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
                     {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
