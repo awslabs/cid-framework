@@ -3,38 +3,68 @@
 # Development process
 
 ## Testing environment
-You can test this lab in a dedicated account that preferably has following assets:
+You can test this lab in a dedicated account that preferably has the following assets:
 * EC2 instances, running more than 14 days (for Compute Optimizer and CE Rightsizing)
-* At least one EBS and one Snapshot
+* At least one EBS and one volume Snapshot
 * At least one custom AMI created from one of the snapshots
 * Activated Enterprise Support (for TA module)
-* An RDS cluster
-* An ECS cluster with one service deployed (wordpress will work fine)
+* An RDS cluster or single instance
+* An ECS cluster with one service deployed ([wordpress](https://aws.amazon.com/blogs/containers/running-wordpress-amazon-ecs-fargate-ecs/) will work fine)
 * A TransitGateway with at least one attachment
 * AWS Organization
-* a bucket
+* An S3 bucket to store the CloudFormation templates that deploy the infrastructure for the optimization data collection components
 
 ## Prerequisites for local environment
+
+### General
+
 * [cfn-lint](https://github.com/aws-cloudformation/cfn-lint#install)
 * python3.8+
-* `pip3 install -U boto3 cfn_tools`
+* `pip3 install -U boto3 cfn_tools pytest`
+* `realpath`
+* Configured AWS credentials
+
+### OS Specifics 
+
+#### MacOS
+
+* `realpath` can be installed via brew. It comes with [coreutils](https://formulae.brew.sh/formula/coreutils)
+  * `brew install coreutils`
 
 ## Testing
 
-1. Check the quality of cfn code
+### AWS access credentials
+
+For the purpose of testing, Python and shell scripts will make use of default AWS credentials setup in your ~/.aws folder.
+
+Make sure you configure credentials for an organizations management account that will have the necessary permission to retrieve information from itself and other member accounts.
+
+`aws configure` can be used to setup the AWS credentials in your local environment.
+
+### Steps
+
+1. In the terminal, navigate to the directory where the cid-framework repository was cloned:
 
 ```bash
-./Data_Collection/Optimization/Tools/lint.sh
+$ cd /path/to/cid-framework/directory>
+cid-framework$
 ```
 
-2. Upload code to a bucket and run integration tests in your Testing environment
+2. Check the quality of cfn code:
 
 ```bash
-export bucket='mybucket'
-./Data_Collection/Optimization/Tools/upload.sh  "$bucket"
-python3 ./Data_Collection/Optimization/Test/test-from-scratch.py
+cid-framework$ ./Data_Collection/Optimization/Tools/lint.sh
 ```
-The test will install stacks from scratch in a single account, and then check the presence of Athena tables and deletes the stack. I also it deletes all artefacts that are not deleted by CFN.
+
+3. Upload the code to a bucket and run integration tests in your testing environment
+
+```bash
+cid-framework$ export BUCKET='mybucket'
+cid-framework$ ./Data_Collection/Optimization/Tools/upload.sh  "$BUCKET"
+cid-framework$ python3 ./Data_Collection/Optimization/Test/test_from_scratch.py
+```
+
+The test will install stacks from scratch in a single account, then it will check the presence of Athena tables. After running tests, it will delete the stacks and all artefacts that are not deleted by CFN.
 
 # Release process
 All yaml and zip files are in the account 87******** - well-architected-content@amazon.com, in the bucket `aws-well-architected-labs`. These are then replicated to the other regional buckets.

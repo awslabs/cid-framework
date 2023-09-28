@@ -9,13 +9,13 @@
     - test that collection works  (tables are not empty)
     - delete all stacks and tables
 
-## Prerequsites in account:
+## Prerequisites in account:
     1. Activate Organizations
     2. Opt-In Compute Optimizer
     3. Activate Business or Enterprise Support (for ta collection only)
     4. Create:
-        RDS instace, Budget, Unattached EBS, ECS cluster with at least 1 Service,
-    FIXME: add CFM for Prerequsites
+        RDS instance, Budget, Unattached EBS, ECS cluster with at least 1 Service,
+    FIXME: add CFM for Prerequisites
 
 ## Install:
     pip3 install cfn-flip boto3 pytest
@@ -23,15 +23,14 @@
 ## Run (expect 15 mins):
 Pytest:
 
-    pytest      
+    pytest
 
 Python:
-    python3 Test/test-from-scratch.py 
+    python3 Test/test-from-scratch.py
 
 
 """
 import logging
-
 
 import pytest
 
@@ -49,6 +48,11 @@ def test_budgets_data(athena):
 def test_cost_explorer_rightsizing_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_explorer_rightsizing_data" LIMIT 10;')
     assert len(data) > 0, 'cost_explorer_rightsizing_data is empty'
+
+
+def test_cost_anomaly_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_anomaly_data" LIMIT 10;')
+    assert len(data) > 0, 'cost_anomaly_data is empty'
 
 
 def test_ecs_chargeback_data(athena):
