@@ -19,17 +19,11 @@ You can test this lab in a dedicated account that preferably has the following a
 ### General
 
 * [cfn-lint](https://github.com/aws-cloudformation/cfn-lint#install)
+* [cfn_nag_scan](https://github.com/stelligent/cfn_nag#installation)
 * python3.8+
 * `pip3 install -U boto3 cfn_tools pytest`
-* `realpath`
 * Configured AWS credentials
 
-### OS Specifics 
-
-#### MacOS
-
-* `realpath` can be installed via brew. It comes with [coreutils](https://formulae.brew.sh/formula/coreutils)
-  * `brew install coreutils`
 
 ## Testing
 
@@ -59,8 +53,8 @@ cid-framework$ ./Data_Collection/Optimization/Tools/lint.sh
 3. Upload the code to a bucket and run integration tests in your testing environment
 
 ```bash
-cid-framework$ export BUCKET='mybucket'
-cid-framework$ ./Data_Collection/Optimization/Tools/upload.sh  "$BUCKET"
+cid-framework$ export bucket='mybucket'
+cid-framework$ ./Data_Collection/Optimization/Tools/upload.sh  "$bucket"
 cid-framework$ python3 ./Data_Collection/Optimization/Test/test_from_scratch.py
 ```
 
