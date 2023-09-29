@@ -24,10 +24,6 @@ You can test this lab in a dedicated account that preferably has the following a
 * `pip3 install -U boto3 cfn_tools pytest`
 * Configured AWS credentials
 
-<<<<<<< HEAD
-
-=======
->>>>>>> b85d606 (wip)
 ## Testing
 
 ### AWS access credentials
