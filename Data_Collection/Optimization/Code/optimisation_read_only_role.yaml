@@ -133,6 +133,11 @@ Resources:
                   - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-transit-gateway"
                   - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-trusted-advisor"
       Path: /
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Role must have an explicit RoleName for traceability"
   TAPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeTAModulePolicy
@@ -145,9 +150,14 @@ Resources:
             Action:
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
-            Resource: "*" ## only * can be used as a Resource for this action
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
   BudgetsReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeBudgetsModulePolicy
@@ -177,9 +187,14 @@ Resources:
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeRegions"
-            Resource: "*" ## only * can be used as a Resource for this action
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
   ECSChargebackPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeECSChargebackModulePolicy
@@ -194,9 +209,14 @@ Resources:
               - "ecs:DescribeServices"
               - "ecs:ListClusters"
               - "ec2:DescribeRegions"
-            Resource: "*"
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
   RDSUtilizationPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeRDSUtilizationModulePolicy
@@ -208,14 +228,19 @@ Resources:
           - Effect: "Allow"
             Action:
               - "rds:DescribeDBInstances"
-            Resource: "*" ## only * can be used as a Resource for this action
+            Resource: "*"  ## Policy is used for scanning of a wide range of resources
           - Effect: "Allow"
             Action:
               - "ec2:DescribeRegions"
               - "cloudwatch:GetMetricStatistics"
-            Resource: "*" ## only * can be used as a Resource for this action
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
   TransitGatewayPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeTransitGatewayModulePolicy
@@ -230,6 +255,11 @@ Resources:
               - "cloudwatch:Describe*"
               - "cloudwatch:Get*"
               - "cloudwatch:List*"
-            Resource: "*" ## only * can be used as a Resource for this action
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
