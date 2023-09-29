@@ -50,8 +50,8 @@ def bucket():
     except s3.exceptions.ClientError as exc:
         print(f'bucket {default_bucket} not found in the account. {exc}')
     raise AssertionError(
-        'You need to run tests. Please set bucket env variable '
-        '`export bucket=existing-bucket` or create the default bucket '
+        'You need a bucket to run the tests. Please set bucket env variable '
+        '`export bucket=existing-bucket` or create a default bucket '
         f'`aws s3api create-bucket --bucket {default_bucket}`'
     )
 
