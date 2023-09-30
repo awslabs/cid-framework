@@ -217,42 +217,11 @@ Conditions:
   ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-well-architected-labs' ]
 
 Resources:
-  S3CrawlerQue:
-    Type: AWS::SQS::Queue
-    Properties:
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      QueueName: S3CrawlerQue
-  CrawlerSQSPolicy:
-    DependsOn:
-      - S3CrawlerQue
-    Type: AWS::SQS::QueuePolicy
-    Properties:
-      Queues:
-        - Ref: S3CrawlerQue
-      PolicyDocument:
-        Id: SQSPolicy
-        Statement:
-        - Sid: SQSEventPolicy
-          Effect: Allow
-          Principal: {"Service": "s3.amazonaws.com"}
-          Action: sqs:SendMessage
-          Resource: !GetAtt S3CrawlerQue.Arn
-          Condition:
-            ArnLike:
-              aws:SourceArn: !Sub "arn:aws:s3:::${DestinationBucket}${AWS::AccountId}"
-            StringEquals:
-                'aws:SourceAccount': !Sub '${AWS::AccountId}'
-  
+
   S3Bucket:
-    DependsOn:
-      - CrawlerSQSPolicy
-      - S3CrawlerQue
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName:
-        !Sub "${DestinationBucket}${AWS::AccountId}"
+      BucketName: !Sub "${DestinationBucket}${AWS::AccountId}"
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
@@ -264,20 +233,17 @@ Resources:
             BlockPublicPolicy : true
             IgnorePublicAcls : true
             RestrictPublicBuckets : true
-      NotificationConfiguration:
-        QueueConfigurations:
-          - Event: s3:ObjectCreated:*
-            Queue: !GetAtt S3CrawlerQue.Arn #!Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:ODC-S3CrawlerQue" #ADDED ODC
-            Filter:
-              S3Key:
-                Rules:
-                - Name: prefix
-                  Value: Compute_Optimizer/
-  
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W51 #S3 bucket should likely have a bucket policy
+            reason: "No bucket policy required by default"
+          - id: W35 #S3 Bucket should have access logging configured
+            reason: "The bucket is used with Athena and logging can be extensive."
   GlueRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-OPTICS-Glue-Crawler"
+      RoleName: !Sub "${RolePrefix}Glue-Crawler"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -287,23 +253,71 @@ Resources:
               Service:
                 - glue.amazonaws.com
         Version: 2012-10-17
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
       Path: /
       Policies:
-        - PolicyName: "Put-S3"
+        - PolicyName: S3Read
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: "Allow"
+              - Effect: Allow
                 Action:
-                  - "s3:PutObject"
-                  - "s3:GetObject"
-                Resource: !Join
-                          - ''
-                          - - !GetAtt S3Bucket.Arn
-                            - '*'
-  
+                  - s3:ListBucket
+                Resource:
+                 - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}${AWS::AccountId}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                 - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}${AWS::AccountId}/*"
+              ## Uncomment if bucket is encrypted by Custom KMS Key
+              #- Effect: Allow
+              #  Action:
+              #    - kms:Decrypt
+              #  Resource:
+              #   - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/key-id"
+        - PolicyName: "Glue"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:CreateTable
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:UpdateTable
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                  - glue:DeleteTableVersion
+                  - glue:CreatePartition
+                  - glue:BatchCreatePartition
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchGetPartition
+                  - glue:UpdatePartition
+                  - glue:DeletePartition
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/optimization_data" # FIXME: database name must be parameter
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/optimization_data/*" # FIXME: database name must be parameter
+        - PolicyName: "CloudWatch"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:*:*:/aws-glue/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaAnalyticsRole: #Execution role for the custom resource
     Type: AWS::IAM::Role
     Properties:
@@ -320,7 +334,6 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-  
   LambdaAnalytics:
     Type: AWS::Lambda::Function
     Properties:
@@ -379,7 +392,16 @@ Resources:
                   print(f"Status code: {response}")
               except Exception as exc:
                   print("Failed sending PUT to CFN: " + str(exc))
-  
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58 # Lambda functions require permission to write CloudWatch Logs
+            reason: "AWSLambdaBasicExecutionRole contains CloudWatch permissions. See:https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSLambdaBasicExecutionRole.html"        
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTAModule
@@ -394,7 +416,7 @@ Resources:
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-          
+
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
@@ -408,7 +430,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
