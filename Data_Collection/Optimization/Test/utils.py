@@ -344,5 +344,5 @@ def prepare_stacks(cloudformation, account_id, s3, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, account_id=account_id)
     trigger_update(account_id=account_id)
-    logger.info('Waiting 1 min')
+    logger.info('Waiting 1 min to let Crawlers run to finish')
     time.sleep(1 * 60)
