@@ -412,7 +412,6 @@ Resources:
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
@@ -455,7 +454,6 @@ Resources:
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
@@ -468,8 +466,8 @@ Resources:
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        RolePrefix: !Ref RolePrefix
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
+        RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
   
   ComputeOptimizerModule:
@@ -501,7 +499,6 @@ Resources:
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"

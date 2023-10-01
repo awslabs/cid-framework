@@ -141,7 +141,7 @@ Resources:
                     account_name = account["account_name"]
                     payer_id = account["payer_id"]
                     logger.info(f"Collecting data for account: {account_id}")
-                    regions = get_supported_regions() #FIXME: use intersection with ec2 regions
+                    regions = get_supported_regions(assume_role('ec2', account_id, boto3.session.Session().region_name))
                     for region in regions:
                         try:
                             cw_client = assume_role('cloudwatch', account_id, region)
@@ -234,8 +234,8 @@ Resources:
                     aws_session_token=cred['SessionToken']
                 )
 
-            def get_supported_regions():
-                return [region['RegionName'] for region in boto3.client('ec2').describe_regions()['Regions']]
+            def get_supported_regions(ec2):
+                return [region['RegionName'] for region in ec2.describe_regions()['Regions']]
 
       Handler: 'index.lambda_handler'
       MemorySize: 2688

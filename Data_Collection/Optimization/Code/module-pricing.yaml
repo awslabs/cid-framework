@@ -54,28 +54,20 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "${CFDataName}-Access"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                  - "s3:GetObject"
-                  - "s3:ListBucket"
-                  - "s3:GetBucketLocation"
                 Resource:
-                  - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-                  - !Sub "arn:aws:s3:::${CodeBucket}"
-                  - !Sub "arn:aws:s3:::${CodeBucket}/*"
               - Effect: "Allow"
                 Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "logs:DescribeLogStreams"
-                Resource: "arn:aws:logs:*:*:*"
+                  - "s3:GetObject"
+                Resource:
+                  - !Sub "arn:aws:s3:::${CodeBucket}/*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
