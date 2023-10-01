@@ -90,6 +90,12 @@ Resources:
                   - "budgets:ViewBudget"
                   - "budgets:Describe*"
                 Resource: !Sub "arn:aws:budgets:${AWS::Region}:${AWS::AccountId}:*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -196,6 +202,13 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   AthenaQuery:
     Type: AWS::Athena::NamedQuery
@@ -260,6 +273,11 @@ Resources:
                 Resource:
                   - !Ref AccountCollectorLambdaARN
                   - !GetAtt LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -374,6 +392,11 @@ Resources:
                   - states:StartExecution
                 Resource:
                   - !GetAtt StepFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   ModuleRefreshScheduleRule:
     Type: 'AWS::Events::Rule'

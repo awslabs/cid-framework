@@ -76,6 +76,12 @@ Resources:
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
                 Resource: "arn:aws:logs:*:*:*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   EC2LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -140,6 +146,14 @@ Resources:
           CODE_BUCKET: !Ref CodeBucket
           ACCOUNT_ID: AWS::AccountId
           DEST_PREFIX: !Ref CFDataName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
@@ -373,6 +387,14 @@ Resources:
           CODE_BUCKET: !Ref CodeBucket
           ACCOUNT_ID: AWS::AccountId
           DEST_PREFIX: !Ref CFDataName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   AthenaRDSPricingTable:
     Type: AWS::Athena::NamedQuery
     Properties:

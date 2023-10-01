@@ -67,31 +67,28 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: "AssumeAccountRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
-        - PolicyName: "LambdaTWGPolicy"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
-                  - !Ref DestinationBucketARN
+                Resource:
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "cloudwatch:GetMetricData"
-                Resource: "*"
-              - Effect: "Allow"
-                Action:
-                  - "ec2:DescribeRegions"
-                Resource: "*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -249,6 +246,13 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   AthenaQueryCUR:
     Type: AWS::Athena::NamedQuery
@@ -307,7 +311,7 @@ Resources:
           AND line_item_usage_account_id = '${AWS::AccountId}'
           AND line_item_product_code = 'AmazonVPC'
           AND (line_item_operation = 'CreateVpnConnection'
-          OR line_item_operation = 'TransitGatewayVPC' 
+          OR line_item_operation = 'TransitGatewayVPC'
           OR line_item_operation = 'TransitGatewayVPN'
           OR line_item_operation = 'TransitGatewayPeering')
           GROUP BY 1, 2
@@ -406,6 +410,11 @@ Resources:
                 Resource:
                   - !Ref AccountCollectorLambdaARN
                   - !GetAtt LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -490,7 +499,7 @@ Resources:
           },
           "TimeoutSeconds": 1200
         }
-      DefinitionSubstitutions: 
+      DefinitionSubstitutions:
         CFDataName: !Ref CFDataName
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         LambdaFunction: !GetAtt LambdaFunction.Arn
@@ -520,6 +529,11 @@ Resources:
                   - states:StartExecution
                 Resource:
                   - !GetAtt StepFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   ModuleRefreshScheduleRule:
     Type: 'AWS::Events::Rule'

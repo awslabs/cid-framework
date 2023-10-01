@@ -34,14 +34,6 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the lambda for the Accounts Collector function
-  CodeBucket:
-      Type: String
-      Description: S3 Bucket that exists and holds code
-      Default: aws-well-architected-labs
-  CodeKey:
-    Type: String
-    Description: file name of ZipFile with data code
-    Default: Cost/Labs/300_Optimization_Data_Collection/fof.zip
 
 Outputs:
   LambdaRoleARN:
@@ -69,14 +61,14 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: "AssumeManagementRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
-        - PolicyName: !Sub "${CFDataName}-S3-Access"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -84,23 +76,19 @@ Resources:
                 Action:
                   - "s3:PutObject"
                 Resource:
-                  - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "lambda:InvokeFunction"
-                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:pricing-Lambda-Function"
-              - Effect: "Allow"
-                Action:
-                  - "ec2:DescribeRegions"
-                Resource: "*"  ## only * can be used as a Resource for this action
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda Function to retrieve ${CFDataName}"
-      Runtime: python3.11
+      Runtime: python3.10
       Architectures: [arm64]
       Code:
         ZipFile: |
@@ -255,6 +243,13 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           ROLENAME: !Ref MultiAccountRoleName
           PREFIX: !Ref CFDataName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   AthenaSnaphotAMI:
     Type: AWS::Athena::NamedQuery
@@ -720,6 +715,11 @@ Resources:
                 Resource:
                   - !Ref AccountCollectorLambdaARN
                   - !GetAtt LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -873,6 +873,11 @@ Resources:
                   - states:StartExecution
                 Resource:
                   - !GetAtt StepFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   ModuleRefreshScheduleRule:
     Type: 'AWS::Events::Rule'
