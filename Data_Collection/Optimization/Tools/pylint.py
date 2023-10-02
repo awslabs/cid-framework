@@ -16,6 +16,7 @@ DISABLE = [
     'C0114', # Missing module docstring
     'C0116', # Missing function or method docstring
     'W1203', # Use lazy % formatting in logging functions (logging-fstring-interpolation)
+    'W1201', # Use lazy % formatting in logging functions (logging-not-lazy)
 ]
 
 def pylint(filename):
