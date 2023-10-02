@@ -13,14 +13,10 @@ Parameters:
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
 Outputs:
   LambdaFunctionName:
-    Value:
-      Ref: LambdaFunction
+    Value: !Ref LambdaFunction
   LambdaFunctionARN:
     Description: Lambda function ARN.
-    Value:
-      Fn::GetAtt:
-        - LambdaFunction
-        - Arn
+    Value: !GetAtt LambdaFunction.Arn
     Export:
       Name: AccountCollectorLambdaARN
 Resources:
@@ -58,14 +54,19 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/AWS-Organization-Account-Collector*"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${RolePrefix}accounts-collector-Lambda'
-      Description: LambdaFunction of python3.8.
-      Runtime: python3.8
+      Description: CID data collection - Collect Account IDs
+      Runtime: python3.10
       Code:
           ZipFile: |
             import os
@@ -127,3 +128,10 @@ Resources:
         Variables:
           ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"

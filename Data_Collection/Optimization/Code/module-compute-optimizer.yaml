@@ -65,6 +65,12 @@ Resources:
               - Effect: Allow
                 Action: sts:AssumeRole
                 Resource: !Sub "arn:aws:iam::*:role/${RolePrefix}ComputeOptimizer-StackSetExecutionRole"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   StackSetExecutionRole:  #see https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-prereqs.html
     Type: AWS::IAM::Role
     Properties:
@@ -115,6 +121,12 @@ Resources:
                   - iam:PutRolePolicy
                 Resource:
                   - !Sub 'arn:aws:iam::${AWS::AccountId}:role/StackSet-${BucketPrefix}*' # Shorter version of StackSetName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   ReplicationBucketsStackSet:
     Type: AWS::CloudFormation::StackSet
     DependsOn:
@@ -285,6 +297,12 @@ Resources:
                 Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaTriggerExport:
     Type: AWS::Lambda::Function
     Properties:
@@ -369,6 +387,14 @@ Resources:
                   except Exception as e:
                       print(payer_id, type(e), e)
                       continue
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
@@ -478,6 +504,14 @@ Resources:
           REGIONS: !Ref DeployRegions
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
           TRIGGER_LAMBDA:  !GetAtt LambdaTriggerExport.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   FinalizeLambdaExecutionRole:
     Type: AWS::IAM::Role
     Properties:

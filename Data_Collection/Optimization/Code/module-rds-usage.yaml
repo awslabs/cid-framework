@@ -66,14 +66,14 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: "AssumeAccountRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
-        - PolicyName: !Sub "${CFDataName}-Access"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -85,57 +85,11 @@ Resources:
                 Resource:
                   - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "cloudwatch:GetMetricStatistics"
-                Resource: "*"  ## only * can be used as a Resource for this action
-              - Effect: "Allow"
-                Action:
-                  - "rds:DescribeDBProxyTargetGroups"
-                  - "rds:DescribeDBInstanceAutomatedBackups"
-                  - "rds:DescribeDBEngineVersions"
-                  - "rds:DescribeDBSubnetGroups"
-                  - "rds:DescribeGlobalClusters"
-                  - "rds:DescribeExportTasks"
-                  - "rds:DescribePendingMaintenanceActions"
-                  - "rds:DescribeEngineDefaultParameters"
-                  - "rds:DescribeDBParameterGroups"
-                  - "rds:DescribeDBClusterBacktracks"
-                  - "rds:DescribeReservedDBInstancesOfferings"
-                  - "rds:DescribeDBProxyTargets"
-                  - "rds:DescribeDBInstances"
-                  - "rds:DescribeSourceRegions"
-                  - "rds:DescribeEngineDefaultClusterParameters"
-                  - "rds:DescribeDBProxies"
-                  - "rds:DescribeDBParameters"
-                  - "rds:DescribeEventCategories"
-                  - "rds:DescribeDBProxyEndpoints"
-                  - "rds:DescribeEvents"
-                  - "rds:DescribeDBClusterSnapshotAttributes"
-                  - "rds:DescribeDBClusterParameters"
-                  - "rds:DescribeEventSubscriptions"
-                  - "rds:DescribeDBSnapshots"
-                  - "rds:DescribeDBLogFiles"
-                  - "rds:DescribeDBSecurityGroups"
-                  - "rds:DescribeDBSnapshotAttributes"
-                  - "rds:DescribeReservedDBInstances"
-                  - "rds:ListTagsForResource"
-                  - "rds:DescribeValidDBInstanceModifications"
-                  - "rds:DescribeDBClusterSnapshots"
-                  - "rds:DescribeOrderableDBInstanceOptions"
-                  - "rds:DescribeOptionGroupOptions"
-                  - "rds:DescribeDBClusterEndpoints"
-                  - "rds:DescribeCertificates"
-                  - "rds:DescribeDBClusters"
-                  - "rds:DescribeAccountAttributes"
-                  - "rds:DescribeOptionGroups"
-                  - "rds:DescribeDBClusterParameterGroups"
-                  - "ec2:DescribeRegions"
-                Resource: !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:*"
-              - Effect: "Allow"
-                Action:
-                  - "ec2:DescribeRegions"
-                Resource: "*"  ## only * can be used as a Resource for this action                
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -156,6 +110,7 @@ Resources:
             #Environment Variables
             bucket = os.environ['BUCKET_NAME']
             prefix = os.environ['PREFIX']
+            ROLENAME = os.environ['ROLENAME']
 
             logger = logging.getLogger()
             if "LOG_LEVEL" in os.environ:
@@ -282,30 +237,17 @@ Resources:
                     store_data_to_s3(rds, region, service, path, 'rds_id', rds['DBInstanceIdentifier'], filename, accountID, payer_id)
 
             def assume_role(account_id, service, region):
-                role_name = os.environ['ROLENAME']
-                role_arn = f"arn:aws:iam::{account_id}:role/{role_name}" 
-                sts_client = boto3.client('sts')
-
-                try:
-                    assumedRoleObject = sts_client.assume_role(
-                        RoleArn=role_arn,
-                        RoleSessionName="data_collection"
-                        )
-                    
-                    credentials = assumedRoleObject['Credentials']
-                    client = boto3.client(
-                        service,
-                        aws_access_key_id=credentials['AccessKeyId'],
-                        aws_secret_access_key=credentials['SecretAccessKey'],
-                        aws_session_token=credentials['SessionToken'],
-                        region_name = region
-                    )
-                    return client
-
-                except ClientError as e:
-                    logger.warning(f"Unexpected error Account {account_id}: {e}")
-                    return None
-
+                cred = boto3.client('sts').assume_role(
+                    RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
+                    RoleSessionName="data_collection"
+                )['Credentials']
+                return boto3.client(
+                    service,
+                    aws_access_key_id=cred['AccessKeyId'],
+                    aws_secret_access_key=cred['SecretAccessKey'],
+                    aws_session_token=cred['SessionToken'],
+                    region_name=region
+                )
 
             def lambda_handler(event, context):
                 collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -322,16 +264,15 @@ Resources:
                     payer_id = account["payer_id"]
                     logger.info(f"Collecting data for account: {account_id}")
                     s3client = boto3.client('s3')
-                    regions = get_supported_regions('ec2')
-                    
+                    regions = get_supported_regions(assume_role(account_id, 'ec2',  boto3.session.Session().region_name))
                     for service in functions.keys():
                         if functions[service]['regional']:
                             for region in regions:
-                                client = assume_role(account_id, functions[service]['api'], region['RegionName'])
+                                client = assume_role(account_id, functions[service]['api'], region)
                                 for f in functions[service]['functions']:
-                                    cw_client = assume_role(account_id, 'cloudwatch', region['RegionName'])
+                                    cw_client = assume_role(account_id, 'cloudwatch', region)
                                     try:
-                                        data = globals()[f['name']](cw_client, client, s3client, region['RegionName'], service, f['output_path'], f['output_file_name'], account_id, payer_id)
+                                        data = globals()[f['name']](cw_client, client, s3client, region, service, f['output_path'], f['output_file_name'], account_id, payer_id)
                                     except Exception as e:
                                         # Send some context about this error to Lambda Logs
                                         logger.warning(e)
@@ -349,13 +290,9 @@ Resources:
                     # Send some context about this error to Lambda Logs
                     logger.warning(e)
 
+            def get_supported_regions(ec2):
+                return [region['RegionName'] for region in ec2.describe_regions()['Regions']]
 
-            def get_supported_regions(service):
-                response = []
-                if service == 'ec2':
-                    ec2_c = boto3.client('ec2')
-                    response = ec2_c.describe_regions()
-                return response['Regions'] if response['Regions'] else []
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -366,6 +303,13 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
           DAYS: !Ref DAYS
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   AthenaQuery:
     Type: AWS::Athena::NamedQuery
@@ -722,6 +666,11 @@ Resources:
                 Resource:
                   - !Ref AccountCollectorLambdaARN
                   - !GetAtt LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -834,8 +783,13 @@ Resources:
               - Effect: Allow
                 Action:
                   - states:StartExecution
-                Resource: 
+                Resource:
                   - !GetAtt StepFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   ModuleRefreshScheduleRule:
     Type: 'AWS::Events::Rule'

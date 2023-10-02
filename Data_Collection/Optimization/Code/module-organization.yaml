@@ -75,7 +75,7 @@ Resources:
           logger.setLevel(logging.INFO)
 
           def lambda_handler(event, context):
-              print(json.dumps(event))
+              logger.debug(json.dumps(event))
               for management_account_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
                   try:
                       process_management_acc(management_account_id)
@@ -217,6 +217,13 @@ Resources:
           ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           PREFIX: !Ref CFDataName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
   OrgCrawler:
     Type: AWS::Glue::Crawler
     Properties:
@@ -274,6 +281,12 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "arn:aws:s3:::${DestinationBucket}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   AthenaQuery:
       Type: AWS::Athena::NamedQuery
       Properties:

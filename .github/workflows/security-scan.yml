@@ -1,0 +1,32 @@
+
+name: Security Scan
+
+on:
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+
+  cfn-lint-cfn-nag-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1'
+      - name: Install CFN tools
+        run: |
+          gem install cfn-nag
+      - name: Install cfn-lint
+        run: |
+          pip install cfn-lint checkov
+      - name: Scan all templates
+        run: |
+          Data_Collection/Optimization/Tools/lint.sh

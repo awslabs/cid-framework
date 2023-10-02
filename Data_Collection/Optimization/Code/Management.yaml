@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Deploys a role to management account so we can assume to read data using a lambda 
+Description: Deploys a role to Management Account so that CID data collection can assume to read
 Parameters:
   CostAccountID:
     Type: String
@@ -127,3 +127,10 @@ Resources:
                   - "ecs:ListServices"
                   - "ecs:ListClusters"
                 Resource: "*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "Role must have an explicit RoleName for traceability"
+          - id: W11
+            reason: "Role is intended to describe a range of resources"

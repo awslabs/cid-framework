@@ -39,14 +39,6 @@ Parameters:
     Type: String
     Description: The name of your Cost and Usage Report table in Athena
     Default: cid_cur.cur
-  CodeBucket:
-    Type: String
-    Description: S3 Bucket that exists and holds code
-    Default: aws-well-architected-labs
-  CodeKey:
-    Type: String
-    Description: file name of ZipFile with data code
-    Default: Cost/Labs/300_Optimization_Data_Collection/ecs.zip
 
 Outputs:
   LambdaRoleARN:
@@ -90,6 +82,11 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -214,6 +211,13 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   AthenaClusterMetadataView:
     Type: AWS::Athena::NamedQuery
@@ -377,6 +381,11 @@ Resources:
                 Resource:
                   - !Ref AccountCollectorLambdaARN
                   - !GetAtt LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   StepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -491,6 +500,11 @@ Resources:
                   - states:StartExecution
                 Resource:
                   - !GetAtt StepFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   ModuleRefreshScheduleRule:
     Type: 'AWS::Events::Rule'

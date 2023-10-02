@@ -252,7 +252,10 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
             else:
                 if not execution_results[execution_arn]:
                     execution_results[execution_arn] = res['status']
-                    print(res['executionArn'], res['status'])
+                    if res['status'].upper() in ['FAILED']:
+                        logger.warning(f"{execution_arn} {res['status']}")
+                    else:
+                        logger.info(f"{execution_arn} {res['status']}")
         # read logs of all lambdas
         for lambda_arn in lambda_arns:
             function_name = lambda_arn.split(':')[-1]
@@ -266,15 +269,18 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
                     last_log_time[lambda_arn] = events[-1]['timestamp'] + 1
                 for event in events:
                     if 'error' in event['message'].lower() or 'exception' in event['message'].lower():
-                        print(event['timestamp'])
-                        print(
+                        logger.warning(
                             datetime.utcfromtimestamp(event['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S') + ' ' +
                             function_name  + ': ' +
                             event['message'][:-1]
                         )
     # Show results
     for arn, res in execution_results.items():
-        print(arn, res)
+        if str(res).upper() in ['FAILED']:
+            logger.warning(f'{arn} {res}')
+        else:
+            logger.info(f'{arn} {res}')
+
 
 
 def trigger_update(account_id):
@@ -299,6 +305,11 @@ def trigger_update(account_id):
 
 
 def cleanup_stacks(cloudformation, account_id, s3, athena):
+
+    for index in range(10):
+        print(f'Press Ctrl+C if you want to avoid teardown: {9-index}\a') # beep
+        time.sleep(1)
+
     try:
         clean_bucket(s3=s3, account_id=account_id)
     except Exception as ex:
@@ -333,5 +344,5 @@ def prepare_stacks(cloudformation, account_id, s3, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, account_id=account_id)
     trigger_update(account_id=account_id)
-    logger.info('Waiting 1 min')
+    logger.info('Waiting 1 min to let Crawlers run to finish')
     time.sleep(1 * 60)
