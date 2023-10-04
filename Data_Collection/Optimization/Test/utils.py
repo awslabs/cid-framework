@@ -203,25 +203,32 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
         )
 
     # Execute sate machines
-    execution_arns = []
-    for state_machine_arn in state_machine_arns:
-        executions = stepfunctions.list_executions(
-            stateMachineArn=state_machine_arn,
-        )['executions']
-        logger.info(f'{state_machine_arn} has : {executions}')
+    discovery_attempts = 5 # TODO To become a parameter? will this be needed?
+    keep_checking = True
+    sm_execution_arns = {}
+    while keep_checking:
+        logger.info(f"Discovering state machines executions - Attempts left: {discovery_attempts}")
+        for state_machine_arn in state_machine_arns:
+            if state_machine_arn not in sm_execution_arns.keys():
+                executions = stepfunctions.list_executions(
+                    stateMachineArn=state_machine_arn,
+                )['executions']
+                logger.info(f'{state_machine_arn} has : {executions}')
+                if len(executions) > 0:
+                    logger.info(f'{state_machine_arn} has already started: {executions}')
+                    sm_execution_arns[state_machine_arn] = executions[0]["executionArn"]
+        if len(state_machine_arns) == len(sm_execution_arns):
+            logger.info(f"All state machines have started executions, stopping discovery.")
+            keep_checking = False
+        else:
+            discovery_attempts -= 1
+            if discovery_attempts == 0:
+                logger.info(f"We have run out of attempts to discover state machines executions, stopping discovery.")
+                keep_checking = False
+            time.sleep(15) # TODO arbitrary time, aiming to get all executions in the first minute or so, consider parameter or other option
 
-        executions = stepfunctions.list_executions(
-            stateMachineArn=state_machine_arn,
-            statusFilter='RUNNING'  # Filter for running executions
-        )['executions']
-        if executions:
-            logger.info(f'{state_machine_arn} has already started: {executions}')
-            continue
-
-        execution_arn = stepfunctions.start_execution(stateMachineArn=state_machine_arn)['executionArn']
-        logger.info(f'Starting {execution_arn}')
-        execution_arns.append(execution_arn)
-
+    # TODO Did we get all state machines executions?
+    if len(state_machine_arns) == len(sm_execution_arns.keys()):
         # Extract Lambda function ARNs from the state machine definition
         state_machine_definition = json.loads(stepfunctions.describe_state_machine(stateMachineArn=state_machine_arn)['definition'])
         def _extract_lambda_arns(state):
@@ -234,18 +241,24 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
                 for item in state:
                     _extract_lambda_arns(item)
         _extract_lambda_arns(state_machine_definition)
+    else:
+        # TODO We did not get all state machines executions, how to handle?
+        # Do not wait and stop test with some log message
+        # that explains what happened???
+        logger.error(f"Could not find all executions for state machines. Not waiting for executions to finish.")
+        wait = False
 
     if not wait:
         return
 
     # Wait for state machines to complete
     last_log_time = {lambda_arn: int(time.time()) * 1000 for lambda_arn in lambda_arns}
-    execution_results = {execution_arn: None for execution_arn in execution_arns}
+    execution_results = {execution_arn: None for execution_arn in sm_execution_arns.values()}
     running = True
     while running:
         # check if there are still running
         running = False
-        for execution_arn in execution_arns:
+        for execution_arn in sm_execution_arns.values():
             res = stepfunctions.describe_execution(executionArn=execution_arn)
             if res['status'] == 'RUNNING':
                 running = True
@@ -286,7 +299,7 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
 def trigger_update(account_id):
     region = boto3.session.Session().region_name
     state_machine_arns = [
-       # f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-ecs-chargeback-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds_usage_data-StateMachine',
@@ -294,11 +307,11 @@ def trigger_update(account_id):
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
     ]
     lambda_arns = [
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-compute-optimizer-Lambda-Trigger-Export",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
+        # f"arn:aws:lambda:{region}:{account_id}:function:WA-compute-optimizer-Lambda-Trigger-Export",
+        # f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
+        # f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
+        # f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
+        # f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
         #f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-RDS",
     ]
     launch_(state_machine_arns, lambda_arns, wait=True)
