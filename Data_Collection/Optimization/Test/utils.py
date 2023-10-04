@@ -210,13 +210,19 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
         logger.info(f"Discovering state machines executions - Attempts left: {discovery_attempts}")
         for state_machine_arn in state_machine_arns:
             if state_machine_arn not in sm_execution_arns.keys():
-                executions = stepfunctions.list_executions(
-                    stateMachineArn=state_machine_arn,
-                )['executions']
-                logger.info(f'{state_machine_arn} has : {executions}')
+                executions = []
+                try:
+                    executions = stepfunctions.list_executions(
+                        stateMachineArn=state_machine_arn,
+                    )['executions']
+                    logger.info(f'{state_machine_arn} has : {executions}')
+                except stepfunctions.exceptions.StateMachineDoesNotExist as exc:
+                    logger.error(f"The state machine with ARN '{state_machine_arn}' was not found.")
                 if len(executions) > 0:
                     logger.info(f'{state_machine_arn} has already started: {executions}')
                     sm_execution_arns[state_machine_arn] = executions[0]["executionArn"]
+                else:
+                    logger.warn(f"No executions found for state machine '{state_machine_arn}'")
         if len(state_machine_arns) == len(sm_execution_arns):
             logger.info(f"All state machines have started executions, stopping discovery.")
             keep_checking = False
@@ -307,11 +313,11 @@ def trigger_update(account_id):
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
     ]
     lambda_arns = [
-        # f"arn:aws:lambda:{region}:{account_id}:function:WA-compute-optimizer-Lambda-Trigger-Export",
-        # f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
-        # f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
-        # f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
-        # f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-compute-optimizer-Lambda-Trigger-Export",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
         #f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-RDS",
     ]
     launch_(state_machine_arns, lambda_arns, wait=True)
