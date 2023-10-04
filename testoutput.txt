@@ -1,0 +1,514 @@
+============================= test session starts ==============================
+platform linux -- Python 3.9.16, pytest-7.4.2, pluggy-1.3.0
+rootdir: /local/home/erichre/code/cid-framework
+configfile: pytest.ini
+collected 12 items
+
+Data_Collection/Optimization/Test/test_from_scratch.py::test_budgets_data 
+-------------------------------- live log setup --------------------------------
+17:35:04 [    INFO] Found credentials in environment variables.
+17:35:04 [    INFO] account_id=317256447485 region=us-east-1
+17:35:05 [    INFO] Waiting for stacks
+17:35:05 [    INFO] 17:35:04	OptimizationManagementDataRoleStack	CREATE_IN_PROGRESS	User Initiated[0m
+17:35:05 [    INFO] 17:35:04	OptimizationDataRoleStack	CREATE_IN_PROGRESS	User Initiated[0m
+17:35:06 [    INFO] 17:35:05	OptimizationDataCollectionStack	CREATE_IN_PROGRESS	User Initiated[0m
+17:35:11 [    INFO] 17:35:09	OptimizationManagementDataRoleStack	LambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:11 [    INFO] 17:35:08	OptimizationDataRoleStack	LambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:11 [    INFO] 17:35:10	OptimizationDataCollectionStack	S3CrawlerQue	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:17 [    INFO] 17:35:15	OptimizationDataCollectionStack	S3Bucket	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:17 [    INFO] 17:35:12	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	LambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:28 [    INFO] 17:35:26	OptimizationDataRoleStack	RDSUtilizationPolicy	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:28 [    INFO] 17:35:27	OptimizationDataCollectionStack	LambdaAnalytics	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:33 [    INFO] [92m17:35:30	OptimizationManagementDataRoleStack	CREATE_COMPLETE	[0m
+17:35:34 [    INFO] 17:35:31	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:39 [    INFO] 17:35:39	OptimizationDataCollectionStack	ComputeOptimizerModule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:40 [    INFO] [92m17:35:39	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	CREATE_COMPLETE	[0m
+17:35:45 [    INFO] [92m17:35:43	OptimizationDataRoleStack	CREATE_COMPLETE	[0m
+17:35:45 [    INFO] [92m17:35:43	OptimizationDataCollectionStack	AccountCollector	CREATE_COMPLETE	[0m
+17:35:45 [    INFO] 17:35:42	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	LambdaTriggerExportRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:46 [    INFO] 17:35:45	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	LambdaAnalyticsExecutor	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:51 [    INFO] [92m17:35:46	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:35:52 [    INFO] [92m17:35:46	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:35:57 [    INFO] 17:35:57	OptimizationDataCollectionStack	RightsizeModule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:03 [    INFO] 17:35:57	OptimizationDataCollectionStack	InventoryCollectorModule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:04 [    INFO] 17:36:01	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	LambdaTriggerExport	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:04 [    INFO] 17:36:00	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	RDSLambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:04 [    INFO] [92m17:36:03	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:04 [    INFO] 17:36:03	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CostAnomalyLambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:05 [    INFO] 17:36:04	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaAnalyticsExecutor	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:05 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	AthenaSnaphotAMI	CREATE_COMPLETE	[0m
+17:36:05 [    INFO] [92m17:36:04	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:05 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	GravitonMappingTable	CREATE_COMPLETE	[0m
+17:36:05 [    INFO] [92m17:36:04	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:06 [    INFO] [92m17:36:03	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:06 [    INFO] [92m17:36:02	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:12 [    INFO] 17:36:10	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:12 [    INFO] 17:36:09	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:12 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:13 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:13 [    INFO] [92m17:36:09	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	GravitonAthenaQuery	CREATE_COMPLETE	[0m
+17:36:20 [    INFO] 17:36:17	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	ReplicationBucketsStackSet	CREATE_IN_PROGRESS	[0m
+17:36:20 [    INFO] 17:36:19	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaFunction	CREATE_IN_PROGRESS	[0m
+17:36:20 [    INFO] [92m17:36:20	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CostAnomalyLambdaRole	CREATE_COMPLETE	[0m
+17:36:20 [    INFO] 17:36:19	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaFunction	CREATE_IN_PROGRESS	[0m
+17:36:21 [    INFO] [92m17:36:16	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	SnapshotCrawler	CREATE_COMPLETE	[0m
+17:36:21 [    INFO] [92m17:36:20	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	LambdaRole	CREATE_COMPLETE	[0m
+17:36:22 [    INFO] 17:36:15	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	RightsizingLambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:22 [    INFO] 17:36:20	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:23 [    INFO] 17:36:19	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:29 [    INFO] 17:36:28	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CustomResourceFunctionFinalize	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:29 [    INFO] 17:36:29	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	StepFunctionExecutionRole	CREATE_IN_PROGRESS	[0m
+17:36:29 [    INFO] 17:36:22	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:29 [    INFO] 17:36:29	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	StepFunctionExecutionRole	CREATE_IN_PROGRESS	[0m
+17:36:30 [    INFO] 17:36:23	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:30 [    INFO] 17:36:23	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:30 [    INFO] 17:36:22	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:30 [    INFO] 17:36:30	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:31 [    INFO] 17:36:28	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:36 [    INFO] [92m17:36:36	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CustomResourceFunctionFinalize	CREATE_COMPLETE	[0m
+17:36:37 [    INFO] 17:36:29	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:37 [    INFO] 17:36:32	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:37 [    INFO] 17:36:29	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:37 [    INFO] 17:36:32	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:38 [    INFO] 17:36:33	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:38 [    INFO] 17:36:32	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:38 [    INFO] 17:36:34	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:46 [    INFO] 17:36:44	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:46 [    INFO] 17:36:45	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	StepFunction	CREATE_IN_PROGRESS	[0m
+17:36:53 [    INFO] 17:36:49	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:53 [    INFO] 17:36:50	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:53 [    INFO] 17:36:52	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:53 [    INFO] 17:36:52	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:54 [    INFO] 17:36:51	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:54 [    INFO] 17:36:48	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:08 [    INFO] 17:37:07	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:09 [    INFO] 17:37:08	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	[0m
+17:37:10 [    INFO] 17:37:09	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:10 [    INFO] 17:37:07	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:16 [    INFO] [92m17:37:14	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	EventPermission	CREATE_COMPLETE	[0m
+17:37:16 [    INFO] [92m17:37:14	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	CREATE_COMPLETE	[0m
+17:37:17 [    INFO] 17:37:09	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:17 [    INFO] 17:37:15	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:17 [    INFO] 17:37:12	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:40 [    INFO] [92m17:37:32	OptimizationDataCollectionStack	PricingModule	CREATE_COMPLETE	[0m
+17:37:40 [    INFO] [92m17:37:38	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CREATE_COMPLETE	[0m
+17:37:41 [    INFO] [92m17:37:37	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	CREATE_COMPLETE	[0m
+17:37:49 [    INFO] [92m17:37:49	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	CREATE_COMPLETE	[0m
+17:37:55 [    INFO] [92m17:37:50	OptimizationDataCollectionStack	RightsizeModule	CREATE_COMPLETE	[0m
+17:38:11 [    INFO] [92m17:38:11	OptimizationDataCollectionStack	TrustedAdvisorModule	CREATE_COMPLETE	[0m
+17:38:12 [    INFO] [92m17:38:10	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	CREATE_COMPLETE	[0m
+17:38:13 [    INFO] [92m17:38:11	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	CREATE_COMPLETE	[0m
+17:38:13 [    INFO] [92m17:38:13	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ModuleRefreshScheduleRule	CREATE_COMPLETE	[0m
+17:38:14 [    INFO] [92m17:38:12	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	CREATE_COMPLETE	[0m
+17:38:14 [    INFO] [92m17:38:09	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	CREATE_COMPLETE	[0m
+17:38:19 [    INFO] [92m17:38:11	OptimizationDataCollectionStack	EcsChargebackModule	CREATE_COMPLETE	[0m
+17:38:21 [    INFO] [92m17:38:18	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	CREATE_COMPLETE	[0m
+17:38:21 [    INFO] [92m17:38:15	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	CREATE_COMPLETE	[0m
+17:38:28 [    INFO] 17:38:28	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	FinalizeSetup	CREATE_IN_PROGRESS	[0m
+17:38:35 [    INFO] [92m17:38:35	OptimizationDataCollectionStack	InventoryCollectorModule	CREATE_COMPLETE	[0m
+17:38:36 [    INFO] [92m17:38:36	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CREATE_COMPLETE	[0m
+17:38:43 [    INFO] [92m17:38:42	OptimizationDataCollectionStack	ComputeOptimizerModule	CREATE_COMPLETE	[0m
+17:38:51 [    INFO] [92m17:38:44	OptimizationDataCollectionStack	CREATE_COMPLETE	[0m
+17:38:54 [    INFO] Emptying the bucket [96mcostoptimizationdata317256447485[0m
+17:38:54 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-ecs-chargeback-StateMachine has : []
+17:38:54 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-ecs-chargeback-StateMachine:beb87875-dec6-4586-b219-635a5d50fe2d
+17:38:54 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-inventory-StateMachine has : []
+17:38:54 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-inventory-StateMachine:babb0a05-321e-4fce-8e5c-e2690c6305b7
+17:38:54 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-rds_usage_data-StateMachine has : [{'executionArn': 'arn:aws:states:us-east-1:317256447485:execution:WA-rds_usage_data-StateMachine:0c3d973f-26ec-f724-7317-132048c0c634_8067d288-6b28-4010-57be-32cc117777cf', 'stateMachineArn': 'arn:aws:states:us-east-1:317256447485:stateMachine:WA-rds_usage_data-StateMachine', 'name': '0c3d973f-26ec-f724-7317-132048c0c634_8067d288-6b28-4010-57be-32cc117777cf', 'status': 'SUCCEEDED', 'startDate': datetime.datetime(2023, 9, 29, 17, 37, 52, 37000, tzinfo=tzlocal()), 'stopDate': datetime.datetime(2023, 9, 29, 17, 38, 15, 30000, tzinfo=tzlocal())}]
+17:38:55 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-rds_usage_data-StateMachine:ac6c6677-d61e-49fb-a6b7-bff5da96ecb2
+17:38:55 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-transit-gateway-StateMachine has : [{'executionArn': 'arn:aws:states:us-east-1:317256447485:execution:WA-transit-gateway-StateMachine:8b4484bc-ddcf-81da-b313-47be30957ed4_782f0a69-0aac-e893-d9d9-669d14b0fb47', 'stateMachineArn': 'arn:aws:states:us-east-1:317256447485:stateMachine:WA-transit-gateway-StateMachine', 'name': '8b4484bc-ddcf-81da-b313-47be30957ed4_782f0a69-0aac-e893-d9d9-669d14b0fb47', 'status': 'SUCCEEDED', 'startDate': datetime.datetime(2023, 9, 29, 17, 37, 51, 1000, tzinfo=tzlocal()), 'stopDate': datetime.datetime(2023, 9, 29, 17, 38, 4, 40000, tzinfo=tzlocal())}]
+17:38:55 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-transit-gateway-StateMachine:586c6038-6b5e-4af7-8f80-7d922c18e008
+17:38:55 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-trusted-advisor-StateMachine has : []
+17:38:55 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-trusted-advisor-StateMachine:1eba11c4-f643-45cc-b38d-e324ec423f57
+1696009136632
+2023-09-29 17:38:56 WA-trusted-advisor-Lambda-Collect: [WARNING]	2023-09-29T17:38:56.632Z	78f891df-0333-4ac4-9a23-1ea7b7c1ccfc	An error occurred (SubscriptionRequiredException) when calling the DescribeTrustedAdvisorChecks operation: Amazon Web Services Premium Support Subscription is required to use this service.
+1696009135235
+2023-09-29 17:38:55 WA-cost-explorer-rightsizing-Lambda-Collect: [WARNING]	2023-09-29T17:38:55.235Z	559f034c-9374-45d6-a5ea-33b5d0eb1538	317256447485 :  An error occurred (AccessDeniedException) when calling the GetRightsizingRecommendation operation: Rightsizing EC2 recommendation is an opt-in only feature. You can enable this feature from the PAYER account’s Cost Explorer Preferences page. Normally it may take up to 24 hours in order to generate your rightsizing recommendations.
+arn:aws:states:us-east-1:317256447485:execution:WA-ecs-chargeback-StateMachine:beb87875-dec6-4586-b219-635a5d50fe2d SUCCEEDED
+arn:aws:states:us-east-1:317256447485:execution:WA-inventory-StateMachine:babb0a05-321e-4fce-8e5c-e2690c6305b7 SUCCEEDED
+arn:aws:states:us-east-1:317256447485:execution:WA-rds_usage_data-StateMachine:ac6c6677-d61e-49fb-a6b7-bff5da96ecb2 FAILED
+arn:aws:states:us-east-1:317256447485:execution:WA-transit-gateway-StateMachine:586c6038-6b5e-4af7-8f80-7d922c18e008 FAILED
+arn:aws:states:us-east-1:317256447485:execution:WA-trusted-advisor-StateMachine:1eba11c4-f643-45cc-b38d-e324ec423f57 SUCCEEDED
+arn:aws:states:us-east-1:317256447485:execution:WA-ecs-chargeback-StateMachine:beb87875-dec6-4586-b219-635a5d50fe2d SUCCEEDED
+arn:aws:states:us-east-1:317256447485:execution:WA-inventory-StateMachine:babb0a05-321e-4fce-8e5c-e2690c6305b7 SUCCEEDED
+arn:aws:states:us-east-1:317256447485:execution:WA-rds_usage_data-StateMachine:ac6c6677-d61e-49fb-a6b7-bff5da96ecb2 FAILED
+arn:aws:states:us-east-1:317256447485:execution:WA-transit-gateway-StateMachine:586c6038-6b5e-4af7-8f80-7d922c18e008 FAILED
+arn:aws:states:us-east-1:317256447485:execution:WA-trusted-advisor-StateMachine:1eba11c4-f643-45cc-b38d-e324ec423f57 SUCCEEDED
+17:39:57 [    INFO] Waiting 1 min
+FAILED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_cost_explorer_rightsizing_data FAILED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_cost_anomaly_data FAILED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_ecs_chargeback_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_inventory_ami_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_inventory_ebs_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_inventory_snapshot_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_rds_usage_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_organization_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_trusted_advisor_data FAILED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_transit_gateway_data PASSED
+Data_Collection/Optimization/Test/test_from_scratch.py::test_compute_optimizer_export_triggered PASSED
+------------------------------ live log teardown -------------------------------
+17:41:29 [    INFO] Emptying the bucket [96mcostoptimizationdata317256447485[0m
+
+17:41:30 [    INFO] deleting OptimizationManagementDataRoleStack initiated
+17:41:30 [    INFO] deleting OptimizationDataRoleStack initiated
+17:41:30 [    INFO] deleting OptimizationDataCollectionStack initiated
+17:41:30 [    INFO] 17:41:29	OptimizationManagementDataRoleStack	DELETE_IN_PROGRESS	User Initiated[0m
+17:41:30 [    INFO] 17:41:30	OptimizationDataRoleStack	DELETE_IN_PROGRESS	User Initiated[0m
+17:41:30 [    INFO] 17:41:30	OptimizationDataCollectionStack	DELETE_IN_PROGRESS	User Initiated[0m
+17:41:36 [    INFO] 17:41:32	OptimizationManagementDataRoleStack	LambdaRole	DELETE_IN_PROGRESS	[0m
+17:41:36 [    INFO] 17:41:32	OptimizationDataCollectionStack	BudgetsModule	DELETE_IN_PROGRESS	[0m
+17:41:36 [    INFO] [92m17:35:39	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	CREATE_COMPLETE	[0m
+17:41:36 [    INFO] [92m17:41:36	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	AthenaQuery	DELETE_COMPLETE	[0m
+17:41:36 [    INFO] [92m17:41:36	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	EventPermission	DELETE_COMPLETE	[0m
+17:41:37 [    INFO] 17:41:37	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CloudWatchTrigger	DELETE_IN_PROGRESS	[0m
+17:41:37 [    INFO] [92m17:41:36	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	AthenaBUUsageView	DELETE_COMPLETE	[0m
+17:41:37 [    INFO] [92m17:41:36	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	AthenaSnaphotAMICUR	DELETE_COMPLETE	[0m
+17:41:37 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:37 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:38 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:38 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:38 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:38 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:44 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:44 [    INFO] 17:41:39	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	ReplicationBucketsStackSet	DELETE_IN_PROGRESS	[0m
+17:41:44 [    INFO] [92m17:41:37	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	LambdaAnalyticsExecutor	DELETE_COMPLETE	[0m
+17:41:44 [    INFO] [92m17:41:41	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	AthenaEc2ClusterCostsView	DELETE_COMPLETE	[0m
+17:41:44 [    INFO] [92m17:41:39	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	AthenaSnaphotAMI	DELETE_COMPLETE	[0m
+17:41:51 [    INFO] [92m17:41:46	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	FinalizeLambdaExecutionRole	DELETE_COMPLETE	[0m
+17:42:06 [    INFO] [92m17:42:06	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	ModuleRefreshScheduleRule	DELETE_COMPLETE	[0m
+17:42:07 [    INFO] [92m17:42:07	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ModuleRefreshScheduleRule	DELETE_COMPLETE	[0m
+17:42:07 [    INFO] 17:42:07	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	ScheduleExecutionRole	DELETE_IN_PROGRESS	[0m
+17:42:08 [    INFO] 17:42:07	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ScheduleExecutionRole	DELETE_IN_PROGRESS	[0m
+17:42:08 [    INFO] [92m17:42:08	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	CloudWatchTrigger	DELETE_COMPLETE	[0m
+17:42:08 [    INFO] 17:42:07	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	ScheduleExecutionRole	DELETE_IN_PROGRESS	[0m
+17:42:09 [    INFO] 17:42:07	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	ScheduleExecutionRole	DELETE_IN_PROGRESS	[0m
+17:42:14 [    INFO] 17:42:09	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	StepFunction	DELETE_IN_PROGRESS	[0m
+17:42:14 [    INFO] [92m17:42:13	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	StackSetAdminRole	DELETE_COMPLETE	[0m
+17:42:14 [    INFO] [92m17:42:14	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	LambdaFunction	DELETE_COMPLETE	[0m
+17:42:15 [    INFO] 17:42:10	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	StepFunction	DELETE_IN_PROGRESS	[0m
+17:42:15 [    INFO] 17:42:09	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	StepFunction	DELETE_IN_PROGRESS	[0m
+17:42:15 [    INFO] 17:42:15	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	LambdaRole	DELETE_IN_PROGRESS	[0m
+17:42:15 [    INFO] 17:42:15	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	LambdaRole	DELETE_IN_PROGRESS	[0m
+17:42:15 [    INFO] 17:42:09	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	StepFunction	DELETE_IN_PROGRESS	[0m
+17:42:16 [    INFO] 17:42:15	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	RightsizingLambdaRole	DELETE_IN_PROGRESS	[0m
+17:42:16 [    INFO] 17:42:09	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	StepFunction	DELETE_IN_PROGRESS	[0m
+17:42:16 [    INFO] 17:42:09	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	StepFunction	DELETE_IN_PROGRESS	[0m
+17:42:21 [    INFO] [92m17:42:20	OptimizationDataCollectionStack	ComputeOptimizerModule	DELETE_COMPLETE	[0m
+17:42:22 [    INFO] 17:42:17	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CostAnomalyCrawler	DELETE_IN_PROGRESS	[0m
+17:42:23 [    INFO] 17:42:18	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	OrgCrawler	DELETE_IN_PROGRESS	[0m
+17:42:23 [    INFO] 17:42:17	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	RightsizingCrawler	DELETE_IN_PROGRESS	[0m
+17:42:31 [    INFO] 17:42:29	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:42:38 [    INFO] 17:42:35	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaRole	DELETE_IN_PROGRESS	[0m
+17:42:44 [    INFO] [92m17:42:37	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	Crawler	DELETE_COMPLETE	[0m
+17:42:45 [    INFO] [92m17:42:38	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaRole	DELETE_COMPLETE	[0m
+17:43:21 [    INFO] [92m17:43:20	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	OrgCrawler	DELETE_COMPLETE	[0m
+17:43:27 [    INFO] [92m17:43:26	OptimizationDataCollectionStack	CostAnomalyModule	DELETE_COMPLETE	[0m
+17:43:42 [    INFO] [92m17:43:38	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	EBSCrawler	DELETE_COMPLETE	[0m
+17:43:42 [    INFO] [92m17:43:38	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	Crawler	DELETE_COMPLETE	[0m
+17:43:48 [    INFO] [92m17:43:47	OptimizationDataCollectionStack	TransitGatewayModule	DELETE_COMPLETE	[0m
+17:43:48 [    INFO] 17:43:45	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:43:55 [    INFO] [92m17:43:53	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaRole	DELETE_COMPLETE	[0m
+17:44:17 [    INFO] 17:44:14	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:44:23 [    INFO] 17:44:21	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:44:30 [    INFO] [92m17:44:29	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaRole	DELETE_COMPLETE	[0m
+17:44:30 [    INFO] 17:44:30	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:44:36 [    INFO] [92m17:44:35	OptimizationDataCollectionStack	RDSUtilizationModule	DELETE_COMPLETE	[0m
+17:44:37 [    INFO] 17:44:37	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaRole	DELETE_IN_PROGRESS	[0m
+17:44:44 [    INFO] [92m17:44:38	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaRole	DELETE_COMPLETE	[0m
+17:44:50 [    INFO] [92m17:44:45	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	Crawler	DELETE_COMPLETE	[0m
+17:45:10 [    INFO] [92m17:45:04	OptimizationDataCollectionStack	InventoryCollectorModule	DELETE_COMPLETE	[0m
+17:45:11 [    INFO] 17:45:10	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:45:17 [    INFO] 17:45:16	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaRole	DELETE_IN_PROGRESS	[0m
+17:45:35 [    INFO] [92m17:45:35	OptimizationDataCollectionStack	TrustedAdvisorModule	DELETE_COMPLETE	[0m
+17:45:42 [    INFO] [92m17:45:41	OptimizationDataCollectionStack	LambdaAnalytics	DELETE_COMPLETE	[0m
+17:45:42 [    INFO] 17:45:38	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	LambdaFunction	DELETE_IN_PROGRESS	[0m
+17:45:48 [    INFO] [92m17:45:43	OptimizationDataCollectionStack	LambdaAnalyticsRole	DELETE_COMPLETE	[0m
+17:46:01 [    INFO] [92m17:45:57	OptimizationDataCollectionStack	AccountCollector	DELETE_COMPLETE	[0m
+17:46:45 [    INFO] Deleting all athena tables in optimization_data
+17:46:45 [    INFO] Deleting ecs_chargeback_data
+17:46:47 [    INFO] Deleting inventory_ami_data
+17:46:49 [    INFO] Deleting inventory_ebs_data
+17:46:52 [    INFO] Deleting inventory_snapshot_data
+17:46:54 [    INFO] Deleting organization_data
+17:46:56 [    INFO] Deleting rds_usage_data
+17:46:58 [    INFO] Deleting transit_gateway_data
+
+
+=================================== FAILURES ===================================
+______________________________ test_budgets_data _______________________________
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+
+    def test_budgets_data(athena):
+>       data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."budgets_data" LIMIT 10;')
+
+Data_Collection/Optimization/Test/test_from_scratch.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+sql_query = 'SELECT * FROM "optimization_data"."budgets_data" LIMIT 10;'
+sleep_duration = 1, database = None, catalog = 'AwsDataCatalog'
+workgroup = 'primary'
+
+    def athena_query(athena, sql_query, sleep_duration=1, database: str=None, catalog: str='AwsDataCatalog', workgroup: str='primary'):
+        """ Executes an AWS Athena Query and return dict"""
+        context = {}
+        if database: context['Database'] = database
+        if catalog: context['Catalog'] = catalog
+        response = athena.start_query_execution(
+            QueryString=sql_query,
+            QueryExecutionContext=context,
+            WorkGroup=workgroup,
+        )
+        query_id = response.get('QueryExecutionId')
+        current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+        while current_status['State'] in ['SUBMITTED', 'RUNNING', 'QUEUED']:
+            current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+            time.sleep(sleep_duration)
+        if current_status['State'] != "SUCCEEDED":
+            failure_reason = current_status['StateChangeReason']
+            logger.debug(f'Full query: {repr(sql_query)}')
+>           raise Exception('Athena query failed: {}'.format(failure_reason))
+E           Exception: Athena query failed: TABLE_NOT_FOUND: line 1:15: Table 'awsdatacatalog.optimization_data.budgets_data' does not exist
+
+Data_Collection/Optimization/Test/utils.py:51: Exception
+------------------------------ Captured log setup ------------------------------
+17:35:04 [    INFO] Found credentials in environment variables.
+17:35:04 [    INFO] account_id=317256447485 region=us-east-1
+17:35:05 [    INFO] Waiting for stacks
+17:35:05 [    INFO] 17:35:04	OptimizationManagementDataRoleStack	CREATE_IN_PROGRESS	User Initiated[0m
+17:35:05 [    INFO] 17:35:04	OptimizationDataRoleStack	CREATE_IN_PROGRESS	User Initiated[0m
+17:35:06 [    INFO] 17:35:05	OptimizationDataCollectionStack	CREATE_IN_PROGRESS	User Initiated[0m
+17:35:11 [    INFO] 17:35:09	OptimizationManagementDataRoleStack	LambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:11 [    INFO] 17:35:08	OptimizationDataRoleStack	LambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:11 [    INFO] 17:35:10	OptimizationDataCollectionStack	S3CrawlerQue	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:17 [    INFO] 17:35:15	OptimizationDataCollectionStack	S3Bucket	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:17 [    INFO] 17:35:12	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	LambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:28 [    INFO] 17:35:26	OptimizationDataRoleStack	RDSUtilizationPolicy	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:28 [    INFO] 17:35:27	OptimizationDataCollectionStack	LambdaAnalytics	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:33 [    INFO] [92m17:35:30	OptimizationManagementDataRoleStack	CREATE_COMPLETE	[0m
+17:35:34 [    INFO] 17:35:31	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:39 [    INFO] 17:35:39	OptimizationDataCollectionStack	ComputeOptimizerModule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:40 [    INFO] [92m17:35:39	OptimizationDataCollectionStack-AccountCollector-1OXXBK7BS9CK4	CREATE_COMPLETE	[0m
+17:35:45 [    INFO] [92m17:35:43	OptimizationDataRoleStack	CREATE_COMPLETE	[0m
+17:35:45 [    INFO] [92m17:35:43	OptimizationDataCollectionStack	AccountCollector	CREATE_COMPLETE	[0m
+17:35:45 [    INFO] 17:35:42	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	LambdaTriggerExportRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:46 [    INFO] 17:35:45	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	LambdaAnalyticsExecutor	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:35:51 [    INFO] [92m17:35:46	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:35:52 [    INFO] [92m17:35:46	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:35:57 [    INFO] 17:35:57	OptimizationDataCollectionStack	RightsizeModule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:03 [    INFO] 17:35:57	OptimizationDataCollectionStack	InventoryCollectorModule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:04 [    INFO] 17:36:01	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	LambdaTriggerExport	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:04 [    INFO] 17:36:00	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	RDSLambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:04 [    INFO] [92m17:36:03	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:04 [    INFO] 17:36:03	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CostAnomalyLambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:05 [    INFO] 17:36:04	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaAnalyticsExecutor	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:05 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	AthenaSnaphotAMI	CREATE_COMPLETE	[0m
+17:36:05 [    INFO] [92m17:36:04	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:05 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	GravitonMappingTable	CREATE_COMPLETE	[0m
+17:36:05 [    INFO] [92m17:36:04	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:06 [    INFO] [92m17:36:03	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:06 [    INFO] [92m17:36:02	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:12 [    INFO] 17:36:10	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:12 [    INFO] 17:36:09	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:12 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:13 [    INFO] [92m17:36:05	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaAnalyticsExecutor	CREATE_COMPLETE	[0m
+17:36:13 [    INFO] [92m17:36:09	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	GravitonAthenaQuery	CREATE_COMPLETE	[0m
+17:36:20 [    INFO] 17:36:17	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	ReplicationBucketsStackSet	CREATE_IN_PROGRESS	[0m
+17:36:20 [    INFO] 17:36:19	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	LambdaFunction	CREATE_IN_PROGRESS	[0m
+17:36:20 [    INFO] [92m17:36:20	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CostAnomalyLambdaRole	CREATE_COMPLETE	[0m
+17:36:20 [    INFO] 17:36:19	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	LambdaFunction	CREATE_IN_PROGRESS	[0m
+17:36:21 [    INFO] [92m17:36:16	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	SnapshotCrawler	CREATE_COMPLETE	[0m
+17:36:21 [    INFO] [92m17:36:20	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	LambdaRole	CREATE_COMPLETE	[0m
+17:36:22 [    INFO] 17:36:15	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	RightsizingLambdaRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:22 [    INFO] 17:36:20	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:23 [    INFO] 17:36:19	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:29 [    INFO] 17:36:28	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CustomResourceFunctionFinalize	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:29 [    INFO] 17:36:29	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	StepFunctionExecutionRole	CREATE_IN_PROGRESS	[0m
+17:36:29 [    INFO] 17:36:22	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:29 [    INFO] 17:36:29	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	StepFunctionExecutionRole	CREATE_IN_PROGRESS	[0m
+17:36:30 [    INFO] 17:36:23	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:30 [    INFO] 17:36:23	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:30 [    INFO] 17:36:22	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:30 [    INFO] 17:36:30	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:31 [    INFO] 17:36:28	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:36 [    INFO] [92m17:36:36	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CustomResourceFunctionFinalize	CREATE_COMPLETE	[0m
+17:36:37 [    INFO] 17:36:29	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:37 [    INFO] 17:36:32	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:37 [    INFO] 17:36:29	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:37 [    INFO] 17:36:32	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:38 [    INFO] 17:36:33	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:38 [    INFO] 17:36:32	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	StepFunctionExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:38 [    INFO] 17:36:34	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	LambdaFunction	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:46 [    INFO] 17:36:44	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	CloudWatchTrigger	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:46 [    INFO] 17:36:45	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	StepFunction	CREATE_IN_PROGRESS	[0m
+17:36:53 [    INFO] 17:36:49	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:53 [    INFO] 17:36:50	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:53 [    INFO] 17:36:52	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:53 [    INFO] 17:36:52	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:54 [    INFO] 17:36:51	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:36:54 [    INFO] 17:36:48	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	ScheduleExecutionRole	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:08 [    INFO] 17:37:07	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:09 [    INFO] 17:37:08	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	[0m
+17:37:10 [    INFO] 17:37:09	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:10 [    INFO] 17:37:07	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:16 [    INFO] [92m17:37:14	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	EventPermission	CREATE_COMPLETE	[0m
+17:37:16 [    INFO] [92m17:37:14	OptimizationDataCollectionStack-PricingModule-11Y0IHE1FOE02	CREATE_COMPLETE	[0m
+17:37:17 [    INFO] 17:37:09	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:17 [    INFO] 17:37:15	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:17 [    INFO] 17:37:12	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ModuleRefreshScheduleRule	CREATE_IN_PROGRESS	Resource creation Initiated[0m
+17:37:40 [    INFO] [92m17:37:32	OptimizationDataCollectionStack	PricingModule	CREATE_COMPLETE	[0m
+17:37:40 [    INFO] [92m17:37:38	OptimizationDataCollectionStack-CostAnomalyModule-6H3EDVN3UXZD	CREATE_COMPLETE	[0m
+17:37:41 [    INFO] [92m17:37:37	OptimizationDataCollectionStack-OrgDataModule-1T5BAYHV7UZBQ	CREATE_COMPLETE	[0m
+17:37:49 [    INFO] [92m17:37:49	OptimizationDataCollectionStack-RightsizeModule-G7VCY7MX1X9C	CREATE_COMPLETE	[0m
+17:37:55 [    INFO] [92m17:37:50	OptimizationDataCollectionStack	RightsizeModule	CREATE_COMPLETE	[0m
+17:38:11 [    INFO] [92m17:38:11	OptimizationDataCollectionStack	TrustedAdvisorModule	CREATE_COMPLETE	[0m
+17:38:12 [    INFO] [92m17:38:10	OptimizationDataCollectionStack-BudgetsModule-1UXW7WFUCZDIW	CREATE_COMPLETE	[0m
+17:38:13 [    INFO] [92m17:38:11	OptimizationDataCollectionStack-EcsChargebackModule-YYNPS6QP4ELB	CREATE_COMPLETE	[0m
+17:38:13 [    INFO] [92m17:38:13	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	ModuleRefreshScheduleRule	CREATE_COMPLETE	[0m
+17:38:14 [    INFO] [92m17:38:12	OptimizationDataCollectionStack-TransitGatewayModule-JQISLGMI2HPU	CREATE_COMPLETE	[0m
+17:38:14 [    INFO] [92m17:38:09	OptimizationDataCollectionStack-TrustedAdvisorModule-1PP6QVHK14HK3	CREATE_COMPLETE	[0m
+17:38:19 [    INFO] [92m17:38:11	OptimizationDataCollectionStack	EcsChargebackModule	CREATE_COMPLETE	[0m
+17:38:21 [    INFO] [92m17:38:18	OptimizationDataCollectionStack-InventoryCollectorModule-1OTXROZQ0O8TS	CREATE_COMPLETE	[0m
+17:38:21 [    INFO] [92m17:38:15	OptimizationDataCollectionStack-RDSUtilizationModule-1RKSZVFQ31ANI	CREATE_COMPLETE	[0m
+17:38:28 [    INFO] 17:38:28	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	FinalizeSetup	CREATE_IN_PROGRESS	[0m
+17:38:35 [    INFO] [92m17:38:35	OptimizationDataCollectionStack	InventoryCollectorModule	CREATE_COMPLETE	[0m
+17:38:36 [    INFO] [92m17:38:36	OptimizationDataCollectionStack-ComputeOptimizerModule-R8BXBZFJKFBR	CREATE_COMPLETE	[0m
+17:38:43 [    INFO] [92m17:38:42	OptimizationDataCollectionStack	ComputeOptimizerModule	CREATE_COMPLETE	[0m
+17:38:51 [    INFO] [92m17:38:44	OptimizationDataCollectionStack	CREATE_COMPLETE	[0m
+17:38:54 [    INFO] Emptying the bucket [96mcostoptimizationdata317256447485[0m
+17:38:54 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-ecs-chargeback-StateMachine has : []
+17:38:54 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-ecs-chargeback-StateMachine:beb87875-dec6-4586-b219-635a5d50fe2d
+17:38:54 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-inventory-StateMachine has : []
+17:38:54 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-inventory-StateMachine:babb0a05-321e-4fce-8e5c-e2690c6305b7
+17:38:54 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-rds_usage_data-StateMachine has : [{'executionArn': 'arn:aws:states:us-east-1:317256447485:execution:WA-rds_usage_data-StateMachine:0c3d973f-26ec-f724-7317-132048c0c634_8067d288-6b28-4010-57be-32cc117777cf', 'stateMachineArn': 'arn:aws:states:us-east-1:317256447485:stateMachine:WA-rds_usage_data-StateMachine', 'name': '0c3d973f-26ec-f724-7317-132048c0c634_8067d288-6b28-4010-57be-32cc117777cf', 'status': 'SUCCEEDED', 'startDate': datetime.datetime(2023, 9, 29, 17, 37, 52, 37000, tzinfo=tzlocal()), 'stopDate': datetime.datetime(2023, 9, 29, 17, 38, 15, 30000, tzinfo=tzlocal())}]
+17:38:55 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-rds_usage_data-StateMachine:ac6c6677-d61e-49fb-a6b7-bff5da96ecb2
+17:38:55 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-transit-gateway-StateMachine has : [{'executionArn': 'arn:aws:states:us-east-1:317256447485:execution:WA-transit-gateway-StateMachine:8b4484bc-ddcf-81da-b313-47be30957ed4_782f0a69-0aac-e893-d9d9-669d14b0fb47', 'stateMachineArn': 'arn:aws:states:us-east-1:317256447485:stateMachine:WA-transit-gateway-StateMachine', 'name': '8b4484bc-ddcf-81da-b313-47be30957ed4_782f0a69-0aac-e893-d9d9-669d14b0fb47', 'status': 'SUCCEEDED', 'startDate': datetime.datetime(2023, 9, 29, 17, 37, 51, 1000, tzinfo=tzlocal()), 'stopDate': datetime.datetime(2023, 9, 29, 17, 38, 4, 40000, tzinfo=tzlocal())}]
+17:38:55 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-transit-gateway-StateMachine:586c6038-6b5e-4af7-8f80-7d922c18e008
+17:38:55 [    INFO] arn:aws:states:us-east-1:317256447485:stateMachine:WA-trusted-advisor-StateMachine has : []
+17:38:55 [    INFO] Starting arn:aws:states:us-east-1:317256447485:execution:WA-trusted-advisor-StateMachine:1eba11c4-f643-45cc-b38d-e324ec423f57
+17:39:57 [    INFO] Waiting 1 min
+_____________________ test_cost_explorer_rightsizing_data ______________________
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+
+    def test_cost_explorer_rightsizing_data(athena):
+>       data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_explorer_rightsizing_data" LIMIT 10;')
+
+Data_Collection/Optimization/Test/test_from_scratch.py:49: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+sql_query = 'SELECT * FROM "optimization_data"."cost_explorer_rightsizing_data" LIMIT 10;'
+sleep_duration = 1, database = None, catalog = 'AwsDataCatalog'
+workgroup = 'primary'
+
+    def athena_query(athena, sql_query, sleep_duration=1, database: str=None, catalog: str='AwsDataCatalog', workgroup: str='primary'):
+        """ Executes an AWS Athena Query and return dict"""
+        context = {}
+        if database: context['Database'] = database
+        if catalog: context['Catalog'] = catalog
+        response = athena.start_query_execution(
+            QueryString=sql_query,
+            QueryExecutionContext=context,
+            WorkGroup=workgroup,
+        )
+        query_id = response.get('QueryExecutionId')
+        current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+        while current_status['State'] in ['SUBMITTED', 'RUNNING', 'QUEUED']:
+            current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+            time.sleep(sleep_duration)
+        if current_status['State'] != "SUCCEEDED":
+            failure_reason = current_status['StateChangeReason']
+            logger.debug(f'Full query: {repr(sql_query)}')
+>           raise Exception('Athena query failed: {}'.format(failure_reason))
+E           Exception: Athena query failed: TABLE_NOT_FOUND: line 1:15: Table 'awsdatacatalog.optimization_data.cost_explorer_rightsizing_data' does not exist
+
+Data_Collection/Optimization/Test/utils.py:51: Exception
+____________________________ test_cost_anomaly_data ____________________________
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+
+    def test_cost_anomaly_data(athena):
+>       data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_anomaly_data" LIMIT 10;')
+
+Data_Collection/Optimization/Test/test_from_scratch.py:54: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+sql_query = 'SELECT * FROM "optimization_data"."cost_anomaly_data" LIMIT 10;'
+sleep_duration = 1, database = None, catalog = 'AwsDataCatalog'
+workgroup = 'primary'
+
+    def athena_query(athena, sql_query, sleep_duration=1, database: str=None, catalog: str='AwsDataCatalog', workgroup: str='primary'):
+        """ Executes an AWS Athena Query and return dict"""
+        context = {}
+        if database: context['Database'] = database
+        if catalog: context['Catalog'] = catalog
+        response = athena.start_query_execution(
+            QueryString=sql_query,
+            QueryExecutionContext=context,
+            WorkGroup=workgroup,
+        )
+        query_id = response.get('QueryExecutionId')
+        current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+        while current_status['State'] in ['SUBMITTED', 'RUNNING', 'QUEUED']:
+            current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+            time.sleep(sleep_duration)
+        if current_status['State'] != "SUCCEEDED":
+            failure_reason = current_status['StateChangeReason']
+            logger.debug(f'Full query: {repr(sql_query)}')
+>           raise Exception('Athena query failed: {}'.format(failure_reason))
+E           Exception: Athena query failed: TABLE_NOT_FOUND: line 1:15: Table 'awsdatacatalog.optimization_data.cost_anomaly_data' does not exist
+
+Data_Collection/Optimization/Test/utils.py:51: Exception
+__________________________ test_trusted_advisor_data ___________________________
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+
+    def test_trusted_advisor_data(athena):
+>       data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."trusted_advisor_data" LIMIT 10;')
+
+Data_Collection/Optimization/Test/test_from_scratch.py:87: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+athena = <botocore.client.Athena object at 0x7fc040e81c10>
+sql_query = 'SELECT * FROM "optimization_data"."trusted_advisor_data" LIMIT 10;'
+sleep_duration = 1, database = None, catalog = 'AwsDataCatalog'
+workgroup = 'primary'
+
+    def athena_query(athena, sql_query, sleep_duration=1, database: str=None, catalog: str='AwsDataCatalog', workgroup: str='primary'):
+        """ Executes an AWS Athena Query and return dict"""
+        context = {}
+        if database: context['Database'] = database
+        if catalog: context['Catalog'] = catalog
+        response = athena.start_query_execution(
+            QueryString=sql_query,
+            QueryExecutionContext=context,
+            WorkGroup=workgroup,
+        )
+        query_id = response.get('QueryExecutionId')
+        current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+        while current_status['State'] in ['SUBMITTED', 'RUNNING', 'QUEUED']:
+            current_status = athena.get_query_execution(QueryExecutionId=query_id)['QueryExecution']['Status']
+            time.sleep(sleep_duration)
+        if current_status['State'] != "SUCCEEDED":
+            failure_reason = current_status['StateChangeReason']
+            logger.debug(f'Full query: {repr(sql_query)}')
+>           raise Exception('Athena query failed: {}'.format(failure_reason))
+E           Exception: Athena query failed: TABLE_NOT_FOUND: line 1:15: Table 'awsdatacatalog.optimization_data.trusted_advisor_data' does not exist
+
+Data_Collection/Optimization/Test/utils.py:51: Exception
+=============================== warnings summary ===============================
+../../../../../home/erichre/.local/lib/python3.9/site-packages/_pytest/config/__init__.py:1433
+  /home/erichre/.local/lib/python3.9/site-packages/_pytest/config/__init__.py:1433: PytestConfigWarning: No files were found in testpaths; consider removing or adjusting your testpaths configuration. Searching recursively from the current directory instead.
+    self.args, self.args_source = self._decide_args(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED Data_Collection/Optimization/Test/test_from_scratch.py::test_budgets_data
+FAILED Data_Collection/Optimization/Test/test_from_scratch.py::test_cost_explorer_rightsizing_data
+FAILED Data_Collection/Optimization/Test/test_from_scratch.py::test_cost_anomaly_data
+FAILED Data_Collection/Optimization/Test/test_from_scratch.py::test_trusted_advisor_data
+============== 4 failed, 8 passed, 1 warning in 716.85s (0:11:56) ==============

@@ -32,9 +32,9 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  AccountCollectorLambdaARN:
+  AccountIteratorStepFunctionARN:
     Type: String
-    Description: Arn of the lambda for the Accounts Collector function
+    Description: Arn of the universal Account Iterator Step Function
 
 Outputs:
   AthenaSavedQuery:
@@ -149,7 +149,7 @@ Resources:
                   )
               collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
-                  account = json.loads(event["account"])
+                  account = json.loads(event["account"][0])
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
@@ -173,8 +173,8 @@ Resources:
                               f.write("\n")
                   logger.info(f"Budgets collected: {count}")
                   s3_upload(account_id, payer_id)
-              except Exception as exc:
-                  logger.warning(f"Error: {type(e)} {exc}")
+              except Exception as e:
+                  logger.warning(f"Error: {type(e)} {e}")
 
           def s3_upload(account_id, payer_id):
               if os.path.getsize(TMP_FILE) == 0:
@@ -231,125 +231,6 @@ Resources:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
 
-  StepFunctionExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - states.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - glue:StartCrawler
-                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler'
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource:
-                  - !Ref AccountCollectorLambdaARN
-                  - !GetAtt LambdaFunction.Arn
-
-  StepFunction:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
-      DefinitionString: |-
-        {
-          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
-          "StartAt": "Account Collector Invoke",
-          "States": {
-            "Account Collector Invoke": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::lambda:invoke",
-              "OutputPath": "$.Payload",
-              "Parameters": {
-                "Payload.$": "$",
-                "FunctionName": "${AccountCollectorLambdaARN}"
-              },
-              "Retry": [
-                {
-                  "ErrorEquals": [
-                    "Lambda.ServiceException",
-                    "Lambda.AWSLambdaException",
-                    "Lambda.SdkClientException",
-                    "Lambda.TooManyRequestsException"
-                  ],
-                  "IntervalSeconds": 2,
-                  "MaxAttempts": 6,
-                  "BackoffRate": 2
-                }
-              ],
-              "Next": "Module Map"
-            },
-            "Module Map": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "INLINE"
-                },
-                "StartAt": "Module Invoke",
-                "States": {
-                  "Module Invoke": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::lambda:invoke",
-                    "OutputPath": "$.Payload",
-                    "Parameters": {
-                      "FunctionName": "${LambdaFunction}",
-                      "Payload": {
-                        "account.$": "$.account"
-                      }
-                    },
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "Lambda.TooManyRequestsException"
-                        ],
-                        "IntervalSeconds": 2,
-                        "MaxAttempts": 6,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "End": true
-                  }
-                }
-              },
-              "ItemsPath": "$.accountList",
-              "Next": "Start Crawler"
-            },
-            "Start Crawler": {
-              "Type": "Task",
-              "Parameters": {
-                "Name": "${Crawler}"
-              },
-              "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 1200
-        }
-      DefinitionSubstitutions:
-        CFDataName: !Ref CFDataName
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        LambdaFunction: !GetAtt LambdaFunction.Arn
-        Crawler: !Sub '${RolePrefix}${CFDataName}-Crawler'
-
   ScheduleExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -361,7 +242,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - events.amazonaws.com
+                - scheduler.amazonaws.com
             Action:
               - sts:AssumeRole
       Policies:
@@ -373,19 +254,21 @@ Resources:
                 Action:
                   - states:StartExecution
                 Resource:
-                  - !GetAtt StepFunction.Arn
+                  - !Ref AccountIteratorStepFunctionARN
 
-  ModuleRefreshScheduleRule:
-    Type: 'AWS::Events::Rule'
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
     Properties:
-      Description: !Sub "Scheduler-For-${CFDataName}"
-      Name: !Sub '${CFDataName}-ModuleRefreshRule'
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      Targets:
-        - Id: !Sub '${CFDataName}-ModuleRefresh'
-          Arn: !GetAtt StepFunction.Arn
+      FlexibleTimeWindow: 
+        Mode: 'OFF'
+      Target:
+          Arn: !Ref AccountIteratorStepFunctionARN
           RoleArn: !GetAtt ScheduleExecutionRole.Arn
+          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor

@@ -267,7 +267,7 @@ Resources:
       NotificationConfiguration:
         QueueConfigurations:
           - Event: s3:ObjectCreated:*
-            Queue: !GetAtt S3CrawlerQue.Arn #!Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:ODC-S3CrawlerQue" #ADDED ODC
+            Queue: !GetAtt S3CrawlerQue.Arn
             Filter:
               S3Key:
                 Rules:
@@ -304,7 +304,7 @@ Resources:
                           - - !GetAtt S3Bucket.Arn
                             - '*'
   
-  LambdaAnalyticsRole: #Execution role for the custom resource
+  LambdaAnalyticsRole:
     Type: AWS::IAM::Role
     Properties:
       Path:
@@ -380,6 +380,190 @@ Resources:
               except Exception as exc:
                   print("Failed sending PUT to CFN: " + str(exc))
   
+  AccountIteratorStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${RolePrefix}AccountIterator-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
+      DefinitionString: |-
+        {
+          "Comment": "This state machine orchestrates the collection of cost optimization data",
+          "StartAt": "AccountCollectorInvoke",
+          "States": {
+            "AccountCollectorInvoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${AccountCollectorLambdaARN}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "AccountMap",
+              "ResultPath": "$.accountLambdaOutput"
+            },
+            "AccountMap": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "InvokeModuleLambda",
+                "States": {
+                  "InvokeModuleLambda": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "FunctionName.$": "$.module_lambda",
+                      "Payload": {
+                        "account.$": "$.account"
+                      }
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 2,
+                        "MaxAttempts": 6,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
+              "Next": "CrawlerMap",
+              "ResultPath": "$.mapOut",
+              "ItemSelector": {
+                "account.$": "$.accountLambdaOutput.Payload.accountList[*].account",
+                "module_lambda.$": "$.module_lambda",
+                "crawlers.$": "$.crawlers"
+              }
+            },
+            "CrawlerMap": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "GetCrawler",
+                "States": {
+                  "GetCrawler": {
+                    "Type": "Task",
+                    "Parameters": {
+                      "Name.$": "$"
+                    },
+                    "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "States.ALL"
+                        ],
+                        "BackoffRate": 2,
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 8
+                      }
+                    ],
+                    "Next": "IsRunning?",
+                    "OutputPath": "$.Crawler"
+                  },
+                  "IsRunning?": {
+                    "Type": "Choice",
+                    "Choices": [
+                      {
+                        "Or": [
+                          {
+                            "Variable": "$.State",
+                            "StringEquals": "RUNNING"
+                          },
+                          {
+                            "Variable": "$.State",
+                            "StringEquals": "STOPPING"
+                          }
+                        ],
+                        "Next": "WaitForCrawler"
+                      }
+                    ],
+                    "Default": "StartCrawler",
+                    "OutputPath": "$"
+                  },
+                  "WaitForCrawler": {
+                    "Type": "Wait",
+                    "Seconds": 30,
+                    "Next": "GetCrawler",
+                    "OutputPath": "$.Name",
+                    "InputPath": "$"
+                  },
+                  "StartCrawler": {
+                    "Type": "Task",
+                    "Parameters": {
+                      "Name.$": "$"
+                    },
+                    "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                    "End": true,
+                    "InputPath": "$.Name"
+                  }
+                }
+              },
+              "ItemsPath": "$.crawlers",
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 1200
+        }
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunction-Role"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "LambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                  - glue:GetCrawler
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}*'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${RolePrefix}*'
+
+
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTAModule
@@ -393,7 +577,7 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        AccountIteratorStepFunctionARN: !GetAtt AccountIteratorStepFunction.Arn
           
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
@@ -436,7 +620,7 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        AccountIteratorStepFunctionARN: !GetAtt AccountIteratorStepFunction.Arn
   
   PricingModule:
     Type: AWS::CloudFormation::Stack
@@ -482,7 +666,7 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        AccountIteratorStepFunctionARN: !GetAtt AccountIteratorStepFunction.Arn
   
   RDSUtilizationModule:
     Type: AWS::CloudFormation::Stack
@@ -496,7 +680,7 @@ Resources:
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        AccountIteratorStepFunctionARN: !GetAtt AccountIteratorStepFunction.Arn
   
   OrgDataModule:
     Type: AWS::CloudFormation::Stack
@@ -524,7 +708,7 @@ Resources:
           MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
           RolePrefix: !Ref RolePrefix
           LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-          AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+          AccountIteratorStepFunctionARN: !GetAtt AccountIteratorStepFunction.Arn
   
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
@@ -538,7 +722,7 @@ Resources:
         MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        AccountIteratorStepFunctionARN: !GetAtt AccountIteratorStepFunction.Arn
   
   AccountCollector:
     Type: AWS::CloudFormation::Stack
