@@ -180,7 +180,7 @@ Resources:
                   logger.info(f"Budgets collected: {count}")
                   s3_upload(account_id, payer_id)
               except Exception as exc:
-                  logger.warning(f"Error: {type(e)} {exc}")
+                  logger.warning(f"Error: {type(exc)} {exc}")
 
           def s3_upload(account_id, payer_id):
               if os.path.getsize(TMP_FILE) == 0:
