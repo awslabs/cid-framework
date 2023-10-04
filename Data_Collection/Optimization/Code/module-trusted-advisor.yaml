@@ -363,7 +363,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - events.amazonaws.com
+                - scheduler.amazonaws.com
             Action:
               - sts:AssumeRole
       Policies:
@@ -383,16 +383,17 @@ Resources:
             reason: "Need explicit name to identify role actions"
 
   ModuleRefreshScheduleRule:
-    Type: 'AWS::Events::Rule'
+    Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub "Scheduler-For-${CFDataName}"
       Name: !Sub '${CFDataName}-ModuleRefreshRule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      Targets:
-        - Id: !Sub '${CFDataName}-ModuleRefresh'
-          Arn: !GetAtt StepFunction.Arn
-          RoleArn: !GetAtt ScheduleExecutionRole.Arn
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt StepFunction.Arn
+        RoleArn: !GetAtt ScheduleExecutionRole.Arn
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
