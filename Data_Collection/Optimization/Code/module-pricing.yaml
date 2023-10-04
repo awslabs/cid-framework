@@ -146,34 +146,49 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
+  EC2ScheduleExecutionRole:
+    Type: AWS::IAM::Role
     Properties:
-      Description: Weekly Notification Event for lambda data
-      Name: !Sub "${CFDataName}-Weekly-Scheduler"
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-EC2-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt EC2LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  ModuleEC2RefreshScheduleRule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: EC2 Weekly Notification Event for lambda data
+      Name: !Sub "${CFDataName}-EC2-Weekly-Scheduler"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      Targets:
-        - Arn: !GetAtt EC2LambdaFunction.Arn
-          Id: WeeklyTriggerForEC2Pricing
-        - Arn: !GetAtt RDSLambdaFunction.Arn
-          Id: WeeklyTriggerForRDSPricing
-  EC2EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt EC2LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
-  RDSEventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt RDSLambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt EC2LambdaFunction.Arn
+        RoleArn: !GetAtt EC2ScheduleExecutionRole.Arn
+
   AthenaRegionTable:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -386,6 +401,49 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
+
+  RDSScheduleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-RDS-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt RDSLambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  ModuleRDSRefreshScheduleRule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: RDS Weekly Notification Event for lambda data
+      Name: !Sub "${CFDataName}-RDS-Weekly-Scheduler"
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt RDSLambdaFunction.Arn
+        RoleArn: !GetAtt RDSScheduleExecutionRole.Arn
 
   AthenaRDSPricingTable:
     Type: AWS::Athena::NamedQuery

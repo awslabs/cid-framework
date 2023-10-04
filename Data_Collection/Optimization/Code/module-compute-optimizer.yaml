@@ -395,27 +395,49 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
+  ScheduleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt LambdaTriggerExport.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  ModuleRefreshScheduleRule:
+    Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub "Scheduler-For-${RolePrefix}${CFDataName}"
       Name: !Sub "Scheduler-For-${RolePrefix}${CFDataName}"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      Targets:
-        - Arn:
-            Fn::GetAtt:
-              - LambdaTriggerExport
-              - Arn
-          Id: TriggerForGetAccounts
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaTriggerExport.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt LambdaTriggerExport.Arn
+        RoleArn: !GetAtt ScheduleExecutionRole.Arn
+  
   CustomResourceFunctionFinalize:
     Type: AWS::Lambda::Function
     Properties:

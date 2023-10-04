@@ -456,24 +456,50 @@ Resources:
         FROM recs
             JOIN      rightsizing_dates ON ("rightsizing_dates"."instance_id" = "recs"."instance_id")
             LEFT JOIN chosen_tags ON ("chosen_tags"."instance_id" = "recs"."instance_id")
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
+  
+  ScheduleExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachinePolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt LambdaFunction.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  ModuleRefreshScheduleRule:
+    Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub "Notification Event for ${RolePrefix}${CFDataName} data collection"
       Name: !Sub "${RolePrefix}${CFDataName}-Scheduler"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      Targets:
-        - Arn: !GetAtt LambdaFunction.Arn
-          Id: TriggerLambda
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+        Arn: !GetAtt LambdaFunction.Arn
+        RoleArn: !GetAtt ScheduleExecutionRole.Arn
+
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
