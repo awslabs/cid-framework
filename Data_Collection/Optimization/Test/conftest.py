@@ -19,7 +19,7 @@ def athena():
 
 @pytest.fixture(scope='session')
 def cloudformation():
-    return boto3.client('cloudformation') 
+    return boto3.client('cloudformation')
 
 
 @pytest.fixture(scope='session')
@@ -38,7 +38,22 @@ def account_id():
 
 @pytest.fixture(scope='session')
 def bucket():
-    return os.environ.get('BUCKET', "aws-wa-labs-staging")
+    bucket_name = os.environ.get('bucket')
+    if bucket_name:
+        return bucket_name
+    print('env var `bucket` not found')
+    default_bucket = f'cid-{account_id()}-test'
+    s3 = boto3.client('s3')
+    try:
+        s3.head_bucket(Bucket=default_bucket)
+        return default_bucket
+    except s3.exceptions.ClientError as exc:
+        print(f'bucket {default_bucket} not found in the account. {exc}')
+    raise AssertionError(
+        'You need a bucket to run the tests. Please set bucket env variable '
+        '`export bucket=existing-bucket` or create a default bucket '
+        f'`aws s3api create-bucket --bucket {default_bucket}`'
+    )
 
 
 @pytest.fixture(scope='session')
@@ -46,7 +61,7 @@ def start_time():
     global _start_time
     if _start_time is None:
         _start_time = datetime.now()
-    
+
     return _start_time
 
 

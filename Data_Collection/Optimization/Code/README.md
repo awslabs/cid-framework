@@ -19,17 +19,10 @@ You can test this lab in a dedicated account that preferably has the following a
 ### General
 
 * [cfn-lint](https://github.com/aws-cloudformation/cfn-lint#install)
+* [cfn_nag_scan](https://github.com/stelligent/cfn_nag#installation)
 * python3.8+
 * `pip3 install -U boto3 cfn_tools pytest`
-* `realpath`
 * Configured AWS credentials
-
-### OS Specifics 
-
-#### MacOS
-
-* `realpath` can be installed via brew. It comes with [coreutils](https://formulae.brew.sh/formula/coreutils)
-  * `brew install coreutils`
 
 ## Testing
 
@@ -46,22 +39,31 @@ Make sure you configure credentials for an organizations management account that
 1. In the terminal, navigate to the directory where the cid-framework repository was cloned:
 
 ```bash
-$ cd /path/to/cid-framework/directory>
-cid-framework$
+cd /path/to/cid-framework/directory
+```
+
+2. (one time) create a test bucket in test account. You can use any bucket.
+
+```bash
+export account_id=$(aws sts get-caller-identity --query "Account" --output text )
+export bucket=cid-$account_id-test
+
+aws s3api create-bucket --bucket $bucket
 ```
 
 2. Check the quality of cfn code:
 
 ```bash
-cid-framework$ ./Data_Collection/Optimization/Tools/lint.sh
+./Data_Collection/Optimization/Tools/lint.sh
 ```
 
 3. Upload the code to a bucket and run integration tests in your testing environment
 
 ```bash
-cid-framework$ export BUCKET='mybucket'
-cid-framework$ ./Data_Collection/Optimization/Tools/upload.sh  "$BUCKET"
-cid-framework$ python3 ./Data_Collection/Optimization/Test/test_from_scratch.py
+export account_id=$(aws sts get-caller-identity --query "Account" --output text )
+export bucket=cid-$account_id-test
+./Data_Collection/Optimization/Tools/upload.sh  "$bucket"
+python3 ./Data_Collection/Optimization/Test/test_from_scratch.py
 ```
 
 The test will install stacks from scratch in a single account, then it will check the presence of Athena tables. After running tests, it will delete the stacks and all artefacts that are not deleted by CFN.
