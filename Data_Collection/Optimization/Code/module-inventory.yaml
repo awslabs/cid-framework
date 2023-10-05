@@ -32,23 +32,29 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  AccountIteratorStepFunctionARN:
+  AccountCollectorLambdaARN:
     Type: String
-    Description: Arn of the universal Account Iterator Step Function
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
 
 Outputs:
-  LambdaRoleARN:
-    Description: Role for Lambda execution of collection data.
-    Value: !GetAtt LambdaRole.Arn
-  LambdaFunctionARN:
-    Description: ARN for the module's primary Lambda function
-    Value: !GetAtt LambdaFunction.Arn
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
 
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -62,14 +68,14 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: "AssumeMultiAccountRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
-        - PolicyName: !Sub "${CFDataName}-S3-Access"
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -77,23 +83,14 @@ Resources:
                 Action:
                   - "s3:PutObject"
                 Resource:
-                  - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "lambda:InvokeFunction"
-                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:pricing-Lambda-Function"
-              - Effect: "Allow"
-                Action:
-                  - "ec2:DescribeRegions"
-                Resource: "*"  ## only * can be used as a Resource for this action
-
+                  
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
-      Description: !Sub "Lambda Function to retrieve ${CFDataName}"
-      Runtime: python3.11
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.8
       Architectures: [arm64]
       Code:
         ZipFile: |
@@ -116,13 +113,7 @@ Resources:
 
 
           logger = logging.getLogger()
-          if "LOG_LEVEL" in os.environ:
-              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
-              if not isinstance(numeric_level, int):
-                  raise ValueError('Invalid log level: %s' % numeric_level)
-              logger.setLevel(level=numeric_level)
-          else:
-              logger.setLevel(logging.INFO)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           def to_json(obj):
               """json helper for date time data"""
@@ -246,8 +237,73 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          ROLENAME: !Ref MultiAccountRoleName
           PREFIX: !Ref CFDataName
+          ROLENAME: !Ref MultiAccountRoleName
+
+  AMICrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-AMI-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  SnapshotCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Snapshot-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  EBSCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-EBS-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${RolePrefix}${CFDataName}-AMI-Crawler","${RolePrefix}${CFDataName}-Snapshot-Crawler","${RolePrefix}${CFDataName}-EBS-Crawler"]'
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow: 
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
 
   AthenaSnaphotAMI:
     Type: AWS::Athena::NamedQuery
@@ -293,6 +349,7 @@ Resources:
             virtualizationtype
             FROM optimization_data.inventory_ami_data) AS ami
                 ON snapshots.snap_ami_id = ami.imageid )
+
   AthenaSnaphotAMICUR:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -468,6 +525,7 @@ Resources:
           FROM optimization_data.pricing_region_names
           )  region
           ON (inventory_ebs_data.region = region.region_code)
+
   AthenaEBSView:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -491,6 +549,7 @@ Resources:
           FROM
             optimization_data.pricing_region_names
         )  region ON (inventory_ebs_data.region = region.region_code)
+
   AthenaEBSTAPricing:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -544,6 +603,7 @@ Resources:
             WHERE ((("Product Family" = 'System Operation') AND ("volume api name" IN ('io1', 'io2'))) AND ((usagetype LIKE '%EBS:VolumeP-IOPS.io2') OR (usagetype LIKE '%EBS:VolumeP-IOPS.piops')))
           )  ebs_iops_price ON ((inventory_ebs_view.volumetype = ebs_iops_price."volume api name") AND (inventory_ebs_view.regionname = ebs_iops_price.location)))
           ORDER BY volumeid DESC
+
   AthenaGp3Opportunity:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -647,81 +707,3 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
-
-  AMICrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-AMI'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  SnapshotCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-Snapshot'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  EBSCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-EBS'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  ScheduleExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - scheduler.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: "ExecuteStateMachinePolicy"
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - states:StartExecution
-                Resource:
-                  - !Ref AccountIteratorStepFunctionARN
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow: 
-        Mode: 'OFF'
-      Target:
-          Arn: !Ref AccountIteratorStepFunctionARN
-          RoleArn: !GetAtt ScheduleExecutionRole.Arn
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler-AMI","${RolePrefix}${CFDataName}-Crawler-Snapshot","${RolePrefix}${CFDataName}-Crawler-EBS"]}'
-
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName

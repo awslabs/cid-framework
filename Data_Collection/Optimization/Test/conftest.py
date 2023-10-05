@@ -36,6 +36,7 @@ def account_id():
     return boto3.client("sts").get_caller_identity()["Account"]
 
 
+
 @pytest.fixture(scope='session')
 def bucket():
     bucket_name = os.environ.get('bucket')
@@ -64,8 +65,16 @@ def start_time():
 
     return _start_time
 
+def pytest_addoption(parser):
+    parser.addoption("--mode", action="store", default="full", choices=("full", "no_clean", "clean_only") )
+
+@pytest.fixture(scope='session')
+def mode(request):  
+    return request.config.getoption("--mode")
 
 @pytest.fixture(scope='session', autouse=True)
-def prepare_setup(athena, cloudformation, s3, account_id, bucket, start_time):
-    yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, bucket=bucket, s3=s3)
-    cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, athena=athena)
+def prepare_setup(athena, cloudformation, s3, account_id, bucket, start_time, mode):
+    if mode != "clean_only":
+        yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, bucket=bucket, s3=s3)
+    if mode != "no_clean":    
+        cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, athena=athena)

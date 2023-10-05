@@ -126,12 +126,12 @@ Resources:
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-budgets"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-ecs-chargeback"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-inventory"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-rds_usage_data"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-transit-gateway"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-trusted-advisor"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}budgets-LambdaRole"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}ecs-chargeback-LambdaRole"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}inventory-LambdaRole"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}rds-usage-LambdaRole"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}transit-gateway-LambdaRole"
+                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}trusted-advisor-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:

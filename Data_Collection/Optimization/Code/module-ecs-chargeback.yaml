@@ -32,27 +32,33 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  AccountIteratorStepFunctionARN:
+  AccountCollectorLambdaARN:
     Type: String
-    Description: Arn of the universal Account Iterator Step Function
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
   CURTable:
     Type: String
     Description: The name of your Cost and Usage Report table in Athena
     Default: cid_cur.cur
 
 Outputs:
-  LambdaRoleARN:
-    Description: Role for Lambda execution of collection data.
-    Value: !GetAtt LambdaRole.Arn
-  LambdaFunctionARN:
-    Description: ARN for the module's primary Lambda function
-    Value: !GetAtt LambdaFunction.Arn
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
 
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -66,14 +72,14 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: "AssumeMultiAccountRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
-        - PolicyName: !Sub "${CFDataName}-permissions"
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -82,13 +88,14 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-
+                  
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
-      Description: !Sub "Lambda Function to retrieve ${CFDataName}"
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.8
+      Architectures: [arm64]
       Code:
         ZipFile: |
           import os
@@ -106,13 +113,7 @@ Resources:
           local_file = "/tmp/data.json"
 
           logger = logging.getLogger()
-          if "LOG_LEVEL" in os.environ:
-              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
-              if not isinstance(numeric_level, int):
-                  raise ValueError('Invalid log level: %s' % numeric_level)
-              logger.setLevel(level=numeric_level)
-          else:
-              logger.setLevel(logging.INFO)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           def lambda_handler(event, context):
               collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -207,6 +208,48 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
 
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow: 
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
+
   AthenaClusterMetadataView:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -223,6 +266,7 @@ Resources:
               CROSS JOIN UNNEST("tags") t (tag)
             )
           WHERE ("tag"."key" = 'BU')
+
   AthenaEc2ClusterCostsView:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -245,6 +289,7 @@ Resources:
           ${CURTable}
         WHERE (((product_product_name = 'Amazon Elastic Compute Cloud') AND ((resource_tags_user_name LIKE '%ECS%') OR (resource_tags_user_name LIKE '%ecs%'))) AND (((line_item_usage_type LIKE '%BoxUsage%') OR (line_item_usage_type LIKE '%Spot%')) OR (line_item_usage_type LIKE '%%EBS%%Volume%%')))
         GROUP BY resource_tags_user_name, line_item_product_code, line_item_usage_account_id, line_item_resource_id, line_item_usage_type, month, year
+
   AthenaBUUsageView:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -302,6 +347,7 @@ Resources:
             ecs_chargeback_cluster_metadata_view
         )  clusters_data ON ((("clusters_data"."account_id" = "cur"."line_item_usage_account_id") AND (("clusters_data"."services" = "cur"."resource_tags_aws_ecs_service_name") AND ("clusters_data"."year" = "cur"."year"))) AND ("clusters_data"."month" = "cur"."month")))
         GROUP BY "bill_payer_account_id", "line_item_usage_account_id", "line_item_product_code", "line_item_operation", "line_item_resource_id", "resource_tags_aws_ecs_service_Name", "line_item_usage_type", "line_item_operation", "cur"."month", "cur"."year", "cluster", "services", "servicearn", "value", "task", "account_id"
+
   AthenaEC2CChargeBackQuery:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -329,58 +375,3 @@ Resources:
         WHERE "cluster" <> ''  and  if((date_format(current_timestamp , '%M') = 'January'),ecs_chargeback_bu_usage.month = '12', ecs_chargeback_bu_usage.month = CAST((month(now())-1) AS VARCHAR) )
         and  if((date_format(current_timestamp , '%M') = 'January'), ecs_chargeback_bu_usage.year = CAST((year(now())-1) AS VARCHAR) ,ecs_chargeback_bu_usage.year = CAST(year(now()) AS VARCHAR))
         GROUP BY  "cluster", services, servicearn, value, ecs_chargeback_bu_usage.month, ecs_chargeback_bu_usage.year, ecs_chargeback_bu_usage.line_item_usage_account_id, total_usage, ec2_cost
-
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-
-  ScheduleExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - scheduler.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: "ExecuteStateMachinePolicy"
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - states:StartExecution
-                Resource:
-                  - !Ref AccountIteratorStepFunctionARN
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow: 
-        Mode: 'OFF'
-      Target:
-          Arn: !Ref AccountIteratorStepFunctionARN
-          RoleArn: !GetAtt ScheduleExecutionRole.Arn
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
-
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName

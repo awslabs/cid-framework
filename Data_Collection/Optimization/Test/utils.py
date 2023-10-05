@@ -280,10 +280,10 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
 def trigger_update(account_id):
     region = boto3.session.Session().region_name
     state_machine_arns = [
-       # f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-ecs-chargeback-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds_usage_data-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
     ]

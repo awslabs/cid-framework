@@ -16,18 +16,15 @@ Outputs:
     Value:
       Ref: LambdaFunction
   LambdaFunctionARN:
-    Description: Lambda function ARN.
-    Value:
-      Fn::GetAtt:
-        - LambdaFunction
-        - Arn
+    Description: Lambda function ARN
+    Value: !GetAtt LambdaFunction.Arn
     Export:
       Name: AccountCollectorLambdaARN
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-account-collector"
+      RoleName: !Sub "${RolePrefix}account-collector-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -41,31 +38,21 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "Assume-Management-Organization-Data-Role"
+        - PolicyName: "AssumeManagementOrganizationDataRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
-        - PolicyName: "S3-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/AWS-Organization-Account-Collector*"
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}accounts-collector-Lambda'
-      Description: LambdaFunction of python3.8.
+      FunctionName: !Sub '${RolePrefix}account-collector-Lambda'
+      Description: "Lambda function to retrieve the account list"
       Runtime: python3.8
+      Architectures: [arm64]
       Code:
           ZipFile: |
             import os

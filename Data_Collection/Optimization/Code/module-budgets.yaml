@@ -32,27 +32,29 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  AccountIteratorStepFunctionARN:
+  AccountCollectorLambdaARN:
     Type: String
-    Description: Arn of the universal Account Iterator Step Function
-
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+    
 Outputs:
-  AthenaSavedQuery:
-    Description: This saved query will provide you a summary of your lambda data
-    Value:
-      Ref: AthenaQuery
-  LambdaRoleARN:
-    Description: Role for Lambda execution of collection data.
-    Value: !GetAtt LambdaRole.Arn
-  LambdaFunctionARN:
-    Description: ARN for the module's primary Lambda function
-    Value: !GetAtt LambdaFunction.Arn
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
 
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -66,36 +68,30 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: "AssumeMultiAccountRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
-        - PolicyName: !Sub "${CFDataName}-Access"
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                  - "s3:ListBucket"
-                  - "s3:GetBucketLocation"
                 Resource:
-                  - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "budgets:ViewBudget"
-                  - "budgets:Describe*"
-                Resource: !Sub "arn:aws:budgets:${AWS::Region}:${AWS::AccountId}:*"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
-      Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.8
+      Architectures: [arm64]
       Code:
         ZipFile: |
           #Author Stephanie Gooch 2021
@@ -113,13 +109,7 @@ Resources:
           TMP_FILE = "/tmp/data.json"
 
           logger = logging.getLogger()
-          if "LOG_LEVEL" in os.environ:
-              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
-              if not isinstance(numeric_level, int):
-                  raise ValueError('Invalid log level: %s' % numeric_level)
-              logger.setLevel(level=numeric_level)
-          else:
-              logger.setLevel(logging.INFO)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           # subclass JSONEncoder
           class DateTimeEncoder(JSONEncoder):
@@ -141,7 +131,7 @@ Resources:
               )
 
           def lambda_handler(event, context):
-              print(json.dumps(event))
+              logger.info(f"Event data {json.dumps(event)}")
               if 'account' not in event:
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
@@ -197,6 +187,48 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
 
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow: 
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
+
   AthenaQuery:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -220,58 +252,3 @@ Resources:
         FROM
           optimization_data.budgets_data
         WHERE (budgettype = 'COST')  AND costfilters.filter[1] = 'None'
-
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-
-  ScheduleExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - scheduler.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: "ExecuteStateMachinePolicy"
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - states:StartExecution
-                Resource:
-                  - !Ref AccountIteratorStepFunctionARN
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow: 
-        Mode: 'OFF'
-      Target:
-          Arn: !Ref AccountIteratorStepFunctionARN
-          RoleArn: !GetAtt ScheduleExecutionRole.Arn
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
-
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
