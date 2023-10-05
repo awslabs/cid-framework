@@ -205,25 +205,27 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
     # Execute sate machines
     discovery_attempts = 5 # TODO To become a parameter? will this be needed?
     keep_checking = True
-    sm_execution_arns = {}
+    sm_executions = {}
     while keep_checking:
-        logger.info(f"Discovering state machines executions - Attempts left: {discovery_attempts}")
+        logger.debug(f"Discovering state machines executions - Attempts left: {discovery_attempts}")
         for state_machine_arn in state_machine_arns:
-            if state_machine_arn not in sm_execution_arns.keys():
+            if state_machine_arn not in sm_executions.keys():
                 executions = []
                 try:
                     executions = stepfunctions.list_executions(
                         stateMachineArn=state_machine_arn,
                     )['executions']
-                    logger.info(f'{state_machine_arn} has : {executions}')
+                    logger.debug(f'{state_machine_arn} has : {executions}')
                 except stepfunctions.exceptions.StateMachineDoesNotExist as exc:
                     logger.error(f"The state machine with ARN '{state_machine_arn}' was not found.")
+
                 if len(executions) > 0:
                     logger.info(f'{state_machine_arn} has already started: {executions}')
-                    sm_execution_arns[state_machine_arn] = executions[0]["executionArn"]
+                    sm_executions[state_machine_arn] = executions[0]["executionArn"]
                 else:
                     logger.warn(f"No executions found for state machine '{state_machine_arn}'")
-        if len(state_machine_arns) == len(sm_execution_arns):
+                
+        if len(state_machine_arns) == len(sm_executions):
             logger.info(f"All state machines have started executions, stopping discovery.")
             keep_checking = False
         else:
@@ -234,7 +236,7 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
             time.sleep(15) # TODO arbitrary time, aiming to get all executions in the first minute or so, consider parameter or other option
 
     # TODO Did we get all state machines executions?
-    if len(state_machine_arns) == len(sm_execution_arns.keys()):
+    if len(state_machine_arns) == len(sm_executions.keys()):
         # Extract Lambda function ARNs from the state machine definition
         state_machine_definition = json.loads(stepfunctions.describe_state_machine(stateMachineArn=state_machine_arn)['definition'])
         def _extract_lambda_arns(state):
@@ -259,12 +261,12 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
 
     # Wait for state machines to complete
     last_log_time = {lambda_arn: int(time.time()) * 1000 for lambda_arn in lambda_arns}
-    execution_results = {execution_arn: None for execution_arn in sm_execution_arns.values()}
+    execution_results = {execution_arn: None for execution_arn in sm_executions.values()}
     running = True
     while running:
         # check if there are still running
         running = False
-        for execution_arn in sm_execution_arns.values():
+        for execution_arn in sm_executions.values():
             res = stepfunctions.describe_execution(executionArn=execution_arn)
             if res['status'] == 'RUNNING':
                 running = True
