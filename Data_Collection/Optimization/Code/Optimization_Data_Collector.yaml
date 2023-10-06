@@ -83,6 +83,153 @@ Mappings:
        ca-central-1:     {CodeBucket: aws-well-architected-labs-canada }
        eu-west-3:        {CodeBucket: aws-well-architected-labs-paris }
        sa-east-1:        {CodeBucket: aws-well-architected-labs-san-paulo }
+
+  CodeTemplates:
+    StepFunction:  {code: '
+      {
+        "Comment": "This state machine orchestrates the collection of cost optimization data",
+        "StartAt": "AccountCollectorInvoke",
+        "States": {
+          "AccountCollectorInvoke": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "Payload.$": "$",
+              "FunctionName": "${AccountCollectorLambdaARN}"
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2
+              }
+            ],
+            "Next": "AccountMap",
+            "ResultPath": "$.accountLambdaOutput"
+          },
+          "AccountMap": {
+            "Type": "Map",
+            "ItemProcessor": {
+              "ProcessorConfig": {
+                "Mode": "INLINE"
+              },
+              "StartAt": "InvokeModuleLambda",
+              "States": {
+                "InvokeModuleLambda": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "OutputPath": "$.Payload",
+                  "Parameters": {
+                    "Payload": {
+                      "account.$": "$.account"
+                    },
+                    "FunctionName": "${ModuleLambdaARN}"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 2,
+                      "MaxAttempts": 6,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "End": true
+                }
+              }
+            },
+            "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
+            "Next": "CrawlerMap",
+            "ItemSelector": {
+              "account.$": "$.accountLambdaOutput.Payload.accountList[*].account"
+            },
+            "ResultSelector": {
+              "crawlers": ${Crawlers}
+            }
+          },
+          "CrawlerMap": {
+            "Type": "Map",
+            "ItemProcessor": {
+              "ProcessorConfig": {
+                "Mode": "INLINE"
+              },
+              "StartAt": "GetCrawler",
+              "States": {
+                "GetCrawler": {
+                  "Type": "Task",
+                  "Parameters": {
+                    "Name.$": "$"
+                  },
+                  "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "States.ALL"
+                      ],
+                      "BackoffRate": 2,
+                      "IntervalSeconds": 1,
+                      "MaxAttempts": 8
+                    }
+                  ],
+                  "Next": "IsRunning?",
+                  "OutputPath": "$.Crawler"
+                },
+                "IsRunning?": {
+                  "Type": "Choice",
+                  "Choices": [
+                    {
+                      "Or": [
+                        {
+                          "Variable": "$.State",
+                          "StringEquals": "RUNNING"
+                        },
+                        {
+                          "Variable": "$.State",
+                          "StringEquals": "STOPPING"
+                        }
+                      ],
+                      "Next": "WaitForCrawler"
+                    }
+                  ],
+                  "Default": "StartCrawler",
+                  "OutputPath": "$"
+                },
+                "WaitForCrawler": {
+                  "Type": "Wait",
+                  "Seconds": 30,
+                  "Next": "GetCrawler",
+                  "OutputPath": "$.Name",
+                  "InputPath": "$"
+                },
+                "StartCrawler": {
+                  "Type": "Task",
+                  "Parameters": {
+                    "Name.$": "$"
+                  },
+                  "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                  "End": true,
+                  "InputPath": "$.Name"
+                }
+              }
+            },
+            "ItemsPath": "$.crawlers",
+            "End": true
+          }
+        },
+        "TimeoutSeconds": 1200
+      }'
+    }
+
 Parameters:
   DestinationBucket:
     Type: String
@@ -392,15 +539,64 @@ Resources:
                   print(f"Status code: {response}")
               except Exception as exc:
                   print("Failed sending PUT to CFN: " + str(exc))
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W58 # Lambda functions require permission to write CloudWatch Logs
-            reason: "AWSLambdaBasicExecutionRole contains CloudWatch permissions. See:https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSLambdaBasicExecutionRole.html"        
-          - id: W89 # Lambda functions should be deployed inside a VPC
-            reason: "No need for VPC in this case"
-          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
-            reason: "No need for simultaneous execution"
+
+  StepFunctionExecutionRole:
+    Type: AWS::IAM::Role
+    Condition: DeployAccountCollector 
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}StepFunctionExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - states.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "LambdaGlueExecutionPolicy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:StartCrawler
+                  - glue:GetCrawler
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}*Crawler'
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${RolePrefix}*Lambda'
+
+  SchedulerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Sub "${RolePrefix}SchedulerExecutionRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: "ExecuteStateMachine"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${RolePrefix}*StateMachine"
+
 
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
@@ -415,6 +611,9 @@ Resources:
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
@@ -443,7 +642,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
@@ -457,7 +656,10 @@ Resources:
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   PricingModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployPricingModule
@@ -469,7 +671,7 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   ComputeOptimizerModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployComputeOptimizerModule
@@ -488,7 +690,7 @@ Resources:
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEcsChargebackModule
@@ -502,7 +704,10 @@ Resources:
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   RDSUtilizationModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRDSUtilizationModule
@@ -516,7 +721,10 @@ Resources:
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   OrgDataModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployOrgDataModule
@@ -530,21 +738,24 @@ Resources:
         ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   BudgetsModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-budgets.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/Cost/Labs/300_Optimization_Data_Collection/module-budgets.yaml" 
       Parameters:
-          DestinationBucket: !Ref S3Bucket
-          DestinationBucketARN: !GetAtt S3Bucket.Arn
-          GlueRoleARN: !GetAtt GlueRole.Arn
-          MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
-          RolePrefix: !Ref RolePrefix
-          LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-          AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        MultiAccountRoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
+        RolePrefix: !Ref RolePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTransitGatewayModule
@@ -558,7 +769,10 @@ Resources:
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   AccountCollector:
     Type: AWS::CloudFormation::Stack
     Condition: DeployAccountCollector

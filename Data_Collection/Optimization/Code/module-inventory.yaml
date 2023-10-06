@@ -21,6 +21,7 @@ Parameters:
     Default: inventory
   GlueRoleARN:
     Type: String
+    Description: Arn for the Glue Crawler role
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
@@ -33,21 +34,27 @@ Parameters:
     Description: Arn of lambda for Analytics
   AccountCollectorLambdaARN:
     Type: String
-    Description: Arn of the lambda for the Accounts Collector function
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
 
 Outputs:
-  LambdaRoleARN:
-    Description: Role for Lambda execution of collection data.
-    Value: !GetAtt LambdaRole.Arn
-  LambdaFunctionARN:
-    Description: ARN for the module's primary Lambda function
-    Value: !GetAtt LambdaFunction.Arn
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
 
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -61,7 +68,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "AssumeManagementRole"
+        - PolicyName: "AssumeMultiAccountRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -111,13 +118,7 @@ Resources:
 
 
           logger = logging.getLogger()
-          if "LOG_LEVEL" in os.environ:
-              numeric_level = getattr(logging, os.environ['LOG_LEVEL'].upper(), None)
-              if not isinstance(numeric_level, int):
-                  raise ValueError('Invalid log level: %s' % numeric_level)
-              logger.setLevel(level=numeric_level)
-          else:
-              logger.setLevel(logging.INFO)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           def to_json(obj):
               """json helper for date time data"""
@@ -202,7 +203,7 @@ Resources:
                   )
               }
 
-              account = json.loads(event["account"])
+              account = json.loads(event["account"][0])
               account_id = account["account_id"]
               payer_id = account["payer_id"]
               for name, (func) in sub_modules.items():
@@ -241,15 +242,73 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          ROLENAME: !Ref MultiAccountRoleName
           PREFIX: !Ref CFDataName
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W89 # Lambda functions should be deployed inside a VPC
-            reason: "No need for VPC in this case"
-          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
-            reason: "No need for simultaneous execution"
+          ROLENAME: !Ref MultiAccountRoleName
+
+  AMICrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-AMI-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  SnapshotCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-Snapshot-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  EBSCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-EBS-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${RolePrefix}${CFDataName}-AMI-Crawler","${RolePrefix}${CFDataName}-Snapshot-Crawler","${RolePrefix}${CFDataName}-EBS-Crawler"]'
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow: 
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
 
   AthenaSnaphotAMI:
     Type: AWS::Athena::NamedQuery
@@ -265,7 +324,7 @@ Resources:
         WHEN snap_ami_id LIKE 'ami%' THEN 'AMI Removed'
         ELSE 'Not AMI'
         END AS status
-          FROM ( 
+          FROM (
         (SELECT snapshotid,
             volumeid as volume,
             volumesize,
@@ -274,7 +333,7 @@ Resources:
             year,
             month,
             ownerid,
-            
+
             CASE
             WHEN substr(Description, 1, 22) = 'Created by CreateImage' THEN
             split_part(Description,' ', 5)
@@ -295,6 +354,7 @@ Resources:
             virtualizationtype
             FROM optimization_data.inventory_ami_data) AS ami
                 ON snapshots.snap_ami_id = ami.imageid )
+
   AthenaSnaphotAMICUR:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -470,6 +530,7 @@ Resources:
           FROM optimization_data.pricing_region_names
           )  region
           ON (inventory_ebs_data.region = region.region_code)
+
   AthenaEBSView:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -493,6 +554,7 @@ Resources:
           FROM
             optimization_data.pricing_region_names
         )  region ON (inventory_ebs_data.region = region.region_code)
+
   AthenaEBSTAPricing:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -546,6 +608,7 @@ Resources:
             WHERE ((("Product Family" = 'System Operation') AND ("volume api name" IN ('io1', 'io2'))) AND ((usagetype LIKE '%EBS:VolumeP-IOPS.io2') OR (usagetype LIKE '%EBS:VolumeP-IOPS.piops')))
           )  ebs_iops_price ON ((inventory_ebs_view.volumetype = ebs_iops_price."volume api name") AND (inventory_ebs_view.regionname = ebs_iops_price.location)))
           ORDER BY volumeid DESC
+
   AthenaGp3Opportunity:
     Type: AWS::Athena::NamedQuery
     Properties:
@@ -649,250 +712,3 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
-
-  AMICrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-AMI'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  SnapshotCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-Snapshot'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  EBSCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler-EBS'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  StepFunctionExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      RoleName: !Sub "${RolePrefix}StepFunction-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - states.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: "ModuleLambdaGlueExecutionPolicy"
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - glue:StartCrawler
-                Resource: 
-                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler-AMI'
-                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler-Snapshot'
-                  - !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-Crawler-EBS'
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource:
-                  - !Ref AccountCollectorLambdaARN
-                  - !GetAtt LambdaFunction.Arn
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
-            reason: "Need explicit name to identify role actions"
-
-  StepFunction:
-    Type: AWS::StepFunctions::StateMachine
-    Properties: 
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !GetAtt StepFunctionExecutionRole.Arn
-      DefinitionString: |-
-        {
-          "Comment": "This state machine orchestrates the collection of AWS ${CFDataName} data and invokes the Glue Crawler to update Athena",
-          "StartAt": "Account Collector Invoke",
-          "States": {
-            "Account Collector Invoke": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::lambda:invoke",
-              "OutputPath": "$.Payload",
-              "Parameters": {
-                "Payload.$": "$",
-                "FunctionName": "${AccountCollectorLambdaARN}"
-              },
-              "Retry": [
-                {
-                  "ErrorEquals": [
-                    "Lambda.ServiceException",
-                    "Lambda.AWSLambdaException",
-                    "Lambda.SdkClientException",
-                    "Lambda.TooManyRequestsException"
-                  ],
-                  "IntervalSeconds": 2,
-                  "MaxAttempts": 6,
-                  "BackoffRate": 2
-                }
-              ],
-              "Next": "Module Map"
-            },
-            "Module Map": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "INLINE"
-                },
-                "StartAt": "Module Invoke",
-                "States": {
-                  "Module Invoke": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::lambda:invoke",
-                    "OutputPath": "$.Payload",
-                    "Parameters": {
-                      "FunctionName": "${LambdaFunction}",
-                      "Payload": {
-                        "account.$": "$.account"
-                      }
-                    },
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "Lambda.TooManyRequestsException"
-                        ],
-                        "IntervalSeconds": 2,
-                        "MaxAttempts": 6,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "End": true
-                  }
-                }
-              },
-              "ItemsPath": "$.accountList",
-              "Next": "Start Crawler"
-            },
-            "Start Crawler": {
-              "Type": "Parallel",
-              "Branches": [
-                {
-                  "StartAt": "Start AMI Crawler",
-                  "States": {
-                    "Start AMI Crawler": {
-                      "Type": "Task",
-                      "Parameters": {
-                        "Name": "${AMICrawler}"
-                      },
-                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
-                      "End": true
-                    }
-                  }
-                },
-                {
-                  "StartAt": "Start Snapshot Crawler",
-                  "States": {
-                    "Start Snapshot Crawler": {
-                      "Type": "Task",
-                      "End": true,
-                      "Parameters": {
-                        "Name": "${SnapshotCrawler}"
-                      },
-                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler"
-                    }
-                  }
-                },
-                {
-                  "StartAt": "Start EBS Crawler",
-                  "States": {
-                    "Start EBS Crawler": {
-                      "Type": "Task",
-                      "End": true,
-                      "Parameters": {
-                        "Name": "${EBSCrawler}"
-                      },
-                      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler"
-                    }
-                  }
-                }
-              ],
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 1200
-        }
-      DefinitionSubstitutions:
-        CFDataName: !Ref CFDataName
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        LambdaFunction: !GetAtt LambdaFunction.Arn
-        AMICrawler: !Sub '${RolePrefix}${CFDataName}-Crawler-AMI'
-        SnapshotCrawler: !Sub '${RolePrefix}${CFDataName}-Crawler-Snapshot'
-        EBSCrawler: !Sub '${RolePrefix}${CFDataName}-Crawler-EBS'
-
-  ScheduleExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      Path: /
-      RoleName: !Sub "${RolePrefix}EventBridge-Scheduler-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - events.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: "ExecuteStateMachinePolicy"
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - states:StartExecution
-                Resource:
-                  - !GetAtt StepFunction.Arn
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
-            reason: "Need explicit name to identify role actions"
-
-  ModuleRefreshScheduleRule:
-    Type: 'AWS::Events::Rule'
-    Properties:
-      Description: !Sub "Scheduler-For-${CFDataName}"
-      Name: !Sub '${CFDataName}-ModuleRefreshRule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      Targets:
-        - Id: !Sub '${CFDataName}-ModuleRefresh'
-          Arn: !GetAtt StepFunction.Arn
-          RoleArn: !GetAtt ScheduleExecutionRole.Arn
-
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
