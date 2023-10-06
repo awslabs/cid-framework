@@ -54,28 +54,26 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "${CFDataName}-Access"
+        - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                  - "s3:GetObject"
-                  - "s3:ListBucket"
-                  - "s3:GetBucketLocation"
                 Resource:
-                  - !Ref DestinationBucketARN
                   - !Sub "${DestinationBucketARN}/*"
-                  - !Sub "arn:aws:s3:::${CodeBucket}"
-                  - !Sub "arn:aws:s3:::${CodeBucket}/*"
               - Effect: "Allow"
                 Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "logs:DescribeLogStreams"
-                Resource: "arn:aws:logs:*:*:*"
+                  - "s3:GetObject"
+                Resource:
+                  - !Sub "arn:aws:s3:::${CodeBucket}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   EC2LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -140,6 +138,14 @@ Resources:
           CODE_BUCKET: !Ref CodeBucket
           ACCOUNT_ID: AWS::AccountId
           DEST_PREFIX: !Ref CFDataName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
@@ -373,6 +379,14 @@ Resources:
           CODE_BUCKET: !Ref CodeBucket
           ACCOUNT_ID: AWS::AccountId
           DEST_PREFIX: !Ref CFDataName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   AthenaRDSPricingTable:
     Type: AWS::Athena::NamedQuery
     Properties:

@@ -79,7 +79,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
         - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -89,7 +89,12 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-                  
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -143,7 +148,7 @@ Resources:
                   ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
                   svc_regions = boto3.Session().get_available_regions('ec2')
                   regions = list(set(ec2_regions).intersection(svc_regions))
-                  
+
                   for region in regions:
                       try:
                           cw_client = assume_role('cloudwatch', account_id, region)
@@ -222,18 +227,7 @@ Resources:
               return cw_data
 
           def assume_role(service, account_id, region_name):
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=role_arn,
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.client(
-                  service,
-                  region_name=region_name,
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken']
-              )
+              return assume_session(account_id).client(service, region_name=region_name)
 
           def assume_session(account_id):
               cred = boto3.client('sts').assume_role(
@@ -254,6 +248,13 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   Crawler:
     Type: AWS::Glue::Crawler
@@ -284,7 +285,7 @@ Resources:
       Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      FlexibleTimeWindow: 
+      FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn
@@ -354,7 +355,7 @@ Resources:
           AND line_item_usage_account_id = '${AWS::AccountId}'
           AND line_item_product_code = 'AmazonVPC'
           AND (line_item_operation = 'CreateVpnConnection'
-          OR line_item_operation = 'TransitGatewayVPC' 
+          OR line_item_operation = 'TransitGatewayVPC'
           OR line_item_operation = 'TransitGatewayVPN'
           OR line_item_operation = 'TransitGatewayPeering')
           GROUP BY 1, 2

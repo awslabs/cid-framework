@@ -44,7 +44,7 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-    
+
 Outputs:
   StepFunctionARN:
     Description: ARN for the module's Step Function
@@ -84,6 +84,11 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -186,6 +191,13 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   Crawler:
     Type: AWS::Glue::Crawler
@@ -216,7 +228,7 @@ Resources:
       Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      FlexibleTimeWindow: 
+      FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn

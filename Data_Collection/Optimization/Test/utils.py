@@ -132,54 +132,57 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
 def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
 
-    deploy_stack(cloudformation=cloudformation,
-                    stack_name='OptimizationManagementDataRoleStack',
-                    file=root / 'Code' / 'Management.yaml',
-                    parameters=[
-                        {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
-                        {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-                        {'ParameterKey': 'RolePrefix',            'ParameterValue': "WA-"},
-                    ]
+    deploy_stack(
+        cloudformation=cloudformation,
+        stack_name='OptimizationManagementDataRoleStack',
+        file=root / 'Code' / 'Management.yaml',
+        parameters=[
+            {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'RolePrefix',            'ParameterValue': "WA-"},
+        ]
     )
 
-    deploy_stack(cloudformation=cloudformation,
-                 stack_name='OptimizationDataRoleStack',
-                 file=root / 'Code' / 'optimisation_read_only_role.yaml',
-                 parameters=[
-                    {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
-                    {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
-                    {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-                    {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
-                 ]
+    deploy_stack(
+        cloudformation=cloudformation,
+        stack_name='OptimizationDataRoleStack',
+        file=root / 'Code' / 'optimisation_read_only_role.yaml',
+        parameters=[
+            {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
+            {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
+            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
+            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
+        ]
     )
 
-    deploy_stack(cloudformation=cloudformation,
-                 stack_name='OptimizationDataCollectionStack',
-                 file=root / 'Code' / 'Optimization_Data_Collector.yaml',
-                 parameters=[
-                    {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
-                    {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
-                    {'ParameterKey': 'DestinationBucket',               'ParameterValue': "costoptimizationdata"},
-                    {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeOrgDataModule',            'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
-                    {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
-                    {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
-                    {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-                    {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-                    {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
-                 ]
+    deploy_stack(
+        cloudformation=cloudformation,
+        stack_name='OptimizationDataCollectionStack',
+        file=root / 'Code' / 'Optimization_Data_Collector.yaml',
+        parameters=[
+            {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
+            {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
+            {'ParameterKey': 'DestinationBucket',               'ParameterValue': "costoptimizationdata"},
+            {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeOrgDataModule',            'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
+            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
+            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
+        ]
     )
 
     logger.info('Waiting for stacks')
@@ -193,6 +196,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
 def launch_(state_machine_arns, lambda_arns=None, wait=True):
     stepfunctions = boto3.client('stepfunctions')
     logs_client = boto3.client('logs')
+    started = datetime.now().astimezone()
 
     # Execute lambdas
     lambda_arns = set(lambda_arns or [])
@@ -204,23 +208,22 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
 
     # Execute sate machines
     execution_arns = []
+
     for state_machine_arn in state_machine_arns:
         executions = stepfunctions.list_executions(
             stateMachineArn=state_machine_arn,
         )['executions']
-        logger.info(f'{state_machine_arn} has : {executions}')
-
-        executions = stepfunctions.list_executions(
-            stateMachineArn=state_machine_arn,
-            statusFilter='RUNNING'  # Filter for running executions
-        )['executions']
-        if executions:
-            logger.info(f'{state_machine_arn} has already started: {executions}')
-            continue
-
-        execution_arn = stepfunctions.start_execution(stateMachineArn=state_machine_arn)['executionArn']
-        logger.info(f'Starting {execution_arn}')
-        execution_arns.append(execution_arn)
+        logger.debug(f'{state_machine_arn} has : {executions}')
+        for execution in executions:
+            if execution['status'] == 'RUNNING':
+                execution_arns.append(execution['executionArn'])
+            if (started - execution['startDate']).total_seconds() < 1 * 60:
+                logger.info(f"Already started {execution['executionArn']}")
+                break # no need to start execution if there is a recent one
+        else:
+            execution_arn = stepfunctions.start_execution(stateMachineArn=state_machine_arn)['executionArn']
+            logger.info(f'Starting {execution_arn}')
+            execution_arns.append(execution_arn)
 
         # Extract Lambda function ARNs from the state machine definition
         state_machine_definition = json.loads(stepfunctions.describe_state_machine(stateMachineArn=state_machine_arn)['definition'])
@@ -243,7 +246,7 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
     execution_results = {execution_arn: None for execution_arn in execution_arns}
     running = True
     while running:
-        # check if there are still running
+        # check if there are running stepfunctions
         running = False
         for execution_arn in execution_arns:
             res = stepfunctions.describe_execution(executionArn=execution_arn)
@@ -252,7 +255,10 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
             else:
                 if not execution_results[execution_arn]:
                     execution_results[execution_arn] = res['status']
-                    print(res['executionArn'], res['status'])
+                    if res['status'].upper() in ['FAILED']:
+                        logger.warning(f"{execution_arn} {res['status']}")
+                    else:
+                        logger.info(f"{execution_arn} {res['status']}")
         # read logs of all lambdas
         for lambda_arn in lambda_arns:
             function_name = lambda_arn.split(':')[-1]
@@ -266,15 +272,18 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
                     last_log_time[lambda_arn] = events[-1]['timestamp'] + 1
                 for event in events:
                     if 'error' in event['message'].lower() or 'exception' in event['message'].lower():
-                        print(event['timestamp'])
-                        print(
+                        logger.warning(
                             datetime.utcfromtimestamp(event['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S') + ' ' +
                             function_name  + ': ' +
                             event['message'][:-1]
                         )
     # Show results
     for arn, res in execution_results.items():
-        print(arn, res)
+        if str(res).upper() in ['FAILED']:
+            logger.warning(f'{arn} {res}')
+        else:
+            logger.info(f'{arn} {res}')
+
 
 
 def trigger_update(account_id):
@@ -299,10 +308,15 @@ def trigger_update(account_id):
 
 
 def cleanup_stacks(cloudformation, account_id, s3, athena):
+
+    for index in range(10):
+        print(f'Press Ctrl+C if you want to avoid teardown: {9-index}\a') # beep
+        time.sleep(1)
+
     try:
         clean_bucket(s3=s3, account_id=account_id)
-    except Exception as ex:
-        logger.warning(f'Exception: {ex}')
+    except Exception as exc:
+        logger.warning(f'Exception: {exc}')
 
     for stack_name in [
         'OptimizationManagementDataRoleStack',
@@ -323,9 +337,9 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
 
     logger.info('Deleting all athena tables in optimization_data')
     tables = athena.list_table_metadata(CatalogName='AwsDataCatalog', DatabaseName='optimization_data')['TableMetadataList']
-    for t in tables:
-        logger.info('Deleting ' + t["Name"])
-        athena_query(athena=athena, sql_query=f'DROP TABLE `{t["Name"]}`;', database='optimization_data')
+    for table in tables:
+        logger.info('Deleting ' + table["Name"])
+        athena_query(athena=athena, sql_query=f'DROP TABLE `{table["Name"]}`;', database='optimization_data')
 
 
 def prepare_stacks(cloudformation, account_id, s3, bucket):
@@ -333,5 +347,3 @@ def prepare_stacks(cloudformation, account_id, s3, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, account_id=account_id)
     trigger_update(account_id=account_id)
-    logger.info('Waiting 1 min')
-    time.sleep(1 * 60)

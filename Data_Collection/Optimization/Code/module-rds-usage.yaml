@@ -78,7 +78,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
         - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -88,7 +88,11 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-                  
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -98,36 +102,37 @@ Resources:
       Architectures: [arm64]
       Code:
         ZipFile: |
+          import os
+          import json
+          import logging
+          from re import sub
+          from datetime import datetime, timedelta, date
+
           import boto3
           from botocore.exceptions import ClientError
-          import os
           from boto3.s3.transfer import S3Transfer
-          from datetime import datetime, timedelta, date
-          import json
-          from re import sub
-          import logging
 
           #Environment Variables
           bucket = os.environ["BUCKET_NAME"]
           prefix = os.environ["PREFIX"]
           role_name = os.environ['ROLENAME']
 
-
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          functions = {'rds': {
-                                  'regional' : 1,
-                                  'api' : 'rds',
-                                  'functions' : [
-                                      {
-                                          'name' : 'get_rds_stats',
-                                          'output_path' : 'rds-usage-data',
-                                          'output_file_name' : 'rds_stats.json'
-                                      }
-                                  ]
-                              }
+          functions = {
+              'rds': {
+                  'regional' : 1,
+                  'api' : 'rds',
+                  'functions' : [
+                      {
+                          'name' : 'get_rds_stats',
+                          'output_path' : 'rds-usage-data',
+                          'output_file_name' : 'rds_stats.json'
                       }
+                  ]
+              }
+          }
 
           METRICS_FOR_VOLUMES = [
               'FreeableMemory',
@@ -137,7 +142,7 @@ Resources:
               'ReadIOPS',
               'WriteIOPS',
               'FreeStorageSpace'
-              ]
+          ]
 
           TAGS_TO_RETRIEVE = [
               'Environment',
@@ -145,7 +150,6 @@ Resources:
               'Application',
               'Project',
           ]
-
 
           now = datetime.utcnow()
           DAYS = int(os.environ['DAYS'])
@@ -158,7 +162,6 @@ Resources:
           period = 3600
 
           def format_rds(rds):
-
               if len(rds["Attachments"]) == 0:
                   instance_id = "unattached"
                   device = ""
@@ -179,16 +182,12 @@ Resources:
 
               tags = {}
               filtered_tags = {}
-              if "Tags" in rds:
-                  for tag in rds["Tags"]:
-                      tags[sub('[^a-zA-Z0-9-_ *.]', '', tag["Key"].replace(",", " "))] = sub('[^a-zA-Z0-9-_ *.]', '', tag["Value"].replace(",", " "))
+              for tag in rds.get("Tags", []):
+                  tags[sub('[^a-zA-Z0-9-_ *.]', '', tag["Key"].replace(",", " "))] = sub('[^a-zA-Z0-9-_ *.]', '', tag["Value"].replace(",", " "))
               for tags_required in TAGS_TO_RETRIEVE:
                   filtered_tags[tags_required] = tags[tags_required] if tags_required in tags else ''
-
               output["tags"] = filtered_tags
-
               return output
-
 
           def get_rds_ids(rds_client):
               rds_inventory = []
@@ -197,12 +196,9 @@ Resources:
                   rds_information = []
               else:
                   rds_information = rds_information['Volumes']
-
               for rds in rds_information:
                   rds_inventory.append(format_rds(rds))
-
               return rds_inventory
-
 
           def store_data_to_s3(data, region, service, path, resource_type, resource_value, filename, accountID, payer_id):
               local_file = f"/tmp/{region}-{filename}"
@@ -222,9 +218,7 @@ Resources:
               datapoints = {}
               data = {}
               rds_inventory = client.describe_db_instances()
-
               for rds in rds_inventory['DBInstances']:
-                  
                   for metric in METRICS_FOR_VOLUMES:
                       results = cwclient.get_metric_statistics(StartTime=past, EndTime=future, MetricName=metric,
                       Namespace='AWS/RDS',Statistics=['Average','Maximum','Minimum'],Period=period,
@@ -235,36 +229,28 @@ Resources:
 
           def assume_role(account_id, service, region):
               role_name = os.environ['ROLENAME']
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}" 
-              sts_client = boto3.client('sts')
+              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+              cred = boto3.client('sts').assume_role(
+                  RoleArn=role_arn,
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              return boto3.client(
+                  service,
+                  aws_access_key_id=cred['AccessKeyId'],
+                  aws_secret_access_key=cred['SecretAccessKey'],
+                  aws_session_token=cred['SessionToken'],
+                  region_name = region
+              )
 
-              try:
-                  assumedRoleObject = sts_client.assume_role(
-                      RoleArn=role_arn,
-                      RoleSessionName="data_collection"
-                      )
-                  
-                  credentials = assumedRoleObject['Credentials']
-                  client = boto3.client(
-                      service,
-                      aws_access_key_id=credentials['AccessKeyId'],
-                      aws_secret_access_key=credentials['SecretAccessKey'],
-                      aws_session_token=credentials['SessionToken'],
-                      region_name = region
-                  )
-                  return client
-
-              except ClientError as e:
-                  logger.warning(f"Unexpected error Account {account_id}: {e}")
-                  return None
-
+          def get_supported_regions(ec2):
+              return [region['RegionName'] for region in ec2.describe_regions()['Regions']]
 
           def lambda_handler(event, context):
               logger.info(f"Event: {event}")
               collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               if 'account' not in event:
                   raise ValueError(
-                      "Please do not trigger this Lambda manually."
+                      "Please do not trigger this Lambda manually. "
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
 
@@ -310,7 +296,7 @@ Resources:
               service_regions = boto3.Session().get_available_regions(service)
               regions = list(set(ec2_regions).intersection(service_regions))
               return regions
-              
+
           def assume_session(account_id):
               cred = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
@@ -331,6 +317,13 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
           DAYS: !Ref DAYS
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   Crawler:
     Type: AWS::Glue::Crawler
@@ -362,7 +355,7 @@ Resources:
       Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      FlexibleTimeWindow: 
+      FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn

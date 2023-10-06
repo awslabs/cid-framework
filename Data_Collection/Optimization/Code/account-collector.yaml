@@ -13,8 +13,7 @@ Parameters:
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
 Outputs:
   LambdaFunctionName:
-    Value:
-      Ref: LambdaFunction
+    Value: !Ref LambdaFunction
   LambdaFunctionARN:
     Description: Lambda function ARN
     Value: !GetAtt LambdaFunction.Arn
@@ -38,13 +37,29 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "AssumeManagementOrganizationDataRole"
+        - PolicyName: "AssumeManagementRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}"
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
+        - PolicyName: "CloudWatch"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                  - "logs:DescribeLogStreams"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -114,3 +129,10 @@ Resources:
         Variables:
           ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
