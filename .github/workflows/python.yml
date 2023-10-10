@@ -1,0 +1,25 @@
+
+name: Python Quality Check
+
+on:
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+
+  pylint-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install packages
+        run: |
+          pip install cfn-flip pylint urllib3 boto3
+      - name: Pylint all
+        run: |
+          python Data_Collection/Optimization/Tools/pylint.py

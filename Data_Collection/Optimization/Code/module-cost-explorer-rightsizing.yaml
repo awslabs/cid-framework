@@ -83,8 +83,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
-                Resource: 
-                  - !Ref DestinationBucketARN
+                Resource:
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
                 Action:
@@ -96,7 +95,12 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws-cost-explorer-rightsizing-recommendations-function*"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -208,6 +212,14 @@ Resources:
           CRAWLER_NAME: !Ref RightsizingCrawler
           ROLE: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   RightsizingCrawler:
     Type: AWS::Glue::Crawler
     Properties:

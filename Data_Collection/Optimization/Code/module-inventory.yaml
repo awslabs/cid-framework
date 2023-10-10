@@ -84,13 +84,18 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-                  
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
-      Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.8
+      Description: !Sub "Lambda Function to retrieve ${CFDataName}"
+      Runtime: python3.10
       Architectures: [arm64]
       Code:
         ZipFile: |
@@ -319,7 +324,7 @@ Resources:
         WHEN snap_ami_id LIKE 'ami%' THEN 'AMI Removed'
         ELSE 'Not AMI'
         END AS status
-          FROM ( 
+          FROM (
         (SELECT snapshotid,
             volumeid as volume,
             volumesize,
@@ -328,7 +333,7 @@ Resources:
             year,
             month,
             ownerid,
-            
+
             CASE
             WHEN substr(Description, 1, 22) = 'Created by CreateImage' THEN
             split_part(Description,' ', 5)

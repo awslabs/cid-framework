@@ -38,16 +38,10 @@ Parameters:
 Outputs:
   CostExplorerCostAnomalyLambdaRoleARN:
     Description: Role for Lambda execution of AWS Cost Explorer CostAnomaly recommendations.
-    Value:
-      Fn::GetAtt:
-        - CostAnomalyLambdaRole
-        - Arn
+    Value: !GetAtt CostAnomalyLambdaRole.Arn
   LambdaCostExplorerCostAnomalyARN:
     Description: Lambda function ARN for retrieving AWS Cost Explorer CostAnomaly recommendations
-    Value:
-      Fn::GetAtt:
-        - LambdaFunction
-        - Arn
+    Value: !GetAtt LambdaFunction.Arn
   GlueCrawler:
     Value:
       Ref: CostAnomalyCrawler
@@ -96,6 +90,12 @@ Resources:
                 Action:
                   - "glue:StartCrawler"
                 Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${CostAnomalyCrawler}"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -231,6 +231,13 @@ Resources:
           CRAWLER_NAME: !Ref CostAnomalyCrawler
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           ROLE: !Ref ManagementRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
 
   CostAnomalyCrawler:
     Type: AWS::Glue::Crawler

@@ -230,8 +230,6 @@ Mappings:
       }'
     }
 
-
-
 Parameters:
   DestinationBucket:
     Type: String
@@ -366,40 +364,11 @@ Conditions:
   ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-well-architected-labs' ]
 
 Resources:
-  S3CrawlerQue:
-    Type: AWS::SQS::Queue
-    Properties:
-      VisibilityTimeout: 300
-      ReceiveMessageWaitTimeSeconds: 20
-      DelaySeconds: 2
-      QueueName: S3CrawlerQue
-  
-  CrawlerSQSPolicy:
-    Type: AWS::SQS::QueuePolicy
-    Properties:
-      Queues:
-        - Ref: S3CrawlerQue
-      PolicyDocument:
-        Id: SQSPolicy
-        Statement:
-        - Sid: SQSEventPolicy
-          Effect: Allow
-          Principal: {"Service": "s3.amazonaws.com"}
-          Action: sqs:SendMessage
-          Resource: !GetAtt S3CrawlerQue.Arn
-          Condition:
-            ArnLike:
-              aws:SourceArn: !Sub "arn:aws:s3:::${DestinationBucket}${AWS::AccountId}"
-            StringEquals:
-                'aws:SourceAccount': !Sub '${AWS::AccountId}'
-  
+
   S3Bucket:
-    DependsOn:
-      - CrawlerSQSPolicy
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName:
-        !Sub "${DestinationBucket}${AWS::AccountId}"
+      BucketName: !Sub "${DestinationBucket}${AWS::AccountId}"
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
@@ -411,20 +380,17 @@ Resources:
             BlockPublicPolicy : true
             IgnorePublicAcls : true
             RestrictPublicBuckets : true
-      NotificationConfiguration:
-        QueueConfigurations:
-          - Event: s3:ObjectCreated:*
-            Queue: !GetAtt S3CrawlerQue.Arn
-            Filter:
-              S3Key:
-                Rules:
-                - Name: prefix
-                  Value: Compute_Optimizer/
-  
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W51 #S3 bucket should likely have a bucket policy
+            reason: "No bucket policy required by default"
+          - id: W35 #S3 Bucket should have access logging configured
+            reason: "The bucket is used with Athena and logging can be extensive."
   GlueRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}AWS-OPTICS-GlueCrawlerRole"
+      RoleName: !Sub "${RolePrefix}Glue-Crawler"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -434,24 +400,72 @@ Resources:
               Service:
                 - glue.amazonaws.com
         Version: 2012-10-17
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
       Path: /
       Policies:
-        - PolicyName: "Put-S3"
+        - PolicyName: S3Read
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: "Allow"
+              - Effect: Allow
                 Action:
-                  - "s3:PutObject"
-                  - "s3:GetObject"
-                Resource: !Join
-                          - ''
-                          - - !GetAtt S3Bucket.Arn
-                            - '*'
-  
-  LambdaAnalyticsRole:
+                  - s3:ListBucket
+                Resource:
+                 - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}${AWS::AccountId}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                 - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}${AWS::AccountId}/*"
+              ## Uncomment if bucket is encrypted by Custom KMS Key
+              #- Effect: Allow
+              #  Action:
+              #    - kms:Decrypt
+              #  Resource:
+              #   - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/key-id"
+        - PolicyName: "Glue"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetDatabases
+                  - glue:CreateTable
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:UpdateTable
+                  - glue:GetTableVersion
+                  - glue:GetTableVersions
+                  - glue:DeleteTableVersion
+                  - glue:CreatePartition
+                  - glue:BatchCreatePartition
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                  - glue:BatchGetPartition
+                  - glue:UpdatePartition
+                  - glue:DeletePartition
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/optimization_data" # FIXME: database name must be parameter
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/optimization_data/*" # FIXME: database name must be parameter
+        - PolicyName: "CloudWatch"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:logs:*:*:/aws-glue/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  LambdaAnalyticsRole: #Execution role for the custom resource
     Type: AWS::IAM::Role
     Properties:
       Path:
@@ -467,7 +481,6 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-  
   LambdaAnalytics:
     Type: AWS::Lambda::Function
     Properties:
@@ -529,6 +542,7 @@ Resources:
 
   StepFunctionExecutionRole:
     Type: AWS::IAM::Role
+    Condition: DeployAccountCollector 
     Properties:
       Path: /
       RoleName: !Sub "${RolePrefix}StepFunctionExecutionRole"
@@ -600,7 +614,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-          
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
@@ -614,7 +627,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
@@ -628,7 +641,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
@@ -645,7 +658,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-  
   PricingModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployPricingModule
@@ -654,10 +666,10 @@ Resources:
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        RolePrefix: !Ref RolePrefix
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
+        RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   ComputeOptimizerModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployComputeOptimizerModule
@@ -676,7 +688,7 @@ Resources:
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEcsChargebackModule
@@ -693,7 +705,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-  
   RDSUtilizationModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRDSUtilizationModule
@@ -710,7 +721,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-  
   OrgDataModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployOrgDataModule
@@ -724,7 +734,7 @@ Resources:
         ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  
+
   BudgetsModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
@@ -741,7 +751,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-  
   TransitGatewayModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTransitGatewayModule
@@ -758,7 +767,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-  
   AccountCollector:
     Type: AWS::CloudFormation::Stack
     Condition: DeployAccountCollector
