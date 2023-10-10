@@ -95,17 +95,17 @@ def test_transit_gateway_data(athena):
 
 
 def test_opensearch_domains_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."opensearch_domains_data" LIMIT 10;')
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_opensearch_domains_data" LIMIT 10;')
     assert len(data) > 0, 'opensearch_domains_data is empty'
 
 
 def test_elasticache_clusters_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."elasticache_clusters_data" LIMIT 10;')
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_elasticache_clusters_data" LIMIT 10;')
     assert len(data) > 0, 'elasticache_clusters_data is empty'
 
 
 def test_rds_db_instances_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_db_instances_data" LIMIT 10;')
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_rds_db_instances_data" LIMIT 10;')
     assert len(data) > 0, 'rds_db_instances_data is empty'
 
 

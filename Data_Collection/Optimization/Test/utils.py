@@ -29,7 +29,7 @@ def clean_bucket(s3, s3client, account_id, full=True):
             logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
             s3.Bucket(bucket_name).object_versions.delete()
         else:
-            oldest = datetime.now().replace(tzinfo=timezone(offset=timedelta())) - timedelta(minutes=5)
+            oldest = datetime.utcnow().replace(tzinfo=timezone(timedelta())) - timedelta(minutes=5)
             print(oldest)
 
             # List objects in the bucket
@@ -39,8 +39,10 @@ def clean_bucket(s3, s3client, account_id, full=True):
             # Iterate through the objects and delete those older than 5 minutes
             for obj in objects:
                 last_modified = obj['LastModified']
-                print(last_modified-oldest, obj['Key'])
-                if last_modified < oldest:
+                print(oldest)
+                print(last_modified)
+                print((oldest-last_modified).total_seconds() / 60, obj['Key'])
+                if (oldest-last_modified).total_seconds() > 5*60:
                     s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
         logger.exception(exc)
@@ -309,7 +311,12 @@ def trigger_update(account_id):
     state_machine_arns = [
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-ecs-chargeback-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-OpensearchDomains-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-ElasticacheClusters-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-RdsDbInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-EBS-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-AMI-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-Snapshot-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
