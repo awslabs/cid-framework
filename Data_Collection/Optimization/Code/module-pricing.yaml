@@ -370,7 +370,7 @@ Resources:
           CODE_BUCKET = os.environ['CODE_BUCKET']
           BUCKET_NAME = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["DEST_PREFIX"]
-          FILTER_REGIONS = [r.strip() for r in os.environ["FILTER_REGIONS"].split(',')]
+          FILTER_REGIONS = [r.strip() for r in os.environ["FILTER_REGIONS"].split(',') if r]
 
           def get_json(url):
               return json.loads(urllib3.PoolManager().request('GET', url).data)
@@ -409,7 +409,7 @@ Resources:
               # pull pricing for each region
               for region in regions:
                   region_code = region["regionCode"]
-                  if FILTER_REGIONS and region_code not in FILTER_REGIONS:
+                  if FILTER_REGIONS and (region_code not in FILTER_REGIONS):
                       logger.debug(f'Filtering out {region_code}')
                       continue
                   try:
