@@ -272,7 +272,7 @@ Mappings:
           - { Type: string, Name: ratecode }
           - { Type: string, Name: unit }
           - { Type: string, Name: effectivedate }
-          - { Type: string, Name: discountedrate }
+          - { Type: double, Name: discountedrate }
           - { Type: string, Name: currency }
           - { Type: string, Name: discountedsku }
           - { Type: string, Name: discountedservicecode }
@@ -345,7 +345,7 @@ Resources:
       Architectures: [arm64]
       Code:
         ZipFile: |
-          # Author Stephanie Gooch 2021
+          # Author Stephanie Gooch 2021 and Iakov Gan 2023
           # Please reachout to costoptimization@amazon.com if there's any comments or suggestions
           import os
           import json
@@ -356,7 +356,6 @@ Resources:
 
           logging.basicConfig(level=logging.DEBUG)
           logger = logging.getLogger(__name__)
-          logger.setLevel(logging.DEBUG)
 
           OFFERS_URL = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json'
           BASE_URL = '/'.join(OFFERS_URL.split('/')[:3])
@@ -497,7 +496,6 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 # Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
-
 
   LambdaScheduleRole:
     Type: AWS::IAM::Role

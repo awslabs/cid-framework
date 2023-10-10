@@ -3,7 +3,7 @@ import json
 import time
 import logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
@@ -21,7 +21,7 @@ BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
 
-def clean_bucket(s3, account_id, full=True):
+def clean_bucket(s3, s3client, account_id, full=True):
     try:
         bucket_name = f"costoptimizationdata{account_id}"
 
@@ -29,17 +29,19 @@ def clean_bucket(s3, account_id, full=True):
             logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
             s3.Bucket(bucket_name).object_versions.delete()
         else:
-            oldest = datetime.utcnow() - timedelta(minutes=5)
+            oldest = datetime.now().replace(tzinfo=timezone(offset=timedelta())) - timedelta(minutes=5)
+            print(oldest)
 
             # List objects in the bucket
-            objects = s3.list_objects_v2(Bucket=bucket_name)['Contents']
+            objects = s3client.list_objects_v2(Bucket=bucket_name)['Contents']
             if objects:
                 logger.info(f'Removing old objects the bucket {CYAN}{bucket_name}{END}')
             # Iterate through the objects and delete those older than 5 minutes
             for obj in objects:
                 last_modified = obj['LastModified']
+                print(last_modified-oldest, obj['Key'])
                 if last_modified < oldest:
-                    s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
+                    s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
         logger.exception(exc)
 
@@ -110,7 +112,7 @@ def watch_stacks(cloudformation, stack_names = None):
 
             try:
                 # Check nested stacks
-                for res in cloudformation.list_stack_resources(StackName=stack_name)['StackResourceSummaries']:
+                for res in cloudformation.s3clients(StackName=stack_name)['StackResourceSummaries']:
                     if res['ResourceType'] == 'AWS::CloudFormation::Stack':
                         name = res['PhysicalResourceId'].split('/')[-2]
                         if name not in stack_names:
@@ -324,14 +326,14 @@ def trigger_update(account_id):
     launch_(state_machine_arns, lambda_arns, lambda_norun_arns, wait=True)
 
 
-def cleanup_stacks(cloudformation, account_id, s3, athena, glue):
+def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
 
     for index in range(10):
         print(f'Press Ctrl+C if you want to avoid teardown: {9-index}\a') # beep
         time.sleep(1)
 
     try:
-        clean_bucket(s3=s3, account_id=account_id)
+        clean_bucket(s3=s3, s3client=s3client, account_id=account_id)
     except Exception as exc:
         logger.warning(f'Exception: {exc}')
 
@@ -365,8 +367,8 @@ def cleanup_stacks(cloudformation, account_id, s3, athena, glue):
     except Exception:
         pass
 
-def prepare_stacks(cloudformation, account_id, s3, bucket):
+def prepare_stacks(cloudformation, account_id, s3, s3client, bucket):
     root = Path(__file__).parent.parent
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
-    clean_bucket(s3=s3, account_id=account_id, full=False)
+    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)

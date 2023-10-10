@@ -131,7 +131,8 @@ Mappings:
                     "OutputPath": "$.Payload",
                     "Parameters": {
                       "Payload": {
-                        "account.$": "$.account"
+                        "account.$": "$.account",
+                        "params": "${Params}"
                       },
                       "FunctionName": "${ModuleLambdaARN}"
                     },

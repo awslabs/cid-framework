@@ -240,6 +240,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        Params: ''
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'

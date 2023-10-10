@@ -27,6 +27,10 @@ def s3():
     return boto3.resource('s3')
 
 @pytest.fixture(scope='session')
+def s3client():
+    return boto3.client('s3')
+
+@pytest.fixture(scope='session')
 def compute_optimizer():
     return boto3.client('compute-optimizer')
 
@@ -75,8 +79,8 @@ def mode(request):
     return request.config.getoption("--mode")
 
 @pytest.fixture(scope='session', autouse=True)
-def prepare_setup(athena, cloudformation, s3, account_id, bucket, start_time, mode, glue):
+def prepare_setup(athena, cloudformation, s3, s3client, account_id, bucket, start_time, mode, glue):
     if mode != "clean_only":
-        yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, bucket=bucket, s3=s3)
+        yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, bucket=bucket, s3=s3, s3client=s3client)
     if mode != "no_clean":
-        cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, athena=athena, glue=glue)
+        cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, s3client=s3client, athena=athena, glue=glue)

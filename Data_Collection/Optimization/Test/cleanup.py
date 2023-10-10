@@ -29,6 +29,7 @@ if __name__ == '__main__':
         cloudformation=boto3.client('cloudformation'),
         account_id=account_id,
         s3=boto3.resource('s3'),
+        s3client=boto3.client('s3'),
         athena=boto3.client('athena'),
         glue=boto3.client('glue'),
     )
