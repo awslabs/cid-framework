@@ -3,7 +3,7 @@ import json
 import time
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import boto3
 
@@ -21,11 +21,25 @@ BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
 
-def clean_bucket(s3, account_id):
+def clean_bucket(s3, account_id, full=True):
     try:
         bucket_name = f"costoptimizationdata{account_id}"
-        logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
-        s3.Bucket(bucket_name).object_versions.delete()
+
+        if full:
+            logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
+            s3.Bucket(bucket_name).object_versions.delete()
+        else:
+            oldest = datetime.utcnow() - timedelta(minutes=5)
+
+            # List objects in the bucket
+            objects = s3.list_objects_v2(Bucket=bucket_name)['Contents']
+            if objects:
+                logger.info(f'Removing old objects the bucket {CYAN}{bucket_name}{END}')
+            # Iterate through the objects and delete those older than 5 minutes
+            for obj in objects:
+                last_modified = obj['LastModified']
+                if last_modified < oldest:
+                    s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
         logger.exception(exc)
 
@@ -111,7 +125,7 @@ def watch_stacks(cloudformation, stack_names = None):
 def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[dict]):
     create_options = dict(
         TimeoutInMinutes=60,
-        Capabilities=['CAPABILITY_IAM','CAPABILITY_NAMED_IAM'],
+        Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         OnFailure='DELETE',
         EnableTerminationProtection=False,
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
@@ -193,18 +207,20 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     ])
 
 
-def launch_(state_machine_arns, lambda_arns=None, wait=True):
+def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=True):
     stepfunctions = boto3.client('stepfunctions')
     logs_client = boto3.client('logs')
     started = datetime.now().astimezone()
 
     # Execute lambdas
-    lambda_arns = set(lambda_arns or [])
+    lambda_arns = lambda_arns or []
     for lambda_arn in lambda_arns:
         boto3.client('lambda').invoke(
             FunctionName=lambda_arn.split(':')[-1],
             InvocationType='Event', # Async
         )
+    lambda_arns = set((lambda_norun_arns or []) + (lambda_arns or []))
+
 
     # Execute sate machines
     execution_arns = []
@@ -301,13 +317,14 @@ def trigger_update(account_id):
         f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
         f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
         f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
-        #f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-RDS",
     ]
-    launch_(state_machine_arns, lambda_arns, wait=True)
+    lambda_norun_arns = [
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-Pricing",
+    ]
+    launch_(state_machine_arns, lambda_arns, lambda_norun_arns, wait=True)
 
 
-def cleanup_stacks(cloudformation, account_id, s3, athena):
+def cleanup_stacks(cloudformation, account_id, s3, athena, glue):
 
     for index in range(10):
         print(f'Press Ctrl+C if you want to avoid teardown: {9-index}\a') # beep
@@ -334,16 +351,22 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
         'OptimizationDataRoleStack',
         'OptimizationDataCollectionStack',
     ])
+    try:
+        logger.info('Deleting all athena tables in optimization_data')
+        tables = athena.list_table_metadata(CatalogName='AwsDataCatalog', DatabaseName='optimization_data')['TableMetadataList']
+        for table in tables:
+            logger.info('Deleting ' + table["Name"])
+            athena_query(athena=athena, sql_query=f'DROP TABLE `{table["Name"]}`;', database='optimization_data')
+    except Exception:
+        pass
 
-    logger.info('Deleting all athena tables in optimization_data')
-    tables = athena.list_table_metadata(CatalogName='AwsDataCatalog', DatabaseName='optimization_data')['TableMetadataList']
-    for table in tables:
-        logger.info('Deleting ' + table["Name"])
-        athena_query(athena=athena, sql_query=f'DROP TABLE `{table["Name"]}`;', database='optimization_data')
-
+    try:
+        glue.delete_database(CatalogId='AwsDataCatalog', Name='optimization_data')
+    except Exception:
+        pass
 
 def prepare_stacks(cloudformation, account_id, s3, bucket):
     root = Path(__file__).parent.parent
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
-    clean_bucket(s3=s3, account_id=account_id)
+    clean_bucket(s3=s3, account_id=account_id, full=False)
     trigger_update(account_id=account_id)

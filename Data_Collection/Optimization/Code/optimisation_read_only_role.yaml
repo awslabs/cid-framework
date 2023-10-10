@@ -187,6 +187,10 @@ Resources:
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeRegions"
+              - "rds:DescribeDBInstances"
+              - "es:ListDomainNames"
+              - "es:DescribeElasticsearchDomains"
+              - "elasticache:DescribeCacheClusters"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole

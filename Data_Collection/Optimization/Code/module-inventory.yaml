@@ -116,7 +116,6 @@ Resources:
           BUCKET = os.environ["BUCKET_NAME"]
           ROLENAME = os.environ['ROLENAME']
 
-
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
@@ -162,7 +161,30 @@ Resources:
                               obj['accountid'] = account_id
                               yield obj
                   except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'scan {function_name}/{account_id}:', exc)
+                      logger.info(f'scan {function_name}/{account_id}: {exc}')
+
+          def opensearch_domains_scan(account_id):
+              """ spesial treatment for opensearch_scan """
+              service = 'opensearch'
+              session = assume_session(account_id)
+              regions = set(session.get_available_regions(service)) & enabled_regions(session)
+              for region in regions:
+                  client = session.client(service, region_name=region)
+                  try:
+                      domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
+                      domains = client.describe_domains(DomainNames=domain_names)['DomainStatusList']
+                      for domain in domains:
+                          yield {
+                              'region': region,
+                              'accountid': account_id,
+                              'DomainName': domain['DomainName'],
+                              'DomainId': domain['DomainId'],
+                              'EngineVersion': domain['EngineVersion'],
+                              'InstanceType': domain['ClusterConfig']['InstanceType'],
+                              'InstanceCount': domain['ClusterConfig']['InstanceCount'],
+                          }
+                  except Exception as exc:  #pylint: disable=broad-exception-caught
+                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
@@ -176,30 +198,36 @@ Resources:
                   )
 
               sub_modules = {
-                  # 'rds_instances': [
-                  #     partial(
-                  #         paginated_scan,
-                  #         service='rds',
-                  #         function_name='describe_db_instances',
-                  #         obj_name='DBInstances'
-                  #     )
-                  # ],
+                  'opensearch-domains': opensearch_domains_scan, # special function for opensearch
+                  'elasticache-clusters': partial(
+                      paginated_scan,
+                      service='elasticache',
+                      function_name='describe_cache_clusters',
+                      obj_name='CacheClusters'
+                      # fields=['CacheClusterId', 'CacheNodeType', 'EngineVersion', 'Engine', 'NumCacheNodes', 'PreferredAvailabilityZone', 'CacheClusterCreateTime'],
+                  ),
+                  'rds-db-instances': partial(
+                      paginated_scan,
+                      service='rds',
+                      function_name='describe_db_instances',
+                      obj_name='DBInstances'
+                  ),
                   'ebs': partial(
-                          paginated_scan,
-                          service='ec2',
-                          function_name='describe_volumes'
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_volumes'
                   ),
                   'ami': partial(
-                          paginated_scan,
-                          service='ec2',
-                          function_name='describe_images',
-                          params={'Owners': ['self']}
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_images',
+                      params={'Owners': ['self']}
                   ),
                   'snapshot': partial(
-                          paginated_scan,
-                          service='ec2',
-                          function_name='describe_snapshots',
-                          params={'OwnerIds': ['self']}
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_snapshots',
+                      params={'OwnerIds': ['self']}
                   )
               }
 
@@ -256,6 +284,39 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
       Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
 
+  RdsDbInstancesCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-RdsDbInstances-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-rds-db-instances-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  OpensearchDomainsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-OpensearchDomains-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-opensearch-domains-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  ElastiCacheClustersCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${RolePrefix}${CFDataName}-ElastiCacheClusters-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-elasticache-clusters-data/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
   SnapshotCrawler:
     Type: AWS::Glue::Crawler
     Properties:
@@ -288,8 +349,15 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-AMI-Crawler","${RolePrefix}${CFDataName}-Snapshot-Crawler","${RolePrefix}${CFDataName}-EBS-Crawler"]'
-
+        Crawlers: !Sub |
+            [
+              "${RolePrefix}${CFDataName}-AMI-Crawler",
+              "${RolePrefix}${CFDataName}-Snapshot-Crawler",
+              "${RolePrefix}${CFDataName}-EBS-Crawler"
+            ]
+##              "${RolePrefix}${CFDataName}-ElastiCacheClusters-Crawler",
+  ##             "${RolePrefix}${CFDataName}-OpensearchDomains-Crawler",
+   ##            "${RolePrefix}${CFDataName}-RdsDbInstances-Crawler,
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
@@ -297,7 +365,7 @@ Resources:
       Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      FlexibleTimeWindow: 
+      FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn
