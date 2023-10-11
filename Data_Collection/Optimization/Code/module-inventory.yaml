@@ -346,7 +346,6 @@ Resources:
           Target:
               Arn: !GetAtt [!Sub 'StepFunction${AwsObject}', Arn]
               RoleArn: !Ref SchedulerExecutionRoleARN
-              #Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-${AwsObject}-Crawler"]}'
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
