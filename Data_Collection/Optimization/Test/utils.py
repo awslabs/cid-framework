@@ -26,23 +26,19 @@ def clean_bucket(s3, s3client, account_id, full=True):
         bucket_name = f"costoptimizationdata{account_id}"
 
         if full:
+            # Delete all
             logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
             s3.Bucket(bucket_name).object_versions.delete()
         else:
-            oldest = datetime.utcnow().replace(tzinfo=timezone(timedelta())) - timedelta(minutes=5)
-            print(oldest)
-
-            # List objects in the bucket
+            # Delete all objects older than 5 mins
+            now = datetime.utcnow().replace(tzinfo=timezone(timedelta()))
             objects = s3client.list_objects_v2(Bucket=bucket_name)['Contents']
             if objects:
                 logger.info(f'Removing old objects the bucket {CYAN}{bucket_name}{END}')
-            # Iterate through the objects and delete those older than 5 minutes
             for obj in objects:
-                last_modified = obj['LastModified']
-                print(oldest)
-                print(last_modified)
-                print((oldest-last_modified).total_seconds() / 60, obj['Key'])
-                if (oldest-last_modified).total_seconds() > 5*60:
+                age_mins =  (now-obj['LastModified']).total_seconds() / 60
+                if age_mins > 5:
+                    logger.info(f"{age_mins} mins old. deleting {obj['Key']}")
                     s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
         logger.exception(exc)
@@ -127,25 +123,35 @@ def watch_stacks(cloudformation, stack_names = None):
 
 
 def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[dict]):
-    create_options = dict(
-        TimeoutInMinutes=60,
+
+    options = dict(
+        StackName=stack_name,
         Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
-        OnFailure='DELETE',
-        EnableTerminationProtection=False,
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
+        TemplateBody=file.open().read(),
+        Parameters=parameters,
     )
 
     try:
-        with file.open() as fp:
-            cloudformation.create_stack(
-                StackName=stack_name,
-                TemplateBody=fp.read(),
-                Parameters=parameters,
-                **create_options,
-            )
+        cloudformation.create_stack(
+            EnableTerminationProtection=False,
+            OnFailure='DELETE',
+            TimeoutInMinutes=60,
+            **options,
+        )
     except cloudformation.exceptions.AlreadyExistsException:
-        logger.info(f'{stack_name} exists')
+        try:
+            logger.info(f'{stack_name} exists')
+            cloudformation.update_stack(
+                **options,
+            )
+        except cloudformation.exceptions.ClientError as exc:
+            if 'No updates are to be performed.' in str(exc):
+                logger.info(f'No updates are to be performed for {stack_name}')
+            else:
+                logger.error(exc)
+
 
 def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
@@ -233,7 +239,6 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
         executions = stepfunctions.list_executions(
             stateMachineArn=state_machine_arn,
         )['executions']
-        logger.debug(f'{state_machine_arn} has : {executions}')
         for execution in executions:
             if execution['status'] == 'RUNNING':
                 execution_arns.append(execution['executionArn'])
