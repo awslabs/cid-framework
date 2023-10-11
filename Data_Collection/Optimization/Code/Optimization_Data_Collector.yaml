@@ -572,7 +572,7 @@ Resources:
             Action:
               - sts:AssumeRole
       Policies:
-        - PolicyName: "LambdaGlueExecutionPolicy"
+        - PolicyName: "GlueExecution"
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -585,8 +585,31 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
                   - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${RolePrefix}*Lambda*'
+        - PolicyName: InvokeCollectionLambda
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${RolePrefix}*Lambda*'
+  StepFunctionExecutionRoleInvokeAccountCollectorPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: DeployAccountCollector
+    Properties:
+      PolicyName: InvokeAccountCollector
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - lambda:InvokeFunction
+            Resource:
+              - !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+      Roles:
+        - Ref: StepFunctionExecutionRole
 
   SchedulerExecutionRole:
     Type: AWS::IAM::Role

@@ -46,7 +46,7 @@ def main():
             print(f'failed to load {filename}')
             continue
         for name, res in template['Resources'].items():
-            if res['Type'] == 'AWS::Lambda::Function':
+            if isinstance(res, dict) and res['Type'] == 'AWS::Lambda::Function':
                 code = res.get('Properties', {}).get('Code', {}).get('ZipFile')
                 if not code:
                     continue
