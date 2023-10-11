@@ -15,7 +15,7 @@ if __name__ == '__main__':
     try:
         cloudformation.delete_stack(StackName='TempDebugCIDStackSets')
         cloudformation.create_stack(
-            TemplateBody=open('Data_Collection/Optimization/Test/debugstackets.yml').read(),
+            TemplateBody=open('data-collection/test/debugstackets.yml').read(),
             StackName='TempDebugCIDStackSets',
             Parameters=[
                 {'ParameterKey': 'AdministratorAccountId', 'ParameterValue': account_id}

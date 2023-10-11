@@ -466,7 +466,7 @@ Resources:
               # FIXME: move it to separate lambda?
               try:
                   s3copy(
-                      CODE_BUCKET, 'Cost/Labs/300_Optimization_Data_Collection/graviton/rds_graviton_mapping.csv',
+                      CODE_BUCKET, 'cfn/data-collection/data/graviton/rds_graviton_mapping.csv',
                       BUCKET_NAME, 'pricing/graviton/rds_graviton_mapping.csv',
                   )
               except Exception as exc:

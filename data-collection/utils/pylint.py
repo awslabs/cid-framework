@@ -1,4 +1,4 @@
-""" This script shows pylint for all Lamda Functions with ZipFile code in yaml
+""" This script shows pylint for all Lambda Functions with ZipFile code in yaml
 
 """
 import os
@@ -8,7 +8,7 @@ import subprocess
 import cfn_tools # pip install cfn-flip
 
 
-FOLDER_PATH = 'Data_Collection/Optimization/Code/'
+FOLDER_PATH = 'data-collection/deploy/'
 TMP_DIR  = '.tmp'
 DISABLE = [
     'C0301', # Line too long

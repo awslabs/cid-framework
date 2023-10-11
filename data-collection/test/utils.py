@@ -159,7 +159,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationManagementDataRoleStack',
-        file=root / 'Code' / 'Management.yaml',
+        file=root / 'Code' / 'deploy-in-management-account.yaml',
         parameters=[
             {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
@@ -170,7 +170,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationDataRoleStack',
-        file=root / 'Code' / 'optimisation_read_only_role.yaml',
+        file=root / 'Code' / 'deploy-in-management-account.yaml',
         parameters=[
             {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
@@ -187,7 +187,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationDataCollectionStack',
-        file=root / 'Code' / 'Optimization_Data_Collector.yaml',
+        file=root / 'Code' / 'deploy-in-linked-account.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
             {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
