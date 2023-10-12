@@ -29,4 +29,4 @@ jobs:
           pip install cfn-lint checkov
       - name: Scan all templates
         run: |
-          Data_Collection/Optimization/Tools/lint.sh
+          data-collection/utils/lint.sh

@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Deploys a role to Management Account so that CID data collection can assume to read
 Parameters:
-  CostAccountID:
+  DataCollectionAccountID:
     Type: String
     Description: AccountId of where the collector is deployed
   ManagementAccountRole:
@@ -29,15 +29,15 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                -  !Sub "arn:aws:iam::${CostAccountID}:root"
+                -  !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}account-collector-LambdaRole"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-organization"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-compute-optimizer"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-cost-anomaly"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-rightsizing"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}account-collector-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-organization"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-compute-optimizer"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-cost-anomaly"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-rightsizing"
       Path: /
       Policies:
         - PolicyName: "Management-Account-permissions"

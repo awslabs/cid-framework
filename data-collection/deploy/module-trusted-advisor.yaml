@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Retrieves Budgets data
+Description: Retrieves Inventory data for the chosen service
 Parameters:
   DatabaseName:
     Type: String
@@ -18,7 +18,7 @@ Parameters:
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
-    Default: budgets
+    Default: trusted-advisor
   GlueRoleARN:
     Type: String
     Description: Arn for the Glue Crawler role
@@ -74,7 +74,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
         - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -99,89 +99,108 @@ Resources:
       Architectures: [arm64]
       Code:
         ZipFile: |
-          #Author Stephanie Gooch 2021
           import os
           import json
-          import logging
-          import datetime
+          from datetime import date, datetime
           from json import JSONEncoder
 
           import boto3
+          from botocore.client import Config
+          from botocore.exceptions import ClientError
+          import logging
 
-          BUCKET = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["PREFIX"]
+          BUCKET = os.environ["BUCKET_NAME"]
           ROLE_NAME = os.environ['ROLENAME']
+          COSTONLY = os.environ.get('COSTONLY', 'no').lower() == 'yes'
           TMP_FILE = "/tmp/data.json"
+
+          #config to avoid ThrottlingException
+          config = Config(
+            retries = {
+                'max_attempts': 10,
+                'mode': 'standard'
+            }
+          )
 
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          # subclass JSONEncoder
-          class DateTimeEncoder(JSONEncoder):
-              # Override the default method
-              def default(self, obj):
-                  if isinstance(obj, (datetime.date, datetime.datetime)):
-                      return obj.isoformat()
-
-          def assume_role(account_id, service):
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.client(
-                  service,
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken']
-              )
-
           def lambda_handler(event, context):
-              logger.info(f"Event data {json.dumps(event)}")
+              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               if 'account' not in event:
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
                   account = json.loads(event["account"][0])
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account: {account_id}")
-                  budgets_client = assume_role(account_id, "budgets")
-                  paginator = budgets_client.get_paginator("describe_budgets") #Paginator for a large list of accounts
-                  response_iterator = paginator.paginate(AccountId=account_id)
-                  count = 0
-                  with open(TMP_FILE, "w") as f:
-                      for budgets in response_iterator:
-                          if not 'Budgets' in budgets: continue
-                          for budget in budgets['Budgets']:
-                              count += 1
-                              budget['collection_time'] = collection_time
-                              logger.debug(budget)
-                              budget.update({'Account_ID': account_id, 'Account_Name': account_name})
-                              if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
-                                  budget.update({'CostFilters': {'Filter': ['None']}})
-                              dataJSONData = json.dumps(budget, cls=DateTimeEncoder)
-                              f.write(dataJSONData)
-                              f.write("\n")
-                  logger.info(f"Budgets collected: {count}")
-                  s3_upload(account_id, payer_id)
+                  read_ta(account_id, account_name)
+                  upload_to_s3(account_id, payer_id)
               except Exception as e:
-                  logger.warning(f"Error: {type(e)} {e}")
+                  logging.warning(e)
 
-          def s3_upload(account_id, payer_id):
+          def upload_to_s3(account_id, payer_id):
               if os.path.getsize(TMP_FILE) == 0:
-                  logger.info(f"No data in file for {PREFIX}")
+                  print(f"No data in file for {PREFIX}")
                   return
-              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/budgets-{account_id}.json")
+              d = datetime.now()
+              month = d.strftime("%m")
+              year = d.strftime("%Y")
+              _date = d.strftime("%d%m%Y-%H%M%S")
+              key = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year={year}/month={month}/{PREFIX}-{account_id}-{_date}.json"
               try:
-                  res = boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
-                  logger.info(f'res={res}')
-                  logger.info(f"Budget data for {account_id} stored at s3://{BUCKET}/{key}")
-              except Exception as exc:
-                  logger.warning(exc)
+                  boto3.client("s3").upload_file(TMP_FILE, BUCKET, key)
+                  print(f"Data for {account_id} in s3 - {key}")
+              except Exception as e:
+                  print(f"{type(e)}: {e}")
+
+          def assume_role(account_id, service, region, role):
+              assumed = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role}",
+                  RoleSessionName='data_collection'
+              )
+              creds = assumed['Credentials']
+              return boto3.client(service, region_name=region,
+                  aws_access_key_id=creds['AccessKeyId'],
+                  aws_secret_access_key=creds['SecretAccessKey'],
+                  aws_session_token=creds['SessionToken'],
+                  config=config,
+              )
+
+          def _json_serial(self, obj):
+              if isinstance(obj, (datetime, date)): return obj.isoformat()
+              return JSONEncoder.default(self, obj)
+
+          def read_ta(account_id, account_name):
+              f = open(TMP_FILE, "w")
+              support = assume_role(account_id, "support", "us-east-1", ROLE_NAME)
+              checks = support.describe_trusted_advisor_checks(language="en")["checks"]
+              for check in checks:
+                  #print(json.dumps(check))
+                  if (COSTONLY and check.get("category") != "cost_optimizing"): continue
+                  try:
+                      result = support.describe_trusted_advisor_check_result(checkId=check["id"], language="en")['result']
+                      #print(json.dumps(result))
+                      if result.get("status") == "not_available": continue
+                      dt = result['timestamp']
+                      ts = datetime.strptime(dt, '%Y-%m-%dT%H:%M:%SZ').strftime('%s')
+                      for resource in result["flaggedResources"]:
+                          output = {}
+                          if "metadata" in resource:
+                              output.update(dict(zip(check["metadata"], resource["metadata"])))
+                              del resource['metadata']
+                          resource["Region"] = resource.pop("region") if "region" in resource else '-'
+                          resource["Status"] = resource.pop("status") if "status" in resource else '-'
+                          output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
+                          output.update(resource)
+                          f.write(json.dumps(output, default=_json_serial) + "\n")
+                  except Exception as e:
+                      print(f'{type(e)}: {e}')
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -191,6 +210,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+          COSTONLY: "no"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -220,6 +240,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        Params: ''
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
@@ -240,27 +261,3 @@ Resources:
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
-
-  AthenaQuery:
-    Type: AWS::Athena::NamedQuery
-    Properties:
-      Database: !Ref DatabaseName
-      Description: !Sub "Provides a summary view of the ${CFDataName}"
-      Name: !Sub "${CFDataName}_view"
-      QueryString:
-        CREATE OR REPLACE VIEW budgets_view AS
-        SELECT
-          budgetname budget_name
-        , CAST(budgetlimit.amount AS decimal) budget_amount
-        , CAST(calculatedspend.actualspend.amount AS decimal) actualspend
-        , CAST(calculatedspend.forecastedspend.amount AS decimal) forecastedspend
-        , timeunit
-        , budgettype budget_type
-        , account_id
-        , timeperiod.start start_date
-        , timeperiod."end"  end_date
-        , year budget_year
-        , month budget_month
-        FROM
-          optimization_data.budgets_data
-        WHERE (budgettype = 'COST')  AND costfilters.filter[1] = 'None'

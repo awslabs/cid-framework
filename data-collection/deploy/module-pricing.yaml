@@ -1,0 +1,615 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Retrieves Pricing data
+Transform: 'AWS::LanguageExtensions'
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to hold data information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+  CodeBucket:
+    Type: String
+    Description: S3 Bucket that exists and holds code
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: pricing
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AwsServices:
+    Type: CommaDelimitedList
+    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan
+    Description: Services for pulling price data
+  FilterRegions:
+    Type: String
+    Default: ''
+    Description: Comma Separated Region Filter. If empty, will pull all available regions. If provided, only certain regions data will be collected
+
+Mappings:
+  ServicesMap:
+    AmazonRDS:
+      path: rds
+      fields:
+          - { Type: string, Name: sku }
+          - { Type: string, Name: offertermcode }
+          - { Type: string, Name: ratecode }
+          - { Type: string, Name: termtype }
+          - { Type: string, Name: pricedescription }
+          - { Type: string, Name: effectivedate } # cannot do timestamp or date here
+          - { Type: string, Name: startingrange }
+          - { Type: string, Name: endingrange }
+          - { Type: string, Name: unit }
+          - { Type: double, Name: priceperunit }
+          - { Type: string, Name: currency }
+          - { Type: string, Name: relatedto }
+          - { Type: string, Name: leasecontractlength }
+          - { Type: string, Name: purchaseoption }
+          - { Type: string, Name: offeringclass }
+          - { Type: string, Name: product family }
+          - { Type: string, Name: servicecode }
+          - { Type: string, Name: location }
+          - { Type: string, Name: location type }
+          - { Type: string, Name: instance type }
+          - { Type: string, Name: current generation }
+          - { Type: string, Name: instance family }
+          - { Type: string, Name: vcpu }
+          - { Type: string, Name: physical processor }
+          - { Type: string, Name: clock speed }
+          - { Type: string, Name: memory }
+          - { Type: string, Name: storage }
+          - { Type: string, Name: network performance }
+          - { Type: string, Name: processor architecture }
+          - { Type: string, Name: storage media }
+          - { Type: string, Name: volume type }
+          - { Type: string, Name: min volume size }
+          - { Type: string, Name: max volume size }
+          - { Type: string, Name: engine code }
+          - { Type: string, Name: database engine }
+          - { Type: string, Name: database edition }
+          - { Type: string, Name: license model }
+          - { Type: string, Name: deployment option }
+          - { Type: string, Name: group }
+          - { Type: string, Name: group description }
+          - { Type: string, Name: usagetype }
+          - { Type: string, Name: operation }
+          - { Type: string, Name: acu }
+          - { Type: string, Name: dedicated ebs throughput }
+          - { Type: string, Name: deployment model }
+          - { Type: string, Name: enhanced networking supported }
+          - { Type: string, Name: instance type family }
+          - { Type: string, Name: normalization size factor }
+          - { Type: string, Name: pricing unit }
+          - { Type: string, Name: processor features }
+          - { Type: string, Name: region code }
+          - { Type: string, Name: servicename }
+          - { Type: string, Name: volume name }
+          - { Type: string, Name: engine media type }
+    AmazonEC2:
+      path: ec2
+      fields:
+          - { Type: string, Name: sku }
+          - { Type: string, Name: offertermcode }
+          - { Type: string, Name: ratecode }
+          - { Type: string, Name: termtype }
+          - { Type: string, Name: pricedescription }
+          - { Type: string, Name: effectivedate }
+          - { Type: string, Name: startingrange }
+          - { Type: string, Name: endingrange }
+          - { Type: string, Name: unit }
+          - { Type: string, Name: priceperunit }
+          - { Type: string, Name: currency }
+          - { Type: string, Name: product family }
+          - { Type: string, Name: servicecode }
+          - { Type: string, Name: location }
+          - { Type: string, Name: location type }
+          - { Type: string, Name: instance type }
+          - { Type: string, Name: current generation }
+          - { Type: string, Name: instance family }
+          - { Type: string, Name: vcpu }
+          - { Type: string, Name: physical processor }
+          - { Type: string, Name: clock speed }
+          - { Type: string, Name: memory }
+          - { Type: string, Name: storage }
+          - { Type: string, Name: network performance }
+          - { Type: string, Name: processor architecture }
+          - { Type: string, Name: storage media }
+          - { Type: string, Name: volume type }
+          - { Type: string, Name: max volume size }
+          - { Type: string, Name: max iops/volume }
+          - { Type: string, Name: max iops burst performance }
+          - { Type: string, Name: max throughput/volume }
+          - { Type: string, Name: tenancy }
+          - { Type: string, Name: operating system }
+          - { Type: string, Name: license model }
+          - { Type: string, Name: group }
+          - { Type: string, Name: group description }
+          - { Type: string, Name: usagetype }
+          - { Type: string, Name: operation }
+          - { Type: string, Name: availabilityzone }
+          - { Type: string, Name: capacitystatus }
+          - { Type: string, Name: classicnetworkingsupport }
+          - { Type: string, Name: dedicated ebs throughput }
+          - { Type: string, Name: ecu }
+          - { Type: string, Name: enhanced networking supported }
+          - { Type: string, Name: gpu }
+          - { Type: string, Name: gpu memory }
+          - { Type: string, Name: instance }
+          - { Type: string, Name: instancesku }
+          - { Type: string, Name: intel avx2 available }
+          - { Type: string, Name: intel avx available }
+          - { Type: string, Name: intel turbo available }
+          - { Type: string, Name: marketoption }
+          - { Type: string, Name: normalization size factor }
+          - { Type: string, Name: pre installed s/w }
+          - { Type: string, Name: processor features }
+          - { Type: string, Name: region code }
+          - { Type: string, Name: servicename }
+          - { Type: string, Name: volume api name }
+          - { Type: string, Name: vpcnetworkingsupport }
+          - { Type: string, Name: relatedto }
+          - { Type: string, Name: leasecontractlength }
+          - { Type: string, Name: purchaseoption }
+          - { Type: string, Name: offeringclass }
+          - { Type: string, Name: provisioned }
+          - { Type: string, Name: instance capacity - 12xlarge }
+          - { Type: string, Name: instance capacity - 16xlarge }
+          - { Type: string, Name: instance capacity - 18xlarge }
+          - { Type: string, Name: instance capacity - 24xlarge }
+          - { Type: string, Name: instance capacity - 2xlarge }
+          - { Type: string, Name: instance capacity - 32xlarge }
+          - { Type: string, Name: instance capacity - 4xlarge }
+          - { Type: string, Name: instance capacity - 8xlarge }
+          - { Type: string, Name: instance capacity - 9xlarge }
+          - { Type: string, Name: instance capacity - large }
+          - { Type: string, Name: instance capacity - metal }
+          - { Type: string, Name: instance capacity - xlarge }
+          - { Type: string, Name: physical cores }
+          - { Type: string, Name: product type }
+          - { Type: string, Name: resource type }
+          - { Type: string, Name: snapshotarchivefeetype }
+          - { Type: string, Name: ebs optimized }
+          - { Type: string, Name: transfer type }
+          - { Type: string, Name: from location }
+          - { Type: string, Name: from location type }
+          - { Type: string, Name: to location }
+          - { Type: string, Name: to location type }
+          - { Type: string, Name: elastic graphics type }
+          - { Type: string, Name: from region code }
+          - { Type: string, Name: instance capacity - 10xlarge }
+          - { Type: string, Name: instance capacity - medium }
+          - { Type: string, Name: to region code }
+
+    AmazonElastiCache:
+      path: elasticache
+      fields:
+          - { Type: string, Name: sku }
+          - { Type: string, Name: offertermcode }
+          - { Type: string, Name: ratecode }
+          - { Type: string, Name: termtype }
+          - { Type: string, Name: pricedescription }
+          - { Type: string, Name: effectivedate }
+          - { Type: string, Name: startingrange }
+          - { Type: string, Name: endingrange }
+          - { Type: string, Name: unit }
+          - { Type: string, Name: priceperunit }
+          - { Type: string, Name: currency }
+          - { Type: string, Name: leasecontractlength }
+          - { Type: string, Name: purchaseoption }
+          - { Type: string, Name: offeringclass }
+          - { Type: string, Name: product family }
+          - { Type: string, Name: servicecode }
+          - { Type: string, Name: location }
+          - { Type: string, Name: location type }
+          - { Type: string, Name: instance type }
+          - { Type: string, Name: current generation }
+          - { Type: string, Name: instance family }
+          - { Type: string, Name: vcpu }
+          - { Type: string, Name: storage }
+          - { Type: string, Name: storage media }
+          - { Type: string, Name: usagetype }
+          - { Type: string, Name: operation }
+          - { Type: string, Name: ecu }
+          - { Type: string, Name: memory (gib) }
+          - { Type: string, Name: region code }
+          - { Type: string, Name: servicename }
+          - { Type: string, Name: compute type }
+
+    AmazonES:
+      path: opensearch
+      fields:
+          - { Type: string, Name: sku }
+          - { Type: string, Name: offertermcode }
+          - { Type: string, Name: ratecode }
+          - { Type: string, Name: termtype }
+          - { Type: string, Name: pricedescription }
+          - { Type: string, Name: effectivedate }
+          - { Type: string, Name: startingrange }
+          - { Type: string, Name: endingrange }
+          - { Type: string, Name: unit }
+          - { Type: string, Name: priceperunit }
+          - { Type: string, Name: currency }
+          - { Type: string, Name: leasecontractlength }
+          - { Type: string, Name: purchaseoption }
+          - { Type: string, Name: offeringclass }
+          - { Type: string, Name: product family }
+          - { Type: string, Name: servicecode }
+          - { Type: string, Name: location }
+          - { Type: string, Name: location type }
+          - { Type: string, Name: instance type }
+          - { Type: string, Name: current generation }
+          - { Type: string, Name: instance family }
+          - { Type: string, Name: vcpu }
+          - { Type: string, Name: storage }
+          - { Type: string, Name: storage media }
+          - { Type: string, Name: usagetype }
+          - { Type: string, Name: operation }
+          - { Type: string, Name: ecu }
+          - { Type: string, Name: memory (gib) }
+          - { Type: string, Name: region code }
+          - { Type: string, Name: servicename }
+          - { Type: string, Name: compute type }
+    AWSComputeSavingsPlan:
+      path: computesavingsplan
+      fields:
+          - { Type: string, Name: sku }
+          - { Type: string, Name: ratecode }
+          - { Type: string, Name: unit }
+          - { Type: string, Name: effectivedate }
+          - { Type: double, Name: discountedrate }
+          - { Type: string, Name: currency }
+          - { Type: string, Name: discountedsku }
+          - { Type: string, Name: discountedservicecode }
+          - { Type: string, Name: discountedusagetype }
+          - { Type: string, Name: discountedoperation }
+          - { Type: string, Name: purchaseoption }
+          - { Type: string, Name: leasecontractlength }
+          - { Type: string, Name: leasecontractlengthunit }
+          - { Type: string, Name: servicecode }
+          - { Type: string, Name: usagetype }
+          - { Type: string, Name: operation }
+          - { Type: string, Name: description }
+          - { Type: string, Name: instance family }
+          - { Type: string, Name: location }
+          - { Type: string, Name: location type }
+          - { Type: string, Name: granularity }
+          - { Type: string, Name: product family }
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: "S3Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/${CFDataName}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+        - PolicyName: "StartCrawler"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "glue:StartCrawler"
+                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect-Pricing'
+      Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
+      Runtime: python3.10
+      Architectures: [arm64]
+      Code:
+        ZipFile: |
+          # Author Stephanie Gooch 2021 and Iakov Gan 2023
+          # Please reachout to costoptimization@amazon.com if there's any comments or suggestions
+          import os
+          import json
+          import urllib3
+          import logging
+
+          import boto3
+
+          logging.basicConfig(level=logging.DEBUG)
+          logger = logging.getLogger(__name__)
+
+          OFFERS_URL = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json'
+          BASE_URL = '/'.join(OFFERS_URL.split('/')[:3])
+          SERVICES = {
+              'AmazonRDS',
+              'AmazonEC2',
+              'AmazonElastiCache',
+              'AmazonES',
+              'AWSComputeSavingsPlan',
+          }
+          CODE_BUCKET = os.environ['CODE_BUCKET']
+          BUCKET_NAME = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["DEST_PREFIX"]
+          FILTER_REGIONS = [r.strip() for r in os.environ["FILTER_REGIONS"].split(',') if r]
+
+          def get_json(url):
+              return json.loads(urllib3.PoolManager().request('GET', url).data)
+
+          def start_crawler(name):
+              try:
+                  boto3.client('glue').start_crawler(Name=name)
+              except Exception as exc:
+                  logger.warning(exc)
+
+          def upload_pricing(service, path):
+              s3 = boto3.client('s3')
+              http = urllib3.PoolManager()
+              offers = get_json(OFFERS_URL)['offers']
+
+              errors = ''
+
+              logger.debug(f'list regional pricing for {service}')
+              try:
+                  if service == 'AWSComputeSavingsPlan':
+                      url = offers['AmazonEC2']['currentSavingsPlanIndexUrl']
+                  else:
+                      url = offers[service]['currentRegionIndexUrl']
+                  regions = get_json(BASE_URL + url)["regions"]
+              except Exception as exc:
+                  err = f'{service}: {exc}'
+                  logger.warning(err)
+                  return {
+                      'statusCode': 500,
+                      'errors': err,
+                  }
+              logger.debug(json.dumps(regions))
+              if isinstance(regions, dict): # pricing data has different formats
+                  regions = regions.values()
+
+              # pull pricing for each region
+              for region in regions:
+                  region_code = region["regionCode"]
+                  if FILTER_REGIONS and (region_code not in FILTER_REGIONS):
+                      logger.debug(f'Filtering out {region_code}')
+                      continue
+                  try:
+                      version_url =  region.get("versionUrl") or region.get("currentVersionUrl")
+                      assert version_url
+                      region_url = BASE_URL + version_url.replace(".json", ".csv")
+
+                      # Starting Download
+                      file_obj = http.request('GET', region_url, preload_content=False)
+
+                      # Skip 5 lines
+                      for _ in range(5):
+                          file_obj.readline()
+
+                      # Upload
+                      key = f"pricing/{path}-pricing/region={region_code}/index.csv"
+                      res = s3.upload_fileobj(Fileobj=file_obj, Bucket=BUCKET_NAME, Key=key)
+                      logger.debug(f'{res} Uploaded to s3://{BUCKET_NAME}/{key}')
+                  except Exception as exc:
+                      err = f'{service}/{region_code}: {exc}'
+                      logger.warning(err)
+                      logger.exception(exc)
+                      errors += err + '\n'
+                      raise
+              return {
+                  'statusCode': 200,
+                  'errors': errors,
+              }
+
+          def s3copy(src_bucket, src_key, dest_bucket, dest_key):
+              boto3.resource('s3').Bucket(dest_bucket).copy({
+                    'Bucket': src_bucket,
+                    'Key': src_key
+                  },
+                  dest_key
+              )
+              print(f'added file {dest_key}')
+
+
+          def lambda_handler(event, context):
+              print('event:' + str(event))
+              try:
+                  service = event['service']
+                  path = event['path']
+                  crawler = event['crawler']
+              except Exception:
+                  print('please provide service, path and crawler')
+                  print('ex: {"service": "AmazonElastiCache", "path": "elasticache", "crawler": "WA-pricing-AmazonElastiCache-Crawler"}')
+                  return {
+                      'statusCode': 500,
+                      'body': {service: 'wrong payload'}
+                  }
+              res = upload_pricing(service, path)
+
+              # FIXME: move it to separate lambda?
+              try:
+                  s3copy(
+                      CODE_BUCKET, 'cfn/data-collection/data/graviton/rds_graviton_mapping.csv',
+                      BUCKET_NAME, 'pricing/graviton/rds_graviton_mapping.csv',
+                  )
+              except Exception as exc:
+                  res['errors'] += f'rds_graviton_mapping: {exc}'
+
+              start_crawler(crawler)
+
+              return {
+                  'statusCode': 200,
+                  'body': {service: res}
+              }
+
+      Handler: 'index.lambda_handler'
+      MemorySize: 2880
+      Timeout: 600
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          CODE_BUCKET: !Ref CodeBucket
+          DEST_PREFIX: !Ref CFDataName
+          FILTER_REGIONS: !Ref FilterRegions
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 # Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LambdaScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - scheduler.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeLambda
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !GetAtt LambdaFunction.Arn
+
+  'Fn::ForEach::Service':
+    - AwsService
+    - !Ref AwsServices
+    - 'ScheduleRefresh${AwsService}':
+        Type: 'AWS::Scheduler::Schedule'
+        Properties:
+          Description: !Sub '${RolePrefix}${CFDataName}-${AwsService}'
+          Name: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Schedule'
+          ScheduleExpression: !Ref Schedule
+          State: ENABLED
+          FlexibleTimeWindow:
+            Mode: 'OFF'
+          Target:
+            Arn: !GetAtt LambdaFunction.Arn
+            RoleArn: !GetAtt LambdaScheduleRole.Arn
+            Input:
+              Fn::Sub:
+                - |
+                  {
+                    "service": "${AwsService}",
+                    "path": "${path}",
+                    "crawler": "${RolePrefix}${CFDataName}-${AwsService}-Crawler"
+                  }
+                - path: !FindInMap [ServicesMap, !Ref AwsService, path]
+
+      'PricingCrawler${AwsService}':
+        Type: AWS::Glue::Crawler
+        Properties:
+          Name: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Crawler'
+          Role: !Ref GlueRoleARN
+          DatabaseName: !Ref DatabaseName
+          SchemaChangePolicy:
+            DeleteBehavior: LOG
+            UpdateBehavior: LOG
+          Targets:
+            S3Targets:
+              - Path:
+                  Fn::Sub:
+                    - "s3://${DestinationBucket}/${CFDataName}/${path}-pricing/"
+                    - path: !FindInMap [ServicesMap, !Ref AwsService, path]
+          Configuration: |
+            {
+              "Version": 1.0,
+              "Grouping": {
+                "TableGroupingPolicy": "CombineCompatibleSchemas"
+              },
+              "CrawlerOutput": {
+                "Tables": {"AddOrUpdateBehavior": "MergeNewColumns"},
+                "Partitions": {"AddOrUpdateBehavior": "InheritFromTable"}
+              }
+            }
+
+      'PricingTable${AwsService}':
+        Type: AWS::Glue::Table
+        Properties:
+          CatalogId: !Ref "AWS::AccountId"
+          DatabaseName: !Ref DatabaseName
+          TableInput:
+            Name:
+              Fn::Sub:
+                - '${path}_pricing' # note '_' not '-'
+                - path: !FindInMap [ServicesMap, !Ref AwsService, path]
+            Owner: owner
+            Retention: 0
+            TableType: EXTERNAL_TABLE
+            Parameters:
+              compressionType: none
+              delimiter: ','
+              classification: csv
+              skip.header.line.count: '1'
+              UPDATED_BY_CRAWLER: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Crawler'
+            PartitionKeys:
+              - { Name: region, Type: string }
+            StorageDescriptor:
+              Columns: !FindInMap [ServicesMap, !Ref AwsService, fields]
+              InputFormat: org.apache.hadoop.mapred.TextInputFormat
+              Location:
+                Fn::Sub:
+                  - "s3://${DestinationBucket}/${CFDataName}/${path}-pricing/"
+                  - path: !FindInMap [ServicesMap, !Ref AwsService, path]
+              OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+              SerdeInfo:
+                Parameters:
+                  quoteChar: '"'
+                  separatorChar: ','
+                  serialization.format: '1'
+                SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde # Need a specific lib for quotes
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName

@@ -6,7 +6,7 @@ Metadata:
     - Label:
         default: 'Deployment parameters'
       Parameters:
-        - CostAccountID
+        - DataCollectionAccountID
         - MultiAccountRoleName
         - RolePrefix
     - Label:
@@ -19,7 +19,7 @@ Metadata:
         - IncludeBudgetsModule
         - IncludeTransitGatewayModule
     ParameterLabels:
-      CostAccountID:
+      DataCollectionAccountID:
         default: 'Cost Account Id'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
@@ -38,7 +38,7 @@ Metadata:
       IncludeTransitGatewayModule:
         default: 'Include Transit Gateway Module'
 Parameters:
-  CostAccountID:
+  DataCollectionAccountID:
     Type: String
     Description: AccountId of where the collector is deployed
   MultiAccountRoleName:
@@ -122,16 +122,16 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                - !Sub "arn:aws:iam::${CostAccountID}:root"
+                - !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}budgets-LambdaRole"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}ecs-chargeback-LambdaRole"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}inventory-LambdaRole"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}rds-usage-LambdaRole"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}transit-gateway-LambdaRole"
-                  - !Sub "arn:aws:iam::${CostAccountID}:role/${RolePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}budgets-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}ecs-chargeback-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}inventory-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}rds-usage-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}transit-gateway-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}trusted-advisor-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -187,6 +187,10 @@ Resources:
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeRegions"
+              - "rds:DescribeDBInstances"
+              - "es:ListDomainNames"
+              - "es:DescribeElasticsearchDomains"
+              - "elasticache:DescribeCacheClusters"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole

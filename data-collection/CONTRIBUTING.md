@@ -56,12 +56,12 @@ aws s3api create-bucket --bucket $bucket
 
 Cloud Formation:
 ```bash
-./Data_Collection/Optimization/Tools/lint.sh
+./data-collection/utils/lint.sh
 ```
 
 Pylint:
 ```bash
-python3 ./Data_Collection/Optimization/Tools/pylint.py
+python3 ./data-collection/utils/pylint.py
 ```
 
 
@@ -70,8 +70,8 @@ python3 ./Data_Collection/Optimization/Tools/pylint.py
 ```bash
 export account_id=$(aws sts get-caller-identity --query "Account" --output text )
 export bucket=cid-$account_id-test
-./Data_Collection/Optimization/Tools/upload.sh  "$bucket"
-python3 ./Data_Collection/Optimization/Test/test_from_scratch.py
+./data-collection/utils/upload.sh  "$bucket"
+python3 ./data-collection/test/test_from_scratch.py
 ```
 
 The test will install stacks from scratch in a single account, then it will check the presence of Athena tables. After running tests, it will delete the stacks and all artefacts that are not deleted by CFN.
@@ -80,7 +80,7 @@ The test will install stacks from scratch in a single account, then it will chec
 All yaml and zip files are in the account 87******** - well-architected-content@amazon.com, in the bucket `aws-well-architected-labs`. These are then replicated to the other regional buckets.
 
 ```bash
-./Data_Collection/Optimization/Tools/upload.sh  "aws-well-architected-labs"
+./data-collection/utils/upload.sh  "aws-well-architected-labs"
 ```
 
 
