@@ -1,8 +1,12 @@
 ## CID Data Collection
 
+### About
+
 This projects demonstrates usage of AWS API for collecting various types of usage data.
 
-![Architecture](data-collection/images/archi.png)
+### Architecture
+
+![Architecture](/data-collection/images/archi.png)
 
 1. Amazon EventBridge rule invokes Step Function of every every deployed data collection module. based on schedule.
 2. The Step Function launches a Lambda function Account Collector that assumes Read Role role in the Management account and retrieves linked accounts list via AWS Organizations API
@@ -12,18 +16,33 @@ This projects demonstrates usage of AWS API for collecting various types of usag
 6. Collected data visualized with the Cloud Intelligence Dashboards using Amazon QuickSight to get optimization recommendations and insights
 
 
+### Modules
 List of modules and objects collected:
+| Module Name            | AWS Services          | Collected In          |  Details |
+| ---                    |             ---       | ---                   |  ---     |
+| `organization`         | AWS Organizations     | Management Account  |          | 
+| `budgets`              | AWS Budgest           | Linked Account      |          |
+| `compute-optimizer`    | AWS Compute Optimizer | Management Account  |          |
+| `trusted-advisor`      | AWS Trusted Advisor   | Linked Account      |          |
+| `cost-explorer-cost-anomaly` | AWS Anomalies   | Management Account      |          |
+| `cost-explorer-rightsizing`  | AWS Cost Explorer   | Management Account      |          |
+| `inventory`      | Various services   | Linked Account      | `Opensearch Domains`, `Elasticache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EBS Snapshot` |
+| `pricing`        | Various services   | N/A      | `Amazon RDS`, `Amazon EC2`, `Amazon ElastiCache`, `Amazon Opensearch`, `AWS Compute Savings Plan` |
+| `rds-usage`        |  Amazon RDS   | Linked Account      | Collects CloudWatch metrics |
+| `transit-gateway`        |  AWS Transit Gateway   | Linked Account      | Collects CloudWatch metrics for chargeback |
+| `ecs-chargeback`        |  Amazon ECS   | Linked Account      |  |
 
-* organization
-* budgets
-* trusted-advisor
-* compute-optimizer
-* cost-explorer-cost-anomaly
-* cost-explorer-rightsizing
-* inventory
-  * OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot
-* pricing
-  * AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan
-* rds-usage
-* transit-gateway (chargeback)
-* ecs-chargeback
+
+
+### Installation
+
+#### In Management Account(s)
+
+#### In Data Collection Account
+
+
+### FAQ
+#### Migration from previous Data Collection Lab
+
+
+
