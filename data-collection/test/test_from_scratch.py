@@ -40,6 +40,7 @@ from utils import athena_query
 logger = logging.getLogger(__name__)
 
 
+
 def test_budgets_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."budgets_data" LIMIT 10;')
     assert len(data) > 0, 'budgets_data is empty'
@@ -91,6 +92,21 @@ def test_trusted_advisor_data(athena):
 def test_transit_gateway_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."transit_gateway_data" LIMIT 10;')
     assert len(data) > 0, 'transit_gateway_data is empty'
+
+
+def test_opensearch_domains_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_opensearch_domains_data" LIMIT 10;')
+    assert len(data) > 0, 'opensearch_domains_data is empty'
+
+
+def test_elasticache_clusters_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_elasticache_clusters_data" LIMIT 10;')
+    assert len(data) > 0, 'elasticache_clusters_data is empty'
+
+
+def test_rds_db_instances_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_rds_db_instances_data" LIMIT 10;')
+    assert len(data) > 0, 'rds_db_instances_data is empty'
 
 
 def test_compute_optimizer_export_triggered(compute_optimizer, start_time):

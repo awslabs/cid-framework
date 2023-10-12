@@ -3,7 +3,7 @@ import json
 import time
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
@@ -21,11 +21,25 @@ BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
 
-def clean_bucket(s3, account_id):
+def clean_bucket(s3, s3client, account_id, full=True):
     try:
         bucket_name = f"costoptimizationdata{account_id}"
-        logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
-        s3.Bucket(bucket_name).object_versions.delete()
+
+        if full:
+            # Delete all
+            logger.info(f'Emptying the bucket {CYAN}{bucket_name}{END}')
+            s3.Bucket(bucket_name).object_versions.delete()
+        else:
+            # Delete all objects older than 5 mins
+            now = datetime.utcnow().replace(tzinfo=timezone(timedelta()))
+            objects = s3client.list_objects_v2(Bucket=bucket_name)['Contents']
+            if objects:
+                logger.info(f'Removing old objects the bucket {CYAN}{bucket_name}{END}')
+            for obj in objects:
+                age_mins =  (now-obj['LastModified']).total_seconds() / 60
+                if age_mins > 5:
+                    logger.info(f"{age_mins} mins old. deleting {obj['Key']}")
+                    s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
         logger.exception(exc)
 
@@ -96,7 +110,7 @@ def watch_stacks(cloudformation, stack_names = None):
 
             try:
                 # Check nested stacks
-                for res in cloudformation.list_stack_resources(StackName=stack_name)['StackResourceSummaries']:
+                for res in cloudformation.s3clients(StackName=stack_name)['StackResourceSummaries']:
                     if res['ResourceType'] == 'AWS::CloudFormation::Stack':
                         name = res['PhysicalResourceId'].split('/')[-2]
                         if name not in stack_names:
@@ -109,25 +123,35 @@ def watch_stacks(cloudformation, stack_names = None):
 
 
 def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[dict]):
-    create_options = dict(
-        TimeoutInMinutes=60,
-        Capabilities=['CAPABILITY_IAM','CAPABILITY_NAMED_IAM'],
-        OnFailure='DELETE',
-        EnableTerminationProtection=False,
+
+    options = dict(
+        StackName=stack_name,
+        Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
+        TemplateBody=file.open().read(),
+        Parameters=parameters,
     )
 
     try:
-        with file.open() as fp:
-            cloudformation.create_stack(
-                StackName=stack_name,
-                TemplateBody=fp.read(),
-                Parameters=parameters,
-                **create_options,
-            )
+        cloudformation.create_stack(
+            EnableTerminationProtection=False,
+            OnFailure='DELETE',
+            TimeoutInMinutes=60,
+            **options,
+        )
     except cloudformation.exceptions.AlreadyExistsException:
-        logger.info(f'{stack_name} exists')
+        try:
+            logger.info(f'{stack_name} exists')
+            cloudformation.update_stack(
+                **options,
+            )
+        except cloudformation.exceptions.ClientError as exc:
+            if 'No updates are to be performed.' in str(exc):
+                logger.info(f'No updates are to be performed for {stack_name}')
+            else:
+                logger.error(exc)
+
 
 def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
@@ -135,20 +159,20 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationManagementDataRoleStack',
-        file=root / 'Code' / 'Management.yaml',
+        file=root / 'deploy' / 'deploy-in-management-account.yaml',
         parameters=[
-            {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
-            {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-            {'ParameterKey': 'RolePrefix',            'ParameterValue': "WA-"},
+            {'ParameterKey': 'DataCollectionAccountID', 'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole',   'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'RolePrefix',              'ParameterValue': "WA-"},
         ]
     )
 
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationDataRoleStack',
-        file=root / 'Code' / 'optimisation_read_only_role.yaml',
+        file=root / 'deploy' / 'deploy-in-linked-account.yaml',
         parameters=[
-            {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
+            {'ParameterKey': 'DataCollectionAccountID',         'ParameterValue': account_id},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
@@ -163,7 +187,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationDataCollectionStack',
-        file=root / 'Code' / 'Optimization_Data_Collector.yaml',
+        file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
             {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
@@ -193,18 +217,20 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     ])
 
 
-def launch_(state_machine_arns, lambda_arns=None, wait=True):
+def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=True):
     stepfunctions = boto3.client('stepfunctions')
     logs_client = boto3.client('logs')
     started = datetime.now().astimezone()
 
     # Execute lambdas
-    lambda_arns = set(lambda_arns or [])
+    lambda_arns = lambda_arns or []
     for lambda_arn in lambda_arns:
         boto3.client('lambda').invoke(
             FunctionName=lambda_arn.split(':')[-1],
             InvocationType='Event', # Async
         )
+    lambda_arns = set((lambda_norun_arns or []) + (lambda_arns or []))
+
 
     # Execute sate machines
     execution_arns = []
@@ -213,7 +239,6 @@ def launch_(state_machine_arns, lambda_arns=None, wait=True):
         executions = stepfunctions.list_executions(
             stateMachineArn=state_machine_arn,
         )['executions']
-        logger.debug(f'{state_machine_arn} has : {executions}')
         for execution in executions:
             if execution['status'] == 'RUNNING':
                 execution_arns.append(execution['executionArn'])
@@ -291,7 +316,12 @@ def trigger_update(account_id):
     state_machine_arns = [
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-ecs-chargeback-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-OpensearchDomains-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-ElasticacheClusters-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-RdsDbInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-EBS-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-AMI-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-Snapshot-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
@@ -301,20 +331,21 @@ def trigger_update(account_id):
         f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
         f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
         f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-EC2Pricing",
-        #f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-RDS",
     ]
-    launch_(state_machine_arns, lambda_arns, wait=True)
+    lambda_norun_arns = [
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-Pricing",
+    ]
+    launch_(state_machine_arns, lambda_arns, lambda_norun_arns, wait=True)
 
 
-def cleanup_stacks(cloudformation, account_id, s3, athena):
+def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
 
     for index in range(10):
         print(f'Press Ctrl+C if you want to avoid teardown: {9-index}\a') # beep
         time.sleep(1)
 
     try:
-        clean_bucket(s3=s3, account_id=account_id)
+        clean_bucket(s3=s3, s3client=s3client, account_id=account_id)
     except Exception as exc:
         logger.warning(f'Exception: {exc}')
 
@@ -334,16 +365,22 @@ def cleanup_stacks(cloudformation, account_id, s3, athena):
         'OptimizationDataRoleStack',
         'OptimizationDataCollectionStack',
     ])
+    try:
+        logger.info('Deleting all athena tables in optimization_data')
+        tables = athena.list_table_metadata(CatalogName='AwsDataCatalog', DatabaseName='optimization_data')['TableMetadataList']
+        for table in tables:
+            logger.info('Deleting ' + table["Name"])
+            athena_query(athena=athena, sql_query=f'DROP TABLE `{table["Name"]}`;', database='optimization_data')
+    except Exception:
+        pass
 
-    logger.info('Deleting all athena tables in optimization_data')
-    tables = athena.list_table_metadata(CatalogName='AwsDataCatalog', DatabaseName='optimization_data')['TableMetadataList']
-    for table in tables:
-        logger.info('Deleting ' + table["Name"])
-        athena_query(athena=athena, sql_query=f'DROP TABLE `{table["Name"]}`;', database='optimization_data')
+    try:
+        glue.delete_database(CatalogId='AwsDataCatalog', Name='optimization_data')
+    except Exception:
+        pass
 
-
-def prepare_stacks(cloudformation, account_id, s3, bucket):
+def prepare_stacks(cloudformation, account_id, s3, s3client, bucket):
     root = Path(__file__).parent.parent
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
-    clean_bucket(s3=s3, account_id=account_id)
+    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)

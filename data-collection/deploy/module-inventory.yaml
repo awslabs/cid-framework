@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Retrieves Inventory data for the chosen service
+Transform: 'AWS::LanguageExtensions'
 Parameters:
   DatabaseName:
     Type: String
@@ -44,11 +45,31 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  AwsObjects:
+    Type: CommaDelimitedList
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot
+    Description: Services for pulling price data
+  FilterRegions:
+    Type: String
+    Default: ''
+    Description: Comma Separated Region Filter. If empty, will pull all available regions. If provided, only certain regions data will be collected,
 
-Outputs:
-  StepFunctionARN:
-    Description: ARN for the module's Step Function
-    Value: !GetAtt ModuleStepFunction.Arn
+
+Mappings:
+  ServicesMap:
+    OpensearchDomains:
+      path: opensearch-domains
+    ElasticacheClusters:
+      path: elasticache-clusters
+    RdsDbInstances:
+      path: rds-db-instances
+    EBS:
+      path: ebs
+    AMI:
+      path: ami
+    Snapshot:
+      path: snapshot
+
 
 Resources:
   LambdaRole:
@@ -115,7 +136,7 @@ Resources:
           PREFIX = os.environ['PREFIX']
           BUCKET = os.environ["BUCKET_NAME"]
           ROLENAME = os.environ['ROLENAME']
-
+          FILTER_REGIONS = [r.strip() for r in os.environ["FILTER_REGIONS"].split(',') if r]
 
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -162,62 +183,93 @@ Resources:
                               obj['accountid'] = account_id
                               yield obj
                   except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'scan {function_name}/{account_id}:', exc)
+                      logger.info(f'scan {function_name}/{account_id}: {exc}')
+
+          def opensearch_domains_scan(account_id):
+              """ special treatment for opensearch_scan """
+              service = 'opensearch'
+              session = assume_session(account_id)
+              regions = set(session.get_available_regions(service)) & enabled_regions(session)
+              for region in regions:
+                  client = session.client(service, region_name=region)
+                  try:
+                      domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
+                      domains = client.describe_domains(DomainNames=domain_names)['DomainStatusList']
+                      for domain in domains:
+                          yield {
+                              'region': region,
+                              'accountid': account_id,
+                              'DomainName': domain['DomainName'],
+                              'DomainId': domain['DomainId'],
+                              'EngineVersion': domain['EngineVersion'],
+                              'InstanceType': domain['ClusterConfig']['InstanceType'],
+                              'InstanceCount': domain['ClusterConfig']['InstanceCount'],
+                          }
+                  except Exception as exc:  #pylint: disable=broad-exception-caught
+                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
               and must be called from the corresponding Step Function to orchestrate
               """
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              if 'account' not in event:
+              if 'account' not in event or 'params' not in event  :
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
+              params = [p for p in event.get('params', '').split() if p]
+              name = params[0]
+              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
               sub_modules = {
-                  # 'rds_instances': [
-                  #     partial(
-                  #         paginated_scan,
-                  #         service='rds',
-                  #         function_name='describe_db_instances',
-                  #         obj_name='DBInstances'
-                  #     )
-                  # ],
+                  'opensearch-domains': opensearch_domains_scan, # special function for opensearch
+                  'elasticache-clusters': partial(
+                      paginated_scan,
+                      service='elasticache',
+                      function_name='describe_cache_clusters',
+                      obj_name='CacheClusters'
+                      # fields=['CacheClusterId', 'CacheNodeType', 'EngineVersion', 'Engine', 'NumCacheNodes', 'PreferredAvailabilityZone', 'CacheClusterCreateTime'],
+                  ),
+                  'rds-db-instances': partial(
+                      paginated_scan,
+                      service='rds',
+                      function_name='describe_db_instances',
+                      obj_name='DBInstances'
+                  ),
                   'ebs': partial(
-                          paginated_scan,
-                          service='ec2',
-                          function_name='describe_volumes'
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_volumes'
                   ),
                   'ami': partial(
-                          paginated_scan,
-                          service='ec2',
-                          function_name='describe_images',
-                          params={'Owners': ['self']}
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_images',
+                      params={'Owners': ['self']}
                   ),
                   'snapshot': partial(
-                          paginated_scan,
-                          service='ec2',
-                          function_name='describe_snapshots',
-                          params={'OwnerIds': ['self']}
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_snapshots',
+                      params={'OwnerIds': ['self']}
                   )
               }
 
               account = json.loads(event["account"][0])
               account_id = account["account_id"]
               payer_id = account["payer_id"]
-              for name, (func) in sub_modules.items():
-                  counter = 0
-                  logger.info(f"\nCollecting {name} in account {account_id}")
-                  try:
-                      with open(TMP_FILE, "w", encoding='utf-8') as file_:
-                          for counter, obj in enumerate(func(account_id=account_id), start=1):
-                              #logger.info(obj) # for debug
-                              file_.write(to_json(obj) + "\n")
-                      logger.info(f"Collected {counter} {name} instances")
-                      upload_to_s3(name, account_id, payer_id)
-                  except Exception as exc:   #pylint: disable=broad-exception-caught
-                      logger.info(f"{name}: {type(exc)} - {exc}" )
+              func = sub_modules[name]
+              counter = 0
+              logger.info(f"\nCollecting {name} in account {account_id}")
+              try:
+                  with open(TMP_FILE, "w", encoding='utf-8') as file_:
+                      for counter, obj in enumerate(func(account_id=account_id), start=1):
+                          logger.debug(obj)
+                          file_.write(to_json(obj) + "\n")
+                  logger.info(f"Collected {counter} {name} instances")
+                  upload_to_s3(name, account_id, payer_id)
+              except Exception as exc:   #pylint: disable=broad-exception-caught
+                  logger.info(f"{name}: {type(exc)} - {exc}" )
 
           def upload_to_s3(name, account_id, payer_id):
               """upload"""
@@ -244,65 +296,56 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+          FILTER_REGIONS: !Ref FilterRegions
 
-  AMICrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-AMI-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ami-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  SnapshotCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Snapshot-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-snapshot-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  EBSCrawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-EBS-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/inventory/inventory-ebs-data/"
-      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
-
-  ModuleStepFunction:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
-      DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-AMI-Crawler","${RolePrefix}${CFDataName}-Snapshot-Crawler","${RolePrefix}${CFDataName}-EBS-Crawler"]'
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow: 
-        Mode: 'OFF'
-      Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+  'Fn::ForEach::Object':
+    - AwsObject
+    - !Ref AwsObjects
+    - 'Crawler${AwsObject}':
+        Type: AWS::Glue::Crawler
+        Properties:
+          Name: !Sub '${RolePrefix}${CFDataName}-${AwsObject}-Crawler'
+          Role: !Ref GlueRoleARN
+          DatabaseName: !Ref DatabaseName
+          Targets:
+            S3Targets:
+              - Path:
+                  Fn::Sub:
+                    - "s3://${DestinationBucket}/inventory/inventory-${path}-data/"
+                    - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
+          Configuration: |
+            {
+              "Version": 1.0,
+              "CrawlerOutput": {
+                "Partitions": {
+                  "AddOrUpdateBehavior": "InheritFromTable"
+                }
+              }
+            }
+      'StepFunction${AwsObject}':
+        Type: AWS::StepFunctions::StateMachine
+        Properties:
+          StateMachineName: !Sub '${RolePrefix}${CFDataName}-${AwsObject}-StateMachine'
+          StateMachineType: STANDARD
+          RoleArn: !Ref StepFunctionExecutionRoleARN
+          DefinitionString: !Ref StepFunctionTemplate
+          DefinitionSubstitutions:
+            AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+            ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+            Crawlers: !Sub '["${RolePrefix}${CFDataName}-${AwsObject}-Crawler"]'
+            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
+      'RefreshSchedule${AwsObject}':
+        Type: AWS::Scheduler::Schedule
+        Properties:
+          Description: !Sub 'Scheduler for the ODC ${CFDataName} ${AwsObject} module'
+          Name: !Sub '${RolePrefix}${CFDataName}-${AwsObject}-RefreshSchedule'
+          ScheduleExpression: !Ref Schedule
+          State: ENABLED
+          FlexibleTimeWindow:
+            Mode: 'OFF'
+          Target:
+              Arn: !GetAtt [!Sub 'StepFunction${AwsObject}', Arn]
+              RoleArn: !Ref SchedulerExecutionRoleARN
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
@@ -317,8 +360,8 @@ Resources:
       Description: Identifies snapshots connected to AMI's
       Name: inventory_snapshot_connected_to_ami
       QueryString: |
-        SELECT distinct(snapshotid),volume,volumesize,starttime,snapdescription, ownerid, 
-        snap_ami_id, imageid, name, description, state, rootdevicetype, virtualizationtype,year, month, 
+        SELECT distinct(snapshotid),volume,volumesize,starttime,snapdescription, ownerid,
+        snap_ami_id, imageid, name, description, state, rootdevicetype, virtualizationtype,year, month,
         CASE
         WHEN snap_ami_id = imageid THEN 'AMI Avalible'
         WHEN snap_ami_id LIKE 'ami%' THEN 'AMI Removed'
@@ -345,7 +388,7 @@ Resources:
             END AS snap_ami_id
         FROM optimization_data.inventory_snapshot_data
         ) AS snapshots
-        LEFT JOIN 
+        LEFT JOIN
             (SELECT imageid,
             name,
             description,
