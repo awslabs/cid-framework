@@ -159,20 +159,20 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationManagementDataRoleStack',
-        file=root / 'Code' / 'deploy-in-management-account.yaml',
+        file=root / 'deploy' / 'deploy-in-management-account.yaml',
         parameters=[
-            {'ParameterKey': 'CostAccountID',         'ParameterValue': account_id},
-            {'ParameterKey': 'ManagementAccountRole', 'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-            {'ParameterKey': 'RolePrefix',            'ParameterValue': "WA-"},
+            {'ParameterKey': 'DataCollectionAccountID', 'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole',   'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'RolePrefix',              'ParameterValue': "WA-"},
         ]
     )
 
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationDataRoleStack',
-        file=root / 'Code' / 'deploy-in-management-account.yaml',
+        file=root / 'deploy' / 'deploy-in-linked-account.yaml',
         parameters=[
-            {'ParameterKey': 'CostAccountID',                   'ParameterValue': account_id},
+            {'ParameterKey': 'DataCollectionAccountID',         'ParameterValue': account_id},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
@@ -187,7 +187,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
     deploy_stack(
         cloudformation=cloudformation,
         stack_name='OptimizationDataCollectionStack',
-        file=root / 'Code' / 'deploy-in-linked-account.yaml',
+        file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
             {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
