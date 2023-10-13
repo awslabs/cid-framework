@@ -60,4 +60,6 @@ Check Athena tables.
 ### FAQ
 #### Migration from previous Data Collection Lab
 
+### See also
+[CONTRIBUTING.md](CONTRIBUTING.md)
 
