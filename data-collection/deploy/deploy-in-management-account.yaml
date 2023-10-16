@@ -39,94 +39,6 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-cost-anomaly"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-rightsizing"
       Path: /
-      Policies:
-        - PolicyName: "Management-Account-permissions"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "organizations:ListAccountsForParent"
-                  - "organizations:DescribeAccount"
-                  - "organizations:ListParents"
-                  - "organizations:ListRoots"
-                  - "organizations:ListChildren"
-                  - "organizations:ListTagsForResource"
-                  - "organizations:ListAccounts"
-                  - "organizations:DescribeOrganizationalUnit"
-                  - "organizations:ListCreateAccountStatus"
-                  - "organizations:DescribeOrganization"
-                  - "organizations:ListOrganizationalUnitsForParent"
-                Resource: "*"
-        - PolicyName: "RightsizingModule"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "ce:GetRightsizingRecommendation"
-                Resource: "*"
-        - PolicyName: "AnomaliesModule"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "ce:GetAnomalies"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportLambdaFunctionRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportLambdaFunctionRecommendations"
-                  - "compute-optimizer:GetLambdaFunctionRecommendations"
-                  - "lambda:ListFunctions"
-                  - "lambda:ListProvisionedConcurrencyConfigs"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportAutoScalingGroupRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportAutoScalingGroupRecommendations"
-                  - "compute-optimizer:GetAutoScalingGroupRecommendations"
-                  - "autoscaling:DescribeAutoScalingGroups"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportEBSVolumeRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportEBSVolumeRecommendations"
-                  - "compute-optimizer:GetEBSVolumeRecommendations"
-                  - "EC2:DescribeVolumes"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportEC2InstanceRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportEC2InstanceRecommendations"
-                  - "compute-optimizer:GetEC2InstanceRecommendations"
-                  - "EC2:DescribeInstances"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportECSRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportECSServiceRecommendations"
-                  - "compute-optimizer:GetECSServiceRecommendations"
-                  - "compute-optimizer:GetECSServiceRecommendationProjectedMetrics"
-                  - "ecs:ListServices"
-                  - "ecs:ListClusters"
-                Resource: "*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -134,3 +46,170 @@ Resources:
             reason: "Role must have an explicit RoleName for traceability"
           - id: W11
             reason: "Role is intended to describe a range of resources"
+  ManagementAccountPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: Management-Account-permissions
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "organizations:ListAccountsForParent"
+              - "organizations:DescribeAccount"
+              - "organizations:ListParents"
+              - "organizations:ListRoots"
+              - "organizations:ListChildren"
+              - "organizations:ListTagsForResource"
+              - "organizations:ListAccounts"
+              - "organizations:DescribeOrganizationalUnit"
+              - "organizations:ListCreateAccountStatus"
+              - "organizations:DescribeOrganization"
+              - "organizations:ListOrganizationalUnitsForParent"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  RightsizingRecommendationsPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: RightsizingRecommendationsPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ce:GetRightsizingRecommendation"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  AnomaliesPolicy:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: AnomaliesPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ce:GetAnomalies"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportLambdaFunctionRecommendations:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: ComputeOptimizer-ExportLambdaFunctionRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportLambdaFunctionRecommendations"
+              - "compute-optimizer:GetLambdaFunctionRecommendations"
+              - "lambda:ListFunctions"
+              - "lambda:ListProvisionedConcurrencyConfigs"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportAutoScalingGroupRecommendations:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: ComputeOptimizer-ExportAutoScalingGroupRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportAutoScalingGroupRecommendations"
+              - "compute-optimizer:GetAutoScalingGroupRecommendations"
+              - "autoscaling:DescribeAutoScalingGroups"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportEBSVolumeRecommendations:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: ComputeOptimizer-ExportEBSVolumeRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportEBSVolumeRecommendations"
+              - "compute-optimizer:GetEBSVolumeRecommendations"
+              - "EC2:DescribeVolumes"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportEC2InstanceRecommendations:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: ComputeOptimizer-ExportEC2InstanceRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportEC2InstanceRecommendations"
+              - "compute-optimizer:GetEC2InstanceRecommendations"
+              - "EC2:DescribeInstances"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportECSRecommendations:
+    Type: "AWS::IAM::Policy"
+    Properties:
+      PolicyName: ComputeOptimizer-ExportECSRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportECSServiceRecommendations"
+              - "compute-optimizer:GetECSServiceRecommendations"
+              - "compute-optimizer:GetECSServiceRecommendationProjectedMetrics"
+              - "ecs:ListServices"
+              - "ecs:ListClusters"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
