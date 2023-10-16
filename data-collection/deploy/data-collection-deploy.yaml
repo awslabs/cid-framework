@@ -34,45 +34,45 @@ Metadata:
           - IncludeTransitGatewayModule
     ParameterLabels:
       ManagementAccountID:
-        default: 'Comma Delimited list of Account IDs for all Management Account IDs data collectors will fetch data from'
+        default: "Comma Delimited list of Account IDs for all Management Account IDs data collectors will fetch data from"
       ManagementAccountRole:
-        default: 'Management account role'
+        default: "Management account role"
       DataCollectionAccountID:
         default: "Cost Account Id"
       MultiAccountRoleName:
-        default: 'Multi Account Role Name'
+        default: "Multi Account Role Name"
       RolePrefix:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
       DestinationBucket:
-        default: 'Destination S3 bucket'
+        default: "Destination S3 bucket"
       DatabaseName:
         default: "Name of the Athena database to be created to hold lambda information"
       Schedule:
         default: "Schedule swap to cron(0 8 1 * ? *) for 1st day of the month"
       IncludeBudgetsModule:
-        default: 'Include AWS Budgets Collection Module'
+        default: "Include AWS Budgets Collection Module"
       IncludeComputeOptimizerModule:
-        default: 'Include AWS Compute Optimizer Data Collection Module'
+        default: "Include AWS Compute Optimizer Data Collection Module"
       ComputeOptimizerRegions:
         default: "Comma Delimited list of AWS regions where AWS Compute Optimizer data will be collected."
       IncludeCostAnomalyModule:
-        default: 'Include Cost Anomalies Data Collection Module'
+        default: "Include Cost Anomalies Data Collection Module"
       IncludeECSChargebackModule:
-        default: 'Include ECS Chargeback Data Collection Module'
+        default: "Include ECS Chargeback Data Collection Module"
       IncludeInventoryCollectorModule:
-        default: 'Include Inventory Collector Module'
+        default: "Include Inventory Collector Module"
       IncludeOrgDataModule:
-        default: 'Include AWS Organization Data Collection Module'
+        default: "Include AWS Organization Data Collection Module"
       IncludeRDSUtilizationModule:
-        default: 'Include RDS Utilization Data Collection Module'
+        default: "Include RDS Utilization Data Collection Module"
       IncludeRightsizingModule:
-        default: 'Include Rightsizing Recommendations Data Collection Module'
+        default: "Include Rightsizing Recommendations Data Collection Module"
       IncludeTAModule:
-        default: 'Include AWS Trusted Advisor Data Collection Module'
+        default: "Include AWS Trusted Advisor Data Collection Module"
       IncludeTransitGatewayModule:
-        default: 'Include AWS TransitGateway Collection Module'
+        default: "Include AWS TransitGateway Collection Module"
 Parameters:
   ManagementAccountID:
     Type: String
@@ -175,7 +175,3 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-
-Outputs:
-  - {}
-Resources: {}
