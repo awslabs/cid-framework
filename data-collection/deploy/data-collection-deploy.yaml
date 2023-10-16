@@ -189,3 +189,17 @@ Resources:
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
         IncludeOrgDataModule: !Ref IncludeOrgDataModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
+  DataCollectorMgmtAccountModulesReadStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      Parameters:
+        DataCollectionAccountID: !Ref DataCollectionAccountID
+        MultiAccountRoleName: !Ref MultiAccountRoleName
+        RolePrefix: !Ref RolePrefix
+        IncludeTAModule: !Ref IncludeTAModule
+        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
+        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
+        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
+        IncludeBudgetsModule: !Ref IncludeBudgetsModule
+        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
