@@ -255,7 +255,7 @@ Resources:
                   )
               }
 
-              account = json.loads(event["account"][0])
+              account = json.loads(event["account"])
               account_id = account["account_id"]
               payer_id = account["payer_id"]
               func = sub_modules[name]
