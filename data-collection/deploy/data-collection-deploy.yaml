@@ -177,7 +177,7 @@ Parameters:
       - "no"
 
 Resources:
-  ManagementAccountReadStack:
+  DataCollectorMgmtAccountReadStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
@@ -185,3 +185,7 @@ Resources:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
         RolePrefix: !Ref RolePrefix
+        IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
+        IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
+        IncludeOrgDataModule: !Ref IncludeOrgDataModule
+        IncludeRightsizingModule: !Ref IncludeRightsizingModule

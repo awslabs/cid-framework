@@ -12,6 +12,37 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "WA-"
+  IncludeComputeOptimizerModule:
+    Type: String
+    Description: Collects AWS Compute Optimizer service recommendations
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeCostAnomalyModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeOrgDataModule:
+    Type: String
+    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRightsizingModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+
+Conditions:
+  IncludeComputeOptimizerPolicy: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
+  IncludeCostAnomaliesPolicy: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
+  IncludeOrganizationPolicy: !Equals [!Ref IncludeOrgDataModule, "yes"]
+  IncludeRightsizingPolicy: !Equals [!Ref IncludeRightsizingModule, "yes"]
+
 Outputs:
   LambdaRole:
     Description: Role for lambda to assume in cost account
@@ -29,7 +60,7 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                -  !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
+                - !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
@@ -46,8 +77,9 @@ Resources:
             reason: "Role must have an explicit RoleName for traceability"
           - id: W11
             reason: "Role is intended to describe a range of resources"
-  ManagementAccountPolicy:
+  AWSOrganizationPolicy:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeOrganizationPolicy
     Properties:
       PolicyName: Management-Account-permissions
       PolicyDocument:
@@ -76,6 +108,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   RightsizingRecommendationsPolicy:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeRightsizingPolicy
     Properties:
       PolicyName: RightsizingRecommendationsPolicy
       PolicyDocument:
@@ -92,10 +125,11 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  AnomaliesPolicy:
+  CostAnomaliesPolicy:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeCostAnomaliesPolicy
     Properties:
-      PolicyName: AnomaliesPolicy
+      PolicyName: CostAnomaliesPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -112,6 +146,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportLambdaFunctionRecommendations:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeComputeOptimizerPolicy
     Properties:
       PolicyName: ComputeOptimizer-ExportLambdaFunctionRecommendations
       PolicyDocument:
@@ -133,6 +168,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportAutoScalingGroupRecommendations:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeComputeOptimizerPolicy
     Properties:
       PolicyName: ComputeOptimizer-ExportAutoScalingGroupRecommendations
       PolicyDocument:
@@ -153,6 +189,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportEBSVolumeRecommendations:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeComputeOptimizerPolicy
     Properties:
       PolicyName: ComputeOptimizer-ExportEBSVolumeRecommendations
       PolicyDocument:
@@ -173,6 +210,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportEC2InstanceRecommendations:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeComputeOptimizerPolicy
     Properties:
       PolicyName: ComputeOptimizer-ExportEC2InstanceRecommendations
       PolicyDocument:
@@ -193,6 +231,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportECSRecommendations:
     Type: "AWS::IAM::Policy"
+    Condition: IncludeComputeOptimizerPolicy
     Properties:
       PolicyName: ComputeOptimizer-ExportECSRecommendations
       PolicyDocument:
