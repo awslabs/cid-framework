@@ -10,8 +10,6 @@ Metadata:
           - ManagementAccountRole
           - DataCollectionAccountID
           - MultiAccountRoleName
-          - StackSetAdminRoleName
-          - StackSetExecutionRoleName
           - OrganizationalUnitID
           - AllowModuleReadInMgmt
           - RolePrefix
@@ -45,10 +43,6 @@ Metadata:
         default: "Cost Account Id"
       MultiAccountRoleName:
         default: "Multi Account Role Name"
-      StackSetAdminRoleArn:
-        default: "StackSet Admin Role ARN"
-      StackSetExecutionRoleName:
-        default: "Stack Set Execution Role Name"
       OrganizationalUnitID:
         default: "Comma Delimited list of Organizational Unit IDs used as deployment targets for stacksets. Data collectors will fetch data from accounts within these organizational units."
       AllowModuleReadInMgmt:
@@ -101,12 +95,6 @@ Parameters:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
     Default: "Optimization-Data-Multi-Account-Role"
-  StackSetAdminRoleArn:
-    Type: String
-    Description: The ARN of the IAM role that will be used by the stack sets used to deploy resources across linked accounts. This is a role that has a trust relationship to assume the StackSetExecutionRole available in linked accounts.
-  StackSetExecutionRoleName:
-    Type: String
-    Description: The name of the IAM role that will be used by stacks created by stack sets. This is a role that needs to be available in linked accounts.
   OrganizationalUnitID:
     Type: String
     AllowedPattern: ^(ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}|r-[a-z0-9]{4,32})$
@@ -239,7 +227,9 @@ Resources:
     Type: AWS::CloudFormation::StackSet
     Properties:
       Description: "StackSet in charge of deploying read roles across organisation accounts"
-      PermissionModel: SELF_MANAGED
+      PermissionModel: SERVICE_MANAGED
+      AutoDeployment:
+        Enabled: false
       ManagedExecution:
         Active: true
       Parameters:
@@ -270,6 +260,4 @@ Resources:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
-      AdministrationRoleARN: !Ref StackSetAdminRoleArn
-      ExecutionRoleName: !Ref StackSetExecutionRoleName
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
