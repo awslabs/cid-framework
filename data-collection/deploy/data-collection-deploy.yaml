@@ -10,6 +10,9 @@ Metadata:
           - ManagementAccountRole
           - DataCollectionAccountID
           - MultiAccountRoleName
+          - StackSetAdminRoleName
+          - StackSetExecutionRoleName
+          - OrgAccountID
           - AllowModuleReadInMgmt
           - RolePrefix
           - CFNTemplateSourceBucket
@@ -42,6 +45,12 @@ Metadata:
         default: "Cost Account Id"
       MultiAccountRoleName:
         default: "Multi Account Role Name"
+      StackSetAdminRoleArn:
+        default: "StackSet Admin Role ARN"
+      StackSetExecutionRoleName:
+        default: "Stack Set Execution Role Name"
+      OrgAccountID:
+        default: "Comma Delimited list of Account IDs for all organisation Account IDs data collectors will fetch data from"
       AllowModuleReadInMgmt:
         default: "Allow creation of read roles for modules in management account"
       RolePrefix:
@@ -92,6 +101,16 @@ Parameters:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
     Default: "Optimization-Data-Multi-Account-Role"
+  StackSetAdminRoleArn:
+    Type: String
+    Description: The ARN of the IAM role that will be used by the stack sets used to deploy resources across linked accounts. This is a role that has a trust relationship to assume the StackSetExecutionRole available in linked accounts.
+  StackSetExecutionRoleName:
+    Type: String
+    Description: The name of the IAM role that will be used by stacks created by stack sets. This is a role that needs to be available in linked accounts.
+  OrgAccountID:
+    Type: String
+    AllowedPattern: ([a-z0-9\-, ]*?$)
+    Description: "(Ex: 123456789,098654321,789054312) List of Organisation Account IDs you wish to collect data for. It can be a single account ID."
   AllowModuleReadInMgmt:
     Type: String
     Description: Allows the creation of the read data roles for modules in the management account
@@ -216,3 +235,41 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+  DataCollectorOrgAccountModulesReadStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      Description: "StackSet in charge of deploying read roles across organisation accounts"
+      PermissionModel: SELF_MANAGED
+      ManagedExecution:
+        Active: true
+      Parameters:
+        - ParameterKey: DataCollectionAccountID
+          ParameterValue: !Ref DataCollectionAccountID
+        - ParameterKey: MultiAccountRoleName
+          ParameterValue: !Ref MultiAccountRoleName
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: IncludeTAModule
+          ParameterValue: !Ref IncludeTAModule
+        - ParameterKey: IncludeInventoryCollectorModule
+          ParameterValue: !Ref IncludeInventoryCollectorModule
+        - ParameterKey: IncludeECSChargebackModule
+          ParameterValue: !Ref IncludeECSChargebackModule
+        - ParameterKey: IncludeRDSUtilizationModule
+          ParameterValue: !Ref IncludeRDSUtilizationModule
+        - ParameterKey: IncludeBudgetsModule
+          ParameterValue: !Ref IncludeBudgetsModule
+        - ParameterKey: IncludeTransitGatewayModule
+          ParameterValue: !Ref IncludeTransitGatewayModule
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts: !Split [",", !Ref OrgAccountID]
+          Regions:
+            - !Ref "AWS::Region"
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
+      AdministrationRoleARN: !Ref StackSetAdminRoleArn
+      ExecutionRoleName: !Ref StackSetExecutionRoleName
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
