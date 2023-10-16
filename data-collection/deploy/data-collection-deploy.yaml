@@ -10,6 +10,7 @@ Metadata:
           - ManagementAccountRole
           - DataCollectionAccountID
           - MultiAccountRoleName
+          - AllowModuleReadInMgmt
           - RolePrefix
           - CFNTemplateSourceBucket
       - Label:
@@ -41,6 +42,8 @@ Metadata:
         default: "Cost Account Id"
       MultiAccountRoleName:
         default: "Multi Account Role Name"
+      AllowModuleReadInMgmt:
+        default: "Allow creation of read roles for modules in management account"
       RolePrefix:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
@@ -89,6 +92,12 @@ Parameters:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
     Default: "Optimization-Data-Multi-Account-Role"
+  AllowModuleReadInMgmt:
+    Type: String
+    Description: Allows the creation of the read data roles for modules in the management account
+    AllowedValues:
+      - "yes"
+      - "no"
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
@@ -176,6 +185,9 @@ Parameters:
       - "yes"
       - "no"
 
+Conditions:
+  DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
+
 Resources:
   DataCollectorMgmtAccountReadStack:
     Type: AWS::CloudFormation::Stack
@@ -191,6 +203,7 @@ Resources:
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
+    Condition: DeployModuleReadInMgmt
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
       Parameters:
