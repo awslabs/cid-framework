@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Stack that will deployed across all accounts in an org so we can assume to read data using a lambda
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Deployment parameters"
+        Parameters:
+          - ManagementAccountID
+          - ManagementAccountRole
+          - DataCollectionAccountID
+          - MultiAccountRoleName
+          - RolePrefix
+          - CFNTemplateSourceBucket
+      - Label:
+          default: "Data collectors settings"
+        Parameters:
+          - DestinationBucket
+          - DatabaseName
+          - Schedule
+      - Label:
+          default: "Available modules"
+        Parameters:
+          - IncludeBudgetsModule
+          - IncludeComputeOptimizerModule
+          - ComputeOptimizerRegions
+          - IncludeCostAnomalyModule
+          - IncludeECSChargebackModule
+          - IncludeInventoryCollectorModule
+          - IncludeOrgDataModule
+          - IncludeRDSUtilizationModule
+          - IncludeRightsizingModule
+          - IncludeTAModule
+          - IncludeTransitGatewayModule
+    ParameterLabels:
+      ManagementAccountID:
+        default: 'Comma Delimited list of Account IDs for all Management Account IDs data collectors will fetch data from'
+      ManagementAccountRole:
+        default: 'Management account role'
+      DataCollectionAccountID:
+        default: "Cost Account Id"
+      MultiAccountRoleName:
+        default: 'Multi Account Role Name'
+      RolePrefix:
+        default: "Role Prefix"
+      CFNTemplateSourceBucket:
+        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
+      DestinationBucket:
+        default: 'Destination S3 bucket'
+      DatabaseName:
+        default: "Name of the Athena database to be created to hold lambda information"
+      Schedule:
+        default: "Schedule swap to cron(0 8 1 * ? *) for 1st day of the month"
+      IncludeBudgetsModule:
+        default: 'Include AWS Budgets Collection Module'
+      IncludeComputeOptimizerModule:
+        default: 'Include AWS Compute Optimizer Data Collection Module'
+      ComputeOptimizerRegions:
+        default: "Comma Delimited list of AWS regions where AWS Compute Optimizer data will be collected."
+      IncludeCostAnomalyModule:
+        default: 'Include Cost Anomalies Data Collection Module'
+      IncludeECSChargebackModule:
+        default: 'Include ECS Chargeback Data Collection Module'
+      IncludeInventoryCollectorModule:
+        default: 'Include Inventory Collector Module'
+      IncludeOrgDataModule:
+        default: 'Include AWS Organization Data Collection Module'
+      IncludeRDSUtilizationModule:
+        default: 'Include RDS Utilization Data Collection Module'
+      IncludeRightsizingModule:
+        default: 'Include Rightsizing Recommendations Data Collection Module'
+      IncludeTAModule:
+        default: 'Include AWS Trusted Advisor Data Collection Module'
+      IncludeTransitGatewayModule:
+        default: 'Include AWS TransitGateway Collection Module'
+Parameters:
+  ManagementAccountID:
+    Type: String
+    AllowedPattern: ([a-z0-9\-, ]*?$)
+    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
+  ManagementAccountRole:
+    Type: String
+    Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
+    Default: Lambda-Assume-Role-Management-Account
+  DataCollectionAccountID:
+    Type: String
+    Description: AccountId of where the collector is deployed
+  MultiAccountRoleName:
+    Type: String
+    Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
+    Default: "Optimization-Data-Multi-Account-Role"
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
+    Default: "WA-"
+  CFNTemplateSourceBucket:
+    Type: String
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-well-architected-labs'"
+    Default: "aws-well-architected-labs"
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket that needs to be created to hold information
+    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    Default: costoptimizationdata
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
+  Schedule:
+    Type: String
+    Description: Cron job to trigger the lambda using cloudwatch event
+    Default: "rate(14 days)"
+  IncludeBudgetsModule:
+    Type: String
+    Description: Collects budgets from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeComputeOptimizerModule:
+    Type: String
+    Description: Collects AWS Compute Optimizer service recommendations
+    AllowedValues:
+      - "yes"
+      - "no"
+  ComputeOptimizerRegions:
+    Default: ""
+    Type: String
+    Description: "Ex: us-east-1,us-east-2,us-west-1,us-west-2,eu-central-1,eu-west-1,eu-west-2,eu-west-3  if empty, the current region will be used. You can add regions later by updating the stack."
+    AllowedPattern: ([a-z0-9\-, ]*?$)
+  IncludeCostAnomalyModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeECSChargebackModule:
+    Type: String
+    Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeInventoryCollectorModule:
+    Type: String
+    Description: Collects data about AMIs, EBS volumes and snapshots
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeOrgDataModule:
+    Type: String
+    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRDSUtilizationModule:
+    Type: String
+    Description: Collects RDS CloudWatch metrics from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRightsizingModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTAModule:
+    Type: String
+    Description: Collects AWS Trusted Advisor recommendations data
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTransitGatewayModule:
+    Type: String
+    Description: Collects TransitGateway from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+
+Outputs:
+  - {}
+Resources: {}
