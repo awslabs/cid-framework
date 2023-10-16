@@ -175,3 +175,13 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+
+Resources:
+  ManagementAccountReadStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
+      Parameters:
+        DataCollectionAccountID: !Ref DataCollectionAccountID
+        ManagementAccountRole: !Ref ManagementAccountRole
+        RolePrefix: !Ref RolePrefix
