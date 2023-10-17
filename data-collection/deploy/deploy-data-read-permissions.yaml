@@ -164,10 +164,16 @@ Resources:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
         RolePrefix: !Ref RolePrefix
+        IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
+        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
+        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeOrgDataModule: !Ref IncludeOrgDataModule
+        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
+        IncludeTAModule: !Ref IncludeTAModule
+        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
