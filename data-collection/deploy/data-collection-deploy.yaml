@@ -261,3 +261,65 @@ Resources:
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+  DataCollectorModulesStackSet:
+    Type: AWS::CloudFormation::StackSet
+    DependsOn:
+      - DataCollectorOrgAccountModulesReadStackSet
+    Properties:
+      Description: "StackSet in charge of deploying data collectors across organisation accounts"
+      PermissionModel: SERVICE_MANAGED
+      AutoDeployment:
+        Enabled: false
+      ManagedExecution:
+        Active: true
+      Parameters:
+        - ParameterKey: DestinationBucket
+          ParameterValue: !Ref DestinationBucket
+        - ParameterKey: ManagementAccountRole
+          ParameterValue: !Ref ManagementAccountRole
+        - ParameterKey: ManagementAccountID
+          ParameterValue: !Ref ManagementAccountID
+        - ParameterKey: Schedule
+          ParameterValue: !Ref Schedule
+        - ParameterKey: CFNTemplateSourceBucket
+          ParameterValue: !Ref CFNTemplateSourceBucket
+        - ParameterKey: DatabaseName
+          ParameterValue: !Ref DatabaseName
+        - ParameterKey: DataCollectionAccountID
+          ParameterValue: !Ref DataCollectionAccountID
+        - ParameterKey: MultiAccountRoleName
+          ParameterValue: !Ref MultiAccountRoleName
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: IncludeBudgetsModule
+          ParameterValue: !Ref IncludeBudgetsModule
+        - ParameterKey: IncludeComputeOptimizerModule
+          ParameterValue: !Ref IncludeComputeOptimizerModule
+        - ParameterKey: ComputeOptimizerRegions
+          ParameterValue: !Ref ComputeOptimizerRegions
+        - ParameterKey: IncludeCostAnomalyModule
+          ParameterValue: !Ref IncludeCostAnomalyModule
+        - ParameterKey: IncludeECSChargebackModule
+          ParameterValue: !Ref IncludeECSChargebackModule
+        - ParameterKey: IncludeInventoryCollectorModule
+          ParameterValue: !Ref IncludeInventoryCollectorModule
+        - ParameterKey: IncludeOrgDataModule
+          ParameterValue: !Ref IncludeOrgDataModule
+        - ParameterKey: IncludeRDSUtilizationModule
+          ParameterValue: !Ref IncludeRDSUtilizationModule
+        - ParameterKey: IncludeRightsizingModule
+          ParameterValue: !Ref IncludeRightsizingModule
+        - ParameterKey: IncludeTAModule
+          ParameterValue: !Ref IncludeTAModule
+        - ParameterKey: IncludeTransitGatewayModule
+          ParameterValue: !Ref IncludeTransitGatewayModule
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitID]
+          Regions:
+            - !Ref "AWS::Region"
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataCollection"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml"
