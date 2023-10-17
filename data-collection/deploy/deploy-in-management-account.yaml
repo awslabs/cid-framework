@@ -1,5 +1,54 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Deploys a role to Management Account so that CID data collection can assume to read
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Deployment parameters"
+        Parameters:
+          - ManagementAccountRole
+          - DataCollectionAccountID
+          - RolePrefix
+      - Label:
+          default: "Available modules"
+        Parameters:
+          - IncludeBudgetsModule
+          - IncludeComputeOptimizerModule
+          - IncludeCostAnomalyModule
+          - IncludeECSChargebackModule
+          - IncludeInventoryCollectorModule
+          - IncludeOrgDataModule
+          - IncludeRDSUtilizationModule
+          - IncludeRightsizingModule
+          - IncludeTAModule
+          - IncludeTransitGatewayModule
+    ParameterLabels:
+      ManagementAccountRole:
+        default: "Management account role"
+      DataCollectionAccountID:
+        default: "Cost Account Id"
+      RolePrefix:
+        default: "Role Prefix"
+      IncludeBudgetsModule:
+        default: "Include AWS Budgets Collection Module"
+      IncludeComputeOptimizerModule:
+        default: "Include AWS Compute Optimizer Data Collection Module"
+      IncludeCostAnomalyModule:
+        default: "Include Cost Anomalies Data Collection Module"
+      IncludeECSChargebackModule:
+        default: "Include ECS Chargeback Data Collection Module"
+      IncludeInventoryCollectorModule:
+        default: "Include Inventory Collector Module"
+      IncludeOrgDataModule:
+        default: "Include AWS Organization Data Collection Module"
+      IncludeRDSUtilizationModule:
+        default: "Include RDS Utilization Data Collection Module"
+      IncludeRightsizingModule:
+        default: "Include Rightsizing Recommendations Data Collection Module"
+      IncludeTAModule:
+        default: "Include AWS Trusted Advisor Data Collection Module"
+      IncludeTransitGatewayModule:
+        default: "Include AWS TransitGateway Collection Module"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -12,6 +61,12 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "WA-"
+  IncludeBudgetsModule:
+    Type: String
+    Description: Collects budgets from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
   IncludeComputeOptimizerModule:
     Type: String
     Description: Collects AWS Compute Optimizer service recommendations
@@ -24,9 +79,27 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeECSChargebackModule:
+    Type: String
+    Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeInventoryCollectorModule:
+    Type: String
+    Description: Collects data about AMIs, EBS volumes and snapshots
+    AllowedValues:
+      - "yes"
+      - "no"
   IncludeOrgDataModule:
     Type: String
     Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRDSUtilizationModule:
+    Type: String
+    Description: Collects RDS CloudWatch metrics from your accounts
     AllowedValues:
       - "yes"
       - "no"
@@ -36,12 +109,41 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeTAModule:
+    Type: String
+    Description: Collects AWS Trusted Advisor recommendations data
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTransitGatewayModule:
+    Type: String
+    Description: Collects TransitGateway from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
-  IncludeComputeOptimizerPolicy: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
-  IncludeCostAnomaliesPolicy: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
-  IncludeOrganizationPolicy: !Equals [!Ref IncludeOrgDataModule, "yes"]
-  IncludeRightsizingPolicy: !Equals [!Ref IncludeRightsizingModule, "yes"]
+  EnableBudgetsModule: !Equals [!Ref IncludeBudgetsModule, "yes"]
+  EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
+  EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
+  EnableECSChargebackModule: !Equals [!Ref IncludeECSChargebackModule, "yes"]
+  EnableInventoryCollectorModule: !Equals [!Ref IncludeInventoryCollectorModule, "yes"]
+  EnableOrganizationModule: !Equals [!Ref IncludeOrgDataModule, "yes"]
+  EnableRDSUtilizationModule: !Equals [!Ref IncludeRDSUtilizationModule, "yes"]
+  EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
+  EnableTAModule: !Equals [!Ref IncludeTAModule, "yes"]
+  EnableTransitGatewayModule: !Equals [!Ref IncludeTransitGatewayModule, "yes"]
+  IsAnyModuleEnabled: !Or
+    - Condition: EnableBudgetsModule
+    - Condition: EnableComputeOptimizerModule
+    - Condition: EnableCostAnomaliesModule
+    - Condition: EnableECSChargebackModule
+    - Condition: EnableInventoryCollectorModule
+    - Condition: EnableOrganizationModule
+    - Condition: EnableRDSUtilizationModule
+    - Condition: EnableRightsizingModule
+    - Condition: EnableTAModule
+    - Condition: EnableTransitGatewayModule
 
 Outputs:
   LambdaRole:
@@ -79,7 +181,7 @@ Resources:
             reason: "Role is intended to describe a range of resources"
   AWSOrganizationPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeOrganizationPolicy
+    Condition: IsAnyModuleEnabled
     Properties:
       PolicyName: Management-Account-permissions
       PolicyDocument:
@@ -108,7 +210,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   RightsizingRecommendationsPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeRightsizingPolicy
+    Condition: EnableRightsizingModule
     Properties:
       PolicyName: RightsizingRecommendationsPolicy
       PolicyDocument:
@@ -127,7 +229,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   CostAnomaliesPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeCostAnomaliesPolicy
+    Condition: EnableCostAnomaliesModule
     Properties:
       PolicyName: CostAnomaliesPolicy
       PolicyDocument:
@@ -146,7 +248,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportLambdaFunctionRecommendations:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeComputeOptimizerPolicy
+    Condition: EnableComputeOptimizerModule
     Properties:
       PolicyName: ComputeOptimizer-ExportLambdaFunctionRecommendations
       PolicyDocument:
@@ -168,7 +270,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportAutoScalingGroupRecommendations:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeComputeOptimizerPolicy
+    Condition: EnableComputeOptimizerModule
     Properties:
       PolicyName: ComputeOptimizer-ExportAutoScalingGroupRecommendations
       PolicyDocument:
@@ -189,7 +291,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportEBSVolumeRecommendations:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeComputeOptimizerPolicy
+    Condition: EnableComputeOptimizerModule
     Properties:
       PolicyName: ComputeOptimizer-ExportEBSVolumeRecommendations
       PolicyDocument:
@@ -210,7 +312,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportEC2InstanceRecommendations:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeComputeOptimizerPolicy
+    Condition: EnableComputeOptimizerModule
     Properties:
       PolicyName: ComputeOptimizer-ExportEC2InstanceRecommendations
       PolicyDocument:
@@ -231,7 +333,7 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   COExportECSRecommendations:
     Type: "AWS::IAM::Policy"
-    Condition: IncludeComputeOptimizerPolicy
+    Condition: EnableComputeOptimizerModule
     Properties:
       PolicyName: ComputeOptimizer-ExportECSRecommendations
       PolicyDocument:
