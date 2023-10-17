@@ -144,7 +144,7 @@ Resources:
                   )
               collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
-                  account = json.loads(event["account"][0])
+                  account = json.loads(event["account"])
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]

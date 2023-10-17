@@ -155,9 +155,6 @@ Mappings:
               },
               "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
               "Next": "CrawlerMap",
-              "ItemSelector": {
-                "account.$": "$.accountLambdaOutput.Payload.accountList[*].account"
-              },
               "ResultSelector": {
                 "crawlers": ${Crawlers}
               }
