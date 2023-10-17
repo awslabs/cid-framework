@@ -6,7 +6,6 @@ Metadata:
       - Label:
           default: "Deployment parameters"
         Parameters:
-          - ManagementAccountID
           - ManagementAccountRole
           - DataCollectionAccountID
           - MultiAccountRoleName
@@ -15,17 +14,10 @@ Metadata:
           - RolePrefix
           - CFNTemplateSourceBucket
       - Label:
-          default: "Data collectors settings"
-        Parameters:
-          - DestinationBucket
-          - DatabaseName
-          - Schedule
-      - Label:
           default: "Available modules"
         Parameters:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
-          - ComputeOptimizerRegions
           - IncludeCostAnomalyModule
           - IncludeECSChargebackModule
           - IncludeInventoryCollectorModule
@@ -35,8 +27,6 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
     ParameterLabels:
-      ManagementAccountID:
-        default: "Comma Delimited list of Account IDs for all Management Account IDs data collectors will fetch data from"
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
@@ -51,18 +41,10 @@ Metadata:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
-      DestinationBucket:
-        default: "Destination S3 bucket"
-      DatabaseName:
-        default: "Name of the Athena database to be created to hold lambda information"
-      Schedule:
-        default: "Schedule swap to cron(0 8 1 * ? *) for 1st day of the month"
       IncludeBudgetsModule:
         default: "Include AWS Budgets Collection Module"
       IncludeComputeOptimizerModule:
         default: "Include AWS Compute Optimizer Data Collection Module"
-      ComputeOptimizerRegions:
-        default: "Comma Delimited list of AWS regions where AWS Compute Optimizer data will be collected."
       IncludeCostAnomalyModule:
         default: "Include Cost Anomalies Data Collection Module"
       IncludeECSChargebackModule:
@@ -80,10 +62,6 @@ Metadata:
       IncludeTransitGatewayModule:
         default: "Include AWS TransitGateway Collection Module"
 Parameters:
-  ManagementAccountID:
-    Type: String
-    AllowedPattern: ([a-z0-9\-, ]*?$)
-    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
   ManagementAccountRole:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -113,19 +91,6 @@ Parameters:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-well-architected-labs'"
     Default: "aws-well-architected-labs"
-  DestinationBucket:
-    Type: String
-    Description: Name of the S3 Bucket that needs to be created to hold information
-    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
-    Default: costoptimizationdata
-  DatabaseName:
-    Type: String
-    Description: Name of the Athena database to be created to hold lambda information
-    Default: optimization_data
-  Schedule:
-    Type: String
-    Description: Cron job to trigger the lambda using cloudwatch event
-    Default: "rate(14 days)"
   IncludeBudgetsModule:
     Type: String
     Description: Collects budgets from your accounts
@@ -138,11 +103,6 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  ComputeOptimizerRegions:
-    Default: ""
-    Type: String
-    Description: "Ex: us-east-1,us-east-2,us-west-1,us-west-2,eu-central-1,eu-west-1,eu-west-2,eu-west-3  if empty, the current region will be used. You can add regions later by updating the stack."
-    AllowedPattern: ([a-z0-9\-, ]*?$)
   IncludeCostAnomalyModule:
     Type: String
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
@@ -261,65 +221,3 @@ Resources:
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
-  DataCollectorModulesStackSet:
-    Type: AWS::CloudFormation::StackSet
-    DependsOn:
-      - DataCollectorOrgAccountModulesReadStackSet
-    Properties:
-      Description: "StackSet in charge of deploying data collectors across organisation accounts"
-      PermissionModel: SERVICE_MANAGED
-      AutoDeployment:
-        Enabled: false
-      ManagedExecution:
-        Active: true
-      Parameters:
-        - ParameterKey: DestinationBucket
-          ParameterValue: !Ref DestinationBucket
-        - ParameterKey: ManagementAccountRole
-          ParameterValue: !Ref ManagementAccountRole
-        - ParameterKey: ManagementAccountID
-          ParameterValue: !Ref ManagementAccountID
-        - ParameterKey: Schedule
-          ParameterValue: !Ref Schedule
-        - ParameterKey: CFNTemplateSourceBucket
-          ParameterValue: !Ref CFNTemplateSourceBucket
-        - ParameterKey: DatabaseName
-          ParameterValue: !Ref DatabaseName
-        - ParameterKey: DataCollectionAccountID
-          ParameterValue: !Ref DataCollectionAccountID
-        - ParameterKey: MultiAccountRoleName
-          ParameterValue: !Ref MultiAccountRoleName
-        - ParameterKey: RolePrefix
-          ParameterValue: !Ref RolePrefix
-        - ParameterKey: IncludeBudgetsModule
-          ParameterValue: !Ref IncludeBudgetsModule
-        - ParameterKey: IncludeComputeOptimizerModule
-          ParameterValue: !Ref IncludeComputeOptimizerModule
-        - ParameterKey: ComputeOptimizerRegions
-          ParameterValue: !Ref ComputeOptimizerRegions
-        - ParameterKey: IncludeCostAnomalyModule
-          ParameterValue: !Ref IncludeCostAnomalyModule
-        - ParameterKey: IncludeECSChargebackModule
-          ParameterValue: !Ref IncludeECSChargebackModule
-        - ParameterKey: IncludeInventoryCollectorModule
-          ParameterValue: !Ref IncludeInventoryCollectorModule
-        - ParameterKey: IncludeOrgDataModule
-          ParameterValue: !Ref IncludeOrgDataModule
-        - ParameterKey: IncludeRDSUtilizationModule
-          ParameterValue: !Ref IncludeRDSUtilizationModule
-        - ParameterKey: IncludeRightsizingModule
-          ParameterValue: !Ref IncludeRightsizingModule
-        - ParameterKey: IncludeTAModule
-          ParameterValue: !Ref IncludeTAModule
-        - ParameterKey: IncludeTransitGatewayModule
-          ParameterValue: !Ref IncludeTransitGatewayModule
-      StackInstancesGroup:
-        - DeploymentTargets:
-            OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitID]
-          Regions:
-            - !Ref "AWS::Region"
-      Capabilities:
-        - CAPABILITY_IAM
-        - CAPABILITY_NAMED_IAM
-      StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataCollection"
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml"
