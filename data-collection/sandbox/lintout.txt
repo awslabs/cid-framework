@@ -1,0 +1,88 @@
+Linting module-organization.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-compute-optimizer.yaml
+	checkov      [0;32mOK[0m
+	W2001 Parameter DatabaseName not used.
+	/local/home/erichre/code/cid-framework/data-collection/deploy/module-compute-optimizer.yaml:4:3
+	cfn-lint     [0;31mKO[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting deploy-in-management-account.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-cost-explorer-cost-anomaly.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-trusted-advisor.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-ecs-chargeback.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-transit-gateway.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-rds-usage.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-cost-explorer-rightsizing.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-inventory.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;33mSKIP[0m For::Each breaks lint
+	cfn_nag_scan [0;33mSKIP[0m For::Each breaks lint
+Linting deploy-data-collection.yaml
+	checkov      [0;32mOK[0m
+	W1001 Fn::Sub to resource "AccountCollector" that may not be available when condition "DeployAccountCollector" is False and when condition "DeployRightsizingModule" is True at Resources/RightsizeModule/Properties/Parameters/AccountCollectorLambdaARN/Fn::Sub
+	/local/home/erichre/code/cid-framework/data-collection/deploy/deploy-data-collection.yaml:674:9
+	
+	W1001 Fn::Sub to resource "AccountCollector" that may not be available when condition "DeployAccountCollector" is False and when condition "DeployCostAnomalyModule" is True at Resources/CostAnomalyModule/Properties/Parameters/AccountCollectorLambdaARN/Fn::Sub
+	/local/home/erichre/code/cid-framework/data-collection/deploy/deploy-data-collection.yaml:691:9
+	
+	W1001 Fn::Sub to resource "AccountCollector" that may not be available when condition "DeployAccountCollector" is False and when condition "DeployComputeOptimizerModule" is True at Resources/ComputeOptimizerModule/Properties/Parameters/AccountCollectorLambdaARN/Fn::Sub
+	/local/home/erichre/code/cid-framework/data-collection/deploy/deploy-data-collection.yaml:747:9
+	
+	W1001 Fn::Sub to resource "AccountCollector" that may not be available when condition "DeployAccountCollector" is False and when condition "DeployOrgDataModule" is True at Resources/OrgDataModule/Properties/Parameters/AccountCollectorLambdaARN/Fn::Sub
+	/local/home/erichre/code/cid-framework/data-collection/deploy/deploy-data-collection.yaml:798:9
+	cfn-lint     [0;31mKO[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-budgets.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting module-pricing.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;33mSKIP[0m For::Each breaks lint
+	cfn_nag_scan [0;33mSKIP[0m For::Each breaks lint
+Linting account-collector.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Linting deploy-in-linked-account.yaml
+	checkov      [0;32mOK[0m
+	cfn-lint     [0;32mOK[0m
+	
+	cfn_nag_scan [0;31mKO[0m
+Successful lints: 0
+Failed lints:     13
