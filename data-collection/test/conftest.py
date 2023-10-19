@@ -40,6 +40,10 @@ def account_id():
     return boto3.client("sts").get_caller_identity()["Account"]
 
 @pytest.fixture(scope='session')
+def org_unit_id():
+    return boto3.client("organizations").list_roots()["Roots"][0]["Id"]
+
+@pytest.fixture(scope='session')
 def glue():
     return boto3.client("glue")
 
@@ -79,8 +83,8 @@ def mode(request):
     return request.config.getoption("--mode")
 
 @pytest.fixture(scope='session', autouse=True)
-def prepare_setup(athena, cloudformation, s3, s3client, account_id, bucket, start_time, mode, glue):
+def prepare_setup(athena, cloudformation, s3, s3client, account_id, org_unit_id, bucket, start_time, mode, glue):
     if mode != "clean_only":
-        yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, bucket=bucket, s3=s3, s3client=s3client)
+        yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket, s3=s3, s3client=s3client)
     if mode != "no_clean":
         cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, s3client=s3client, athena=athena, glue=glue)
