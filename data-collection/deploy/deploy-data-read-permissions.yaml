@@ -1,0 +1,229 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Stack that will deployed across all accounts in an org so we can assume to read data using a lambda
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Deployment parameters"
+        Parameters:
+          - ManagementAccountRole
+          - DataCollectionAccountID
+          - MultiAccountRoleName
+          - OrganizationalUnitIds
+          - AllowModuleReadInMgmt
+          - RolePrefix
+          - CFNTemplateSourceBucket
+      - Label:
+          default: "Available modules"
+        Parameters:
+          - IncludeBudgetsModule
+          - IncludeComputeOptimizerModule
+          - IncludeCostAnomalyModule
+          - IncludeECSChargebackModule
+          - IncludeInventoryCollectorModule
+          - IncludeOrgDataModule
+          - IncludeRDSUtilizationModule
+          - IncludeRightsizingModule
+          - IncludeTAModule
+          - IncludeTransitGatewayModule
+    ParameterLabels:
+      ManagementAccountRole:
+        default: "Management account role"
+      DataCollectionAccountID:
+        default: "Cost Account Id"
+      MultiAccountRoleName:
+        default: "Multi Account Role Name"
+      OrganizationalUnitIds:
+        default: "Comma Delimited list of Organizational Unit IDs. StackSets will deploy a read role in all AWS Accounts within those OUs. See your OU ID here: https://console.aws.amazon.com/organizations/v2/home/accounts (we recommend choosing OU ID of your Root)"
+      AllowModuleReadInMgmt:
+        default: "Allow creation of read roles for modules in management account"
+      RolePrefix:
+        default: "Role Prefix"
+      CFNTemplateSourceBucket:
+        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
+      IncludeBudgetsModule:
+        default: "Include AWS Budgets Collection Module"
+      IncludeComputeOptimizerModule:
+        default: "Include AWS Compute Optimizer Data Collection Module"
+      IncludeCostAnomalyModule:
+        default: "Include Cost Anomalies Data Collection Module"
+      IncludeECSChargebackModule:
+        default: "Include ECS Chargeback Data Collection Module"
+      IncludeInventoryCollectorModule:
+        default: "Include Inventory Collector Module"
+      IncludeOrgDataModule:
+        default: "Include AWS Organization Data Collection Module"
+      IncludeRDSUtilizationModule:
+        default: "Include RDS Utilization Data Collection Module"
+      IncludeRightsizingModule:
+        default: "Include Rightsizing Recommendations Data Collection Module"
+      IncludeTAModule:
+        default: "Include AWS Trusted Advisor Data Collection Module"
+      IncludeTransitGatewayModule:
+        default: "Include AWS TransitGateway Collection Module"
+Parameters:
+  ManagementAccountRole:
+    Type: String
+    Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
+    Default: Lambda-Assume-Role-Management-Account
+  DataCollectionAccountID:
+    Type: String
+    Description: AccountId of where the collector is deployed
+  MultiAccountRoleName:
+    Type: String
+    Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
+    Default: "Optimization-Data-Multi-Account-Role"
+  OrganizationalUnitIds:
+    Type: String
+    AllowedPattern: ^(ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}|r-[a-z0-9]{4,32})$
+    Description: "(Ex: r-ab01,ou-ab01-abcd1234) List of Organizational Unit IDs you wish to collect data for. It can be a single organizational unit. The organization root ID is usually preferred to collect data from all the member accounts."
+  AllowModuleReadInMgmt:
+    Type: String
+    Description: Allows the creation of the read data roles for modules in the management account
+    AllowedValues:
+      - "yes"
+      - "no"
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
+    Default: "WA-"
+  CFNTemplateSourceBucket:
+    Type: String
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-well-architected-labs'"
+    Default: "aws-well-architected-labs"
+  IncludeBudgetsModule:
+    Type: String
+    Description: Collects budgets from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeComputeOptimizerModule:
+    Type: String
+    Description: Collects AWS Compute Optimizer service recommendations
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeCostAnomalyModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeECSChargebackModule:
+    Type: String
+    Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeInventoryCollectorModule:
+    Type: String
+    Description: Collects data about AMIs, EBS volumes and snapshots
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeOrgDataModule:
+    Type: String
+    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRDSUtilizationModule:
+    Type: String
+    Description: Collects RDS CloudWatch metrics from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRightsizingModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTAModule:
+    Type: String
+    Description: Collects AWS Trusted Advisor recommendations data
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTransitGatewayModule:
+    Type: String
+    Description: Collects TransitGateway from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+
+Conditions:
+  DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
+
+Resources:
+  DataCollectorMgmtAccountReadStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
+      Parameters:
+        DataCollectionAccountID: !Ref DataCollectionAccountID
+        ManagementAccountRole: !Ref ManagementAccountRole
+        RolePrefix: !Ref RolePrefix
+        IncludeBudgetsModule: !Ref IncludeBudgetsModule
+        IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
+        IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
+        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
+        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
+        IncludeOrgDataModule: !Ref IncludeOrgDataModule
+        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
+        IncludeRightsizingModule: !Ref IncludeRightsizingModule
+        IncludeTAModule: !Ref IncludeTAModule
+        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+  DataCollectorMgmtAccountModulesReadStack:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployModuleReadInMgmt
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      Parameters:
+        DataCollectionAccountID: !Ref DataCollectionAccountID
+        MultiAccountRoleName: !Ref MultiAccountRoleName
+        RolePrefix: !Ref RolePrefix
+        IncludeTAModule: !Ref IncludeTAModule
+        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
+        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
+        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
+        IncludeBudgetsModule: !Ref IncludeBudgetsModule
+        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+  DataCollectorOrgAccountModulesReadStackSet:
+    Type: AWS::CloudFormation::StackSet
+    Properties:
+      Description: "StackSet in charge of deploying read roles across organisation accounts"
+      PermissionModel: SERVICE_MANAGED
+      AutoDeployment:
+        Enabled: false
+      ManagedExecution:
+        Active: true
+      Parameters:
+        - ParameterKey: DataCollectionAccountID
+          ParameterValue: !Ref DataCollectionAccountID
+        - ParameterKey: MultiAccountRoleName
+          ParameterValue: !Ref MultiAccountRoleName
+        - ParameterKey: RolePrefix
+          ParameterValue: !Ref RolePrefix
+        - ParameterKey: IncludeTAModule
+          ParameterValue: !Ref IncludeTAModule
+        - ParameterKey: IncludeInventoryCollectorModule
+          ParameterValue: !Ref IncludeInventoryCollectorModule
+        - ParameterKey: IncludeECSChargebackModule
+          ParameterValue: !Ref IncludeECSChargebackModule
+        - ParameterKey: IncludeRDSUtilizationModule
+          ParameterValue: !Ref IncludeRDSUtilizationModule
+        - ParameterKey: IncludeBudgetsModule
+          ParameterValue: !Ref IncludeBudgetsModule
+        - ParameterKey: IncludeTransitGatewayModule
+          ParameterValue: !Ref IncludeTransitGatewayModule
+      StackInstancesGroup:
+        - DeploymentTargets:
+            OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]
+          Regions:
+            - !Ref "AWS::Region"
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+      StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"

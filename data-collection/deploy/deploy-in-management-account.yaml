@@ -1,5 +1,54 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Deploys a role to Management Account so that CID data collection can assume to read
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Deployment parameters"
+        Parameters:
+          - ManagementAccountRole
+          - DataCollectionAccountID
+          - RolePrefix
+      - Label:
+          default: "Available modules"
+        Parameters:
+          - IncludeBudgetsModule
+          - IncludeComputeOptimizerModule
+          - IncludeCostAnomalyModule
+          - IncludeECSChargebackModule
+          - IncludeInventoryCollectorModule
+          - IncludeOrgDataModule
+          - IncludeRDSUtilizationModule
+          - IncludeRightsizingModule
+          - IncludeTAModule
+          - IncludeTransitGatewayModule
+    ParameterLabels:
+      ManagementAccountRole:
+        default: "Management account role"
+      DataCollectionAccountID:
+        default: "Cost Account Id"
+      RolePrefix:
+        default: "Role Prefix"
+      IncludeBudgetsModule:
+        default: "Include AWS Budgets Collection Module"
+      IncludeComputeOptimizerModule:
+        default: "Include AWS Compute Optimizer Data Collection Module"
+      IncludeCostAnomalyModule:
+        default: "Include Cost Anomalies Data Collection Module"
+      IncludeECSChargebackModule:
+        default: "Include ECS Chargeback Data Collection Module"
+      IncludeInventoryCollectorModule:
+        default: "Include Inventory Collector Module"
+      IncludeOrgDataModule:
+        default: "Include AWS Organization Data Collection Module"
+      IncludeRDSUtilizationModule:
+        default: "Include RDS Utilization Data Collection Module"
+      IncludeRightsizingModule:
+        default: "Include Rightsizing Recommendations Data Collection Module"
+      IncludeTAModule:
+        default: "Include AWS Trusted Advisor Data Collection Module"
+      IncludeTransitGatewayModule:
+        default: "Include AWS TransitGateway Collection Module"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -12,6 +61,90 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "WA-"
+  IncludeBudgetsModule:
+    Type: String
+    Description: Collects budgets from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeComputeOptimizerModule:
+    Type: String
+    Description: Collects AWS Compute Optimizer service recommendations
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeCostAnomalyModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeECSChargebackModule:
+    Type: String
+    Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeInventoryCollectorModule:
+    Type: String
+    Description: Collects data about AMIs, EBS volumes and snapshots
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeOrgDataModule:
+    Type: String
+    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRDSUtilizationModule:
+    Type: String
+    Description: Collects RDS CloudWatch metrics from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeRightsizingModule:
+    Type: String
+    Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTAModule:
+    Type: String
+    Description: Collects AWS Trusted Advisor recommendations data
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeTransitGatewayModule:
+    Type: String
+    Description: Collects TransitGateway from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+
+Conditions:
+  EnableBudgetsModule: !Equals [!Ref IncludeBudgetsModule, "yes"]
+  EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
+  EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
+  EnableECSChargebackModule: !Equals [!Ref IncludeECSChargebackModule, "yes"]
+  EnableInventoryCollectorModule: !Equals [!Ref IncludeInventoryCollectorModule, "yes"]
+  EnableOrganizationModule: !Equals [!Ref IncludeOrgDataModule, "yes"]
+  EnableRDSUtilizationModule: !Equals [!Ref IncludeRDSUtilizationModule, "yes"]
+  EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
+  EnableTAModule: !Equals [!Ref IncludeTAModule, "yes"]
+  EnableTransitGatewayModule: !Equals [!Ref IncludeTransitGatewayModule, "yes"]
+  IsAnyModuleEnabled: !Or
+    - Condition: EnableBudgetsModule
+    - Condition: EnableComputeOptimizerModule
+    - Condition: EnableCostAnomaliesModule
+    - Condition: EnableECSChargebackModule
+    - Condition: EnableInventoryCollectorModule
+    - Condition: EnableOrganizationModule
+    - Condition: EnableRDSUtilizationModule
+    - Condition: EnableRightsizingModule
+    - Condition: EnableTAModule
+    - Condition: EnableTransitGatewayModule
+
 Outputs:
   LambdaRole:
     Description: Role for lambda to assume in cost account
@@ -29,7 +162,7 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                -  !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
+                - !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
@@ -39,94 +172,6 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-cost-anomaly"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-rightsizing"
       Path: /
-      Policies:
-        - PolicyName: "Management-Account-permissions"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "organizations:ListAccountsForParent"
-                  - "organizations:DescribeAccount"
-                  - "organizations:ListParents"
-                  - "organizations:ListRoots"
-                  - "organizations:ListChildren"
-                  - "organizations:ListTagsForResource"
-                  - "organizations:ListAccounts"
-                  - "organizations:DescribeOrganizationalUnit"
-                  - "organizations:ListCreateAccountStatus"
-                  - "organizations:DescribeOrganization"
-                  - "organizations:ListOrganizationalUnitsForParent"
-                Resource: "*"
-        - PolicyName: "RightsizingModule"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "ce:GetRightsizingRecommendation"
-                Resource: "*"
-        - PolicyName: "AnomaliesModule"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "ce:GetAnomalies"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportLambdaFunctionRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportLambdaFunctionRecommendations"
-                  - "compute-optimizer:GetLambdaFunctionRecommendations"
-                  - "lambda:ListFunctions"
-                  - "lambda:ListProvisionedConcurrencyConfigs"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportAutoScalingGroupRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportAutoScalingGroupRecommendations"
-                  - "compute-optimizer:GetAutoScalingGroupRecommendations"
-                  - "autoscaling:DescribeAutoScalingGroups"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportEBSVolumeRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportEBSVolumeRecommendations"
-                  - "compute-optimizer:GetEBSVolumeRecommendations"
-                  - "EC2:DescribeVolumes"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportEC2InstanceRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportEC2InstanceRecommendations"
-                  - "compute-optimizer:GetEC2InstanceRecommendations"
-                  - "EC2:DescribeInstances"
-                Resource: "*"
-        - PolicyName: "ComputeOptimizer-ExportECSRecommendations"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "compute-optimizer:ExportECSServiceRecommendations"
-                  - "compute-optimizer:GetECSServiceRecommendations"
-                  - "compute-optimizer:GetECSServiceRecommendationProjectedMetrics"
-                  - "ecs:ListServices"
-                  - "ecs:ListClusters"
-                Resource: "*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -134,3 +179,178 @@ Resources:
             reason: "Role must have an explicit RoleName for traceability"
           - id: W11
             reason: "Role is intended to describe a range of resources"
+  AWSOrganizationPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: IsAnyModuleEnabled
+    Properties:
+      PolicyName: Management-Account-permissions
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "organizations:ListAccountsForParent"
+              - "organizations:DescribeAccount"
+              - "organizations:ListParents"
+              - "organizations:ListRoots"
+              - "organizations:ListChildren"
+              - "organizations:ListTagsForResource"
+              - "organizations:ListAccounts"
+              - "organizations:DescribeOrganizationalUnit"
+              - "organizations:ListCreateAccountStatus"
+              - "organizations:DescribeOrganization"
+              - "organizations:ListOrganizationalUnitsForParent"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  RightsizingRecommendationsPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableRightsizingModule
+    Properties:
+      PolicyName: RightsizingRecommendationsPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ce:GetRightsizingRecommendation"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  CostAnomaliesPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableCostAnomaliesModule
+    Properties:
+      PolicyName: CostAnomaliesPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "ce:GetAnomalies"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportLambdaFunctionRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableComputeOptimizerModule
+    Properties:
+      PolicyName: ComputeOptimizer-ExportLambdaFunctionRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportLambdaFunctionRecommendations"
+              - "compute-optimizer:GetLambdaFunctionRecommendations"
+              - "lambda:ListFunctions"
+              - "lambda:ListProvisionedConcurrencyConfigs"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportAutoScalingGroupRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableComputeOptimizerModule
+    Properties:
+      PolicyName: ComputeOptimizer-ExportAutoScalingGroupRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportAutoScalingGroupRecommendations"
+              - "compute-optimizer:GetAutoScalingGroupRecommendations"
+              - "autoscaling:DescribeAutoScalingGroups"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportEBSVolumeRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableComputeOptimizerModule
+    Properties:
+      PolicyName: ComputeOptimizer-ExportEBSVolumeRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportEBSVolumeRecommendations"
+              - "compute-optimizer:GetEBSVolumeRecommendations"
+              - "EC2:DescribeVolumes"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportEC2InstanceRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableComputeOptimizerModule
+    Properties:
+      PolicyName: ComputeOptimizer-ExportEC2InstanceRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportEC2InstanceRecommendations"
+              - "compute-optimizer:GetEC2InstanceRecommendations"
+              - "EC2:DescribeInstances"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  COExportECSRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableComputeOptimizerModule
+    Properties:
+      PolicyName: ComputeOptimizer-ExportECSRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportECSServiceRecommendations"
+              - "compute-optimizer:GetECSServiceRecommendations"
+              - "compute-optimizer:GetECSServiceRecommendationProjectedMetrics"
+              - "ecs:ListServices"
+              - "ecs:ListClusters"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"

@@ -166,3 +166,6 @@ cython_debug/
 fof.zip
 ecs.zip
 ta.zip
+
+# Pylint custom script temporal folder
+.tmp
