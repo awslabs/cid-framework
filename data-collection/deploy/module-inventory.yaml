@@ -196,7 +196,7 @@ Resources:
                       domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
                       domains = client.describe_domains(DomainNames=domain_names)['DomainStatusList']
                       for domain in domains:
-                            yield {
+                          yield {
                               'region': region,
                               'accountid': account_id,
                               'DomainName': domain['DomainName'],
