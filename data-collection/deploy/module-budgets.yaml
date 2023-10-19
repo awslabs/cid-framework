@@ -44,7 +44,7 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-    
+
 Outputs:
   StepFunctionARN:
     Description: ARN for the module's Step Function
@@ -68,7 +68,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "AssumeMultiAccountRole"
+        - PolicyName: !Sub "${CFDataName}-MultiAccount-LambdaRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -95,7 +95,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.8
+      Runtime: python3.10
       Architectures: [arm64]
       Code:
         ZipFile: |
@@ -113,7 +113,7 @@ Resources:
           ROLE_NAME = os.environ['ROLENAME']
           TMP_FILE = "/tmp/data.json"
 
-          logger = logging.getLogger()
+          logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           # subclass JSONEncoder
@@ -144,7 +144,7 @@ Resources:
                   )
               collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
-                  account = json.loads(event["account"][0])
+                  account = json.loads(event["account"])
                   account_id = account["account_id"]
                   account_name = account["account_name"]
                   payer_id = account["payer_id"]
@@ -220,6 +220,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        CollectionType: 'MULTI'
         Params: ''
 
   ModuleRefreshSchedule:
@@ -234,91 +235,6 @@ Resources:
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn
           RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
-
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
-
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-
-  ModuleStepFunction:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
-      DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow: 
-        Mode: 'OFF'
-      Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
-
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
-
-  Crawler:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-
-  ModuleStepFunction:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
-      DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow: 
-        Mode: 'OFF'
-      Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor

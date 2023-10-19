@@ -15,47 +15,46 @@ Parameters:
   ManagementRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
-  ManagementAccountID:
-    Type: String
-    AllowedPattern: ([a-z0-9\-, ]*?$)
-    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
     Default: cost-explorer-rightsizing
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  GlueRoleARN:
-    Type: String
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
 Outputs:
-  CostExplorerRightsizingLambdaRoleARN:
-    Description: Role for Lambda execution of AWS Cost Explorer Rightsizing recommendations.
-    Value:
-      Fn::GetAtt:
-        - RightsizingLambdaRole
-        - Arn
-  LambdaCostExplorerRightsizingARN:
-    Description: Lambda function ARN for retrieving AWS Cost Explorer Rightsizing recommendations
-    Value:
-      Fn::GetAtt:
-        - LambdaFunction
-        - Arn
-  GlueCrawler:
-    Value:
-      Ref: RightsizingCrawler
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
 Resources:
-  RightsizingLambdaRole:
+  LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -69,14 +68,14 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "Assume-Management-Rightsizing-Account-Role"
+        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
-        - PolicyName: "Rightsizing-S3-Access"
+        - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -85,28 +84,19 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-              - Effect: "Allow"
-                Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RightsizingCrawler}"
-              - Effect: "Allow"
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
-      Description: LambdaFunction to retrieve list of organization
-      Runtime: python3.8
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.10
+      Architectures: [arm64]
       Code:
         ZipFile: |
           """ Collect RightSizing info from Cost Explorer and Upload to S3
@@ -119,23 +109,17 @@ Resources:
           import boto3
 
           logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          BUCKET = os.environ['S3_BUCKET']
+          BUCKET = os.environ['BUCKET_NAME']
+          ROLE = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
-          ROLE_NAME = os.environ['ROLE']
-          MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-          CRAWLER_NAME = os.environ['CRAWLER_NAME']
+
           BENEFITS_CONSIDERED = True
           TARGETS = {
               "RightsizingRecommendationsSameFamily": 'SAME_INSTANCE_FAMILY',
               "RightsizingRecommendationsCrossFamily": 'CROSS_INSTANCE_FAMILY',
           }
-
-          def start_crawler(name):
-              try:
-                  boto3.client('glue').start_crawler(Name=name)
-              except Exception as exc:
-                  logging.warning(exc)
 
           def store_data_to_s3(data, payer_id):
               if not data:
@@ -152,7 +136,7 @@ Resources:
           def process_one_management_acc(management_account_id):
               logger.debug('assuming role')
               cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE_NAME}",
+                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
                   RoleSessionName="data_collection"
               )['Credentials']
               cost_explorer = boto3.client(
@@ -190,28 +174,28 @@ Resources:
               store_data_to_s3(result, management_account_id)
 
           def lambda_handler(event, context):
-              logger.setLevel(logging.INFO)
-              for management_account_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  try:
-                      process_one_management_acc(management_account_id)
-                  except Exception as exc:
-                      logging.warning(f"{management_account_id} :  {exc}")
-              start_crawler(CRAWLER_NAME)
+              logger.info(f"Event data {json.dumps(event)}")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              account = json.loads(event["account"])
+              try:
+                  process_one_management_acc(account["account_id"])
+              except Exception as exc:
+                  logging.warning(f"{account['account_id']} :  {exc}")
+
               return "Successful"
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
-      Role:
-        Fn::GetAtt:
-          - RightsizingLambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
-          S3_BUCKET: !Ref DestinationBucket
-          CRAWLER_NAME: !Ref RightsizingCrawler
-          ROLE: !Ref ManagementRoleName
-          MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+          ROLENAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -220,7 +204,7 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  RightsizingCrawler:
+  Crawler:
     Type: AWS::Glue::Crawler
     Properties:
       Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
@@ -229,6 +213,39 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
   
   AthenaQuerySameFamilyRightSizing:
     Type: AWS::Athena::NamedQuery
@@ -456,26 +473,4 @@ Resources:
         FROM recs
             JOIN      rightsizing_dates ON ("rightsizing_dates"."instance_id" = "recs"."instance_id")
             LEFT JOIN chosen_tags ON ("chosen_tags"."instance_id" = "recs"."instance_id")
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: !Sub "Notification Event for ${RolePrefix}${CFDataName} data collection"
-      Name: !Sub "${RolePrefix}${CFDataName}-Scheduler"
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      Targets:
-        - Arn: !GetAtt LambdaFunction.Arn
-          Id: TriggerLambda
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
+

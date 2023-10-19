@@ -24,7 +24,7 @@ List of modules and objects collected:
 | `budgets`              | AWS Budgest           | Linked Account      |          |
 | `compute-optimizer`    | AWS Compute Optimizer | Management Account  |          |
 | `trusted-advisor`      | AWS Trusted Advisor   | Linked Account      |          |
-| `cost-explorer-cost-anomaly` | AWS Anomalies   | Management Account      |          |
+| `cost-anomaly` | AWS Anomalies   | Management Account      |          |
 | `cost-explorer-rightsizing`  | AWS Cost Explorer   | Management Account      |          |
 | `inventory`      | Various services   | Linked Account      | `Opensearch Domains`, `Elasticache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EBS Snapshot` |
 | `pricing`        | Various services   | N/A      | `Amazon RDS`, `Amazon EC2`, `Amazon ElastiCache`, `Amazon Opensearch`, `AWS Compute Savings Plan` |

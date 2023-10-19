@@ -73,61 +73,109 @@ Resources:
             import os
             import json
             import logging
-
             import boto3
 
-            ROLE_NAME = os.environ['ROLE']
+            ROLE = os.environ['ROLENAME']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
 
-            logger = logging.getLogger()
+            logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-            def iterate_accounts(role_name, payer_id):
-                cred = boto3.client('sts').assume_role(
-                    RoleArn=f"arn:aws:iam::{payer_id}:role/{role_name}",
-                    RoleSessionName="data_collection"
-                )['Credentials']
-                organizations = boto3.client(
-                    "organizations",
-                    region_name="us-east-1", #This MUST be us-east-1 regardless of lambda region
-                    aws_access_key_id=cred['AccessKeyId'],
-                    aws_secret_access_key=cred['SecretAccessKey'],
-                    aws_session_token=cred['SessionToken'],
-                )
-                for page in organizations.get_paginator("list_accounts").paginate():
-                    for account in page['Accounts']:
-                        yield account
-
             def lambda_handler(event, context):
-                account_list = []
-                for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                    try:
-                        for account in iterate_accounts(ROLE_NAME, payer_id):
-                            if  account['Status'] != 'ACTIVE':
-                                logger.info(f"account {account['Id']} is not active")
-                                continue
-                            account_data = {}
-                            account_data['account_id'] = account.get('Id')
-                            account_data['account_name'] = account.get('Name')
-                            account_data['payer_id'] = payer_id
-                            account_list.append({"account" : json.dumps(account_data)})
-                    except Exception as exc:
-                        logger.warning(exc)
-
-                if not account_list:
-                    raise ValueError("No accounts were collected.")
-
+                logger.info(event)
+                try:
+                    accounts = main(event["Type"], MANAGEMENT_ACCOUNT_IDS)
+                    statusCode = 200
+                except Exception as exc:
+                    accounts = []
+                    statusCode = 500
+                    logger.error(f"Exception {exc}")
+                    raise exc
+                    
                 return {
-                    'statusCode': 200,
-                    'accountList': account_list
+                    'statusCode': statusCode,
+                    'accountList': accounts
                 }
+
+            def main(type, managementAccounts):
+                logger.info(f"Processing for type '{type}'")
+                account_list = []
+                if (type) == 'MULTI':
+                    for account in iterate_accounts(ROLE, managementAccounts):
+                        if account['Status'] != 'ACTIVE':
+                          logger.info(f"Account {account['Id']} is not active")
+                          continue
+                        account_data = populate_account(account.get('Id'), account.get('Name'), managementAccounts)
+                        account_list.append({"account" : json.dumps(account_data)})
+
+                else:
+                    for payer_id in [r.strip() for r in managementAccounts.split(',')]:
+                        account_data = populate_account(payer_id, payer_id, payer_id)
+                        account_list.append({"account" : json.dumps(account_data)})
+                            
+                if not account_list:
+                    logger.warning("No accounts were collected.")
+                    raise RuntimeError("No accounts were collected.")
+                
+                logger.info(f"Successfully found accounts: {account_list}")
+                return account_list
+
+            def populate_account(account_id, account_name, payer_id):
+              account_data = {}
+              account_data['account_id'] = account_id
+              account_data['account_name'] = account_name
+              account_data['payer_id'] = payer_id
+              return account_data
+
+            def iterate_accounts(role_name, payer_id):
+                logging.info("Iterating accounts ...")
+                try:
+                    creds = assume_role(role_name, payer_id)
+                    client = get_client(creds, region="us-east-1", service="organizations") #This MUST be us-east-1 regardless of lambda region
+                    for page in client.get_paginator("list_accounts").paginate():
+                        for account in page['Accounts']:
+                            yield account
+                except RuntimeError as exc:
+                    raise exc
+                except Exception as exc:
+                    logger.error(f"Unknown error '{exc}'")
+                    raise RuntimeError("Unknown error in 'iterate_accounts'")
+                    
+            def assume_role(role_name, payer_id):
+                logging.info("Assuming role ...")
+                try:
+                    creds = boto3.client('sts').assume_role(
+                        RoleArn=f"arn:aws:iam::{payer_id}:role/{role_name}",
+                        RoleSessionName="data_collection"
+                    )['Credentials']
+                    logging.info(f"Successfully assumed role")
+                    return creds
+                except Exception as exc:
+                    logger.error(f"Error '{exc}' assuming role: role_name={role_name}, payer_id={payer_id}")
+                    raise RuntimeError("Error building client")
+                
+            def get_client(credentials, region, service):
+                logging.info("Getting client from credentials ...")
+                try:
+                    service_client = boto3.client(
+                        service,
+                        region_name = region,
+                        aws_access_key_id=credentials['AccessKeyId'],
+                        aws_secret_access_key=credentials['SecretAccessKey'],
+                        aws_session_token=credentials['SessionToken'],
+                    )
+                    logging.info("Successfully got client")
+                    return service_client
+                except Exception as exc:
+                    logger.error(f"Error '{exc}' building client: service={service}, region={region}")
+                    raise RuntimeError("Error building client")
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          ROLE: !Ref ManagementRoleName
+          ROLENAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
     Metadata:
       cfn_nag:

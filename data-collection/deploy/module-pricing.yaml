@@ -8,14 +8,11 @@ Parameters:
     Default: optimization_data
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket to hold data information
+    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
   DestinationBucketARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
-  CodeBucket:
-    Type: String
-    Description: S3 Bucket that exists and holds code
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
@@ -23,13 +20,13 @@ Parameters:
   GlueRoleARN:
     Type: String
     Description: Arn for the Glue Crawler role
-  RolePrefix:
-    Type: String
-    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
+  RolePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -41,7 +38,22 @@ Parameters:
     Type: String
     Default: ''
     Description: Comma Separated Region Filter. If empty, will pull all available regions. If provided, only certain regions data will be collected
-
+  CodeBucket:
+    Type: String
+    Description: S3 Bucket that exists and holds code
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+    
 Mappings:
   ServicesMap:
     AmazonRDS:
@@ -290,11 +302,12 @@ Mappings:
           - { Type: string, Name: location type }
           - { Type: string, Name: granularity }
           - { Type: string, Name: product family }
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -308,7 +321,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "S3Access"
+        - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -316,12 +329,7 @@ Resources:
                 Action:
                   - "s3:PutObject"
                 Resource:
-                  - !Sub "${DestinationBucketARN}/${CFDataName}/*"
-              - Effect: "Allow"
-                Action:
-                  - "s3:GetObject"
-                Resource:
-                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+                  - !Sub "${DestinationBucketARN}/*"
         - PolicyName: "StartCrawler"
           PolicyDocument:
             Version: "2012-10-17"
@@ -339,7 +347,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect-Pricing'
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [arm64]
@@ -354,8 +362,8 @@ Resources:
 
           import boto3
 
-          logging.basicConfig(level=logging.DEBUG)
           logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           OFFERS_URL = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json'
           BASE_URL = '/'.join(OFFERS_URL.split('/')[:3])
@@ -526,8 +534,8 @@ Resources:
     - 'ScheduleRefresh${AwsService}':
         Type: 'AWS::Scheduler::Schedule'
         Properties:
-          Description: !Sub '${RolePrefix}${CFDataName}-${AwsService}'
-          Name: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Schedule'
+          Description: !Sub 'Scheduler for the ODC ${CFDataName}-${AwsService} module'
+          Name: !Sub '${RolePrefix}${CFDataName}-${AwsService}-RefreshSchedule'
           ScheduleExpression: !Ref Schedule
           State: ENABLED
           FlexibleTimeWindow:

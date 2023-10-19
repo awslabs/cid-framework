@@ -325,15 +325,14 @@ def trigger_update(account_id):
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
+        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-cost-anomaly-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-cost-explorer-rightsizing-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-organizations-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-compute-optimizer-StateMachine"
     ]
-    lambda_arns = [
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-compute-optimizer-Lambda-Trigger-Export",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-cost-anomaly-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-cost-explorer-rightsizing-Lambda-Collect",
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-organization-Lambda-Collect",
-    ]
+    lambda_arns = []
     lambda_norun_arns = [
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-Pricing",
+        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-Pricing"
     ]
     launch_(state_machine_arns, lambda_arns, lambda_norun_arns, wait=True)
 
@@ -379,8 +378,9 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
     except Exception:
         pass
 
-def prepare_stacks(cloudformation, account_id, s3, s3client, bucket):
+def prepare_stacks(cloudformation, account_id, s3, s3client, bucket, mode):
     root = Path(__file__).parent.parent
-    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
+    if mode != "test_only":
+        initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)
