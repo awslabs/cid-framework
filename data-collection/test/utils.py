@@ -166,7 +166,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'AllowModuleReadInMgmt',           'ParameterValue': "yes"},
-            {'ParameterKey': 'OrganizationalUnitID',            'ParameterValue': org_unit_id},
+            {'ParameterKey': 'OrganizationalUnitIds',           'ParameterValue': org_unit_id},
             {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
