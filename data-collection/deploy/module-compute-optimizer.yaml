@@ -273,6 +273,10 @@ Resources:
                     NoncurrentVersionExpiration:
                       NoncurrentDays: 1
                       NewerNoncurrentVersions: 1
+      Tags: # Hacky way to manage dependencies
+        - Key: IgnoreMeIamOnlyWorkaround
+          Value: !GetAtt StackSetExecutionRole.Arn
+
   LambdaTriggerExportRole:
     Type: AWS::IAM::Role
     Properties:
