@@ -11,7 +11,7 @@ You can test this lab in a dedicated account that preferably has the following a
 * An RDS cluster or single instance
 * An ECS cluster with one service deployed ([wordpress](https://aws.amazon.com/blogs/containers/running-wordpress-amazon-ecs-fargate-ecs/) will work fine)
 * A TransitGateway with at least one attachment
-* AWS Organization
+* AWS Organization with trusted access enabled (see [Activate trusted access with AWS Organizations](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-activate-trusted-access.html))
 * An S3 bucket to store the CloudFormation templates that deploy the infrastructure for the optimization data collection components
 
 ## Prerequisites for local environment
