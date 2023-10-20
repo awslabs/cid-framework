@@ -44,7 +44,7 @@ Metadata:
       RolePrefix:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
-        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
+        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -67,25 +67,26 @@ Metadata:
         default: 'Include AWS Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include AWS TransitGateway Collection Module'
+
 Mappings:
   RegionMap:
-       eu-west-1:        {CodeBucket: aws-well-architected-labs-ireland }
-       us-east-2:        {CodeBucket: aws-well-architected-labs-ohio }
-       us-east-1:        {CodeBucket: aws-well-architected-labs-virginia }
-       us-west-1:        {CodeBucket: aws-well-architected-labs-california }
-       us-west-2:        {CodeBucket: aws-well-architected-labs-oregon }
-       ap-southeast-1:   {CodeBucket: aws-well-architected-labs-singapore }
-       eu-central-1:     {CodeBucket: aws-well-architected-labs-frankfurt }
-       eu-west-2:        {CodeBucket: aws-well-architected-labs-london }
-       eu-north-1:       {CodeBucket: aws-well-architected-labs-stockholm }
-       ap-southeast-2:   {CodeBucket: aws-well-architected-labs-ap-sydney }
-       ap-south-1:       {CodeBucket: aws-well-architected-labs-mumbai }
-       ap-northeast-3:   {CodeBucket: aws-well-architected-labs-osaka }
-       ap-northeast-2:   {CodeBucket: aws-well-architected-labs-seoul }
-       ap-northeast-1:   {CodeBucket: aws-well-architected-labs-tokyo }
-       ca-central-1:     {CodeBucket: aws-well-architected-labs-canada }
-       eu-west-3:        {CodeBucket: aws-well-architected-labs-paris }
-       sa-east-1:        {CodeBucket: aws-well-architected-labs-san-paulo }
+    # Only support regions that have QuickSight
+    ap-northeast-1: {CodeBucket: aws-managed-cost-intelligence-dashboards-ap-northeast-1 }
+    ap-northeast-2: {CodeBucket: aws-managed-cost-intelligence-dashboards-ap-northeast-2 }
+    ap-south-1:     {CodeBucket: aws-managed-cost-intelligence-dashboards-ap-south-1 }
+    ap-southeast-1: {CodeBucket: aws-managed-cost-intelligence-dashboards-ap-southeast-1 }
+    ap-southeast-2: {CodeBucket: aws-managed-cost-intelligence-dashboards-ap-southeast-2 }
+    ca-central-1:   {CodeBucket: aws-managed-cost-intelligence-dashboards-ca-central-1 }
+    eu-central-1:   {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-central-1 }
+    eu-north-1:     {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-north-1 }
+    eu-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-west-1 }
+    eu-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-west-2 }
+    eu-west-3:      {CodeBucket: aws-managed-cost-intelligence-dashboards-eu-west-3 }
+    sa-east-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-sa-east-1 }
+    us-east-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-1 }
+    us-east-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-2 }
+    us-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-1 }
+    us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
 
   CodeTemplates:
     StepFunction:
@@ -263,8 +264,8 @@ Parameters:
     Default: "WA-"
   CFNTemplateSourceBucket:
     Type: String
-    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-well-architected-labs'"
-    Default: "aws-well-architected-labs"
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
+    Default: "aws-managed-cost-intelligence-dashboards"
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -366,7 +367,7 @@ Conditions:
   ComputeOptimizerRegionsIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
     - ""
-  ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-well-architected-labs' ]
+  ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
 
 Resources:
 

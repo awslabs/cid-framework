@@ -40,7 +40,7 @@ Metadata:
       RolePrefix:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
-        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-well-architected-labs'"
+        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       IncludeBudgetsModule:
         default: "Include AWS Budgets Collection Module"
       IncludeComputeOptimizerModule:
@@ -89,8 +89,8 @@ Parameters:
     Default: "WA-"
   CFNTemplateSourceBucket:
     Type: String
-    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-well-architected-labs'"
-    Default: "aws-well-architected-labs"
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
+    Default: "aws-managed-cost-intelligence-dashboards"
   IncludeBudgetsModule:
     Type: String
     Description: Collects budgets from your accounts

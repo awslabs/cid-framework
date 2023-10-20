@@ -76,40 +76,12 @@ python3 ./data-collection/test/test_from_scratch.py
 
 The test will install stacks from scratch in a single account, then it will check the presence of Athena tables. After running tests, it will delete the stacks and all artefacts that are not deleted by CFN.
 
-# Release process
-All yaml and zip files are in the account 87******** - well-architected-content@amazon.com, in the bucket `aws-well-architected-labs`. These are then replicated to the other regional buckets.
+4. Create a merge request.
+
+
+# Release process (CID Team only)
+All Cloud Formation Templates are uploaded to buckets `aws-managed-cost-intelligence-dashboards*`.
 
 ```bash
-./data-collection/utils/upload.sh  "aws-well-architected-labs"
-```
-
-
-## Adding more buckets
-Each region requires a bucket for lambda code. To add a regional bucket follow these steps:
-* create bucket following the naming convention aws-well-architected-labs-<region>
-* 'Block all public access' Set to > Off
-* Access control list (ACL) Change from default to  ACLs enabled
-* add this to the role s3-replication-role
-* Add bucket policy below
-* create a replication role on the aws-well-architected-labs bucket on prefix Cost/Labs/300_Optimization_Data_Collection/
-* Use the s3-replication-role role
-* Select replicate existing files
-* New files will be replicated
-
-```json
-    {
-        "Version": "2008-10-17",
-        "Id": "PolicyForCloudFrontPrivateContent",
-        "Statement": [
-            {
-                "Sid": "1",
-                "Effect": "Allow",
-                "Principal": {
-                    "AWS": "arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity E3RRAWK7UHVS3O"
-                },
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::aws-well-architected-labs-[bucket location]/*"
-            }
-        ]
-    }
+./data-collection/utils/release.sh
 ```
