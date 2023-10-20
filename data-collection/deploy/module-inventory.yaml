@@ -193,20 +193,20 @@ Resources:
               for region in regions:
                   client = session.client(service, region_name=region)
                   try:
-                    domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
-                    for domain in domain_names:
-                        domains = client.describe_domain(DomainName=domain)['DomainStatus']
-                        yield {
-                            'region': region,
-                            'accountid': account_id,
-                            'DomainName': domains['DomainName'],
-                            'DomainId': domains['DomainId'],
-                            'EngineVersion': domains['EngineVersion'],
-                            'InstanceType': domains['ClusterConfig']['InstanceType'],
-                            'InstanceCount': domains['ClusterConfig']['InstanceCount'],
-                        }
-                  except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
+                      domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
+                      for domain_name in domain_names:
+                          domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
+                          yield {
+                              'region': region,
+                              'accountid': account_id,
+                              'DomainName': domain['DomainName'],
+                              'DomainId': domain['DomainId'],
+                              'EngineVersion': domain['EngineVersion'],
+                              'InstanceType': domain['ClusterConfig']['InstanceType'],
+                              'InstanceCount': domain['ClusterConfig']['InstanceCount'],
+                          }
+                   except Exception as exc:  #pylint: disable=broad-exception-caught
+                       logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
