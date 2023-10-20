@@ -378,9 +378,8 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
     except Exception:
         pass
 
-def prepare_stacks(cloudformation, account_id, s3, s3client, bucket, mode):
+def prepare_stacks(cloudformation, account_id, s3, s3client, bucket):
     root = Path(__file__).parent.parent
-    if mode != "test_only":
-        initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
+    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)
