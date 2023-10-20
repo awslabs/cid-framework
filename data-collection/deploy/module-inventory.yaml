@@ -194,8 +194,8 @@ Resources:
                   client = session.client(service, region_name=region)
                   try:
                       domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
-                      domains = client.describe_domains(DomainNames=domain_names)['DomainStatusList']
-                      for domain in domains:
+                      for domain_name in domain_names:
+                          domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
                           yield {
                               'region': region,
                               'accountid': account_id,
@@ -205,8 +205,8 @@ Resources:
                               'InstanceType': domain['ClusterConfig']['InstanceType'],
                               'InstanceCount': domain['ClusterConfig']['InstanceCount'],
                           }
-                  except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
+                   except Exception as exc:  #pylint: disable=broad-exception-caught
+                       logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
