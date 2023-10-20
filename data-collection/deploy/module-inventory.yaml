@@ -205,8 +205,8 @@ Resources:
                               'InstanceType': domain['ClusterConfig']['InstanceType'],
                               'InstanceCount': domain['ClusterConfig']['InstanceCount'],
                           }
-                   except Exception as exc:  #pylint: disable=broad-exception-caught
-                       logger.info(f'scan {service}/{account_id}/{region}: {exc}')
+                  except Exception as exc:  #pylint: disable=broad-exception-caught
+                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
