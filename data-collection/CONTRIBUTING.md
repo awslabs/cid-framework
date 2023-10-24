@@ -40,7 +40,7 @@ Make sure you configure credentials for an organizations management account that
 ```bash
 git clone git@github.com:awslabs/cid-framework.git
 cd cid-framework
-pip3 install -U boto3 pytest cfn-flip pylint cfn-lint checkov
+pip3 install -U boto3 pytest cfn-flip pylint bandit cfn-lint checkov
 ```
 
 Create a test bucket in test account. You can use any bucket.
