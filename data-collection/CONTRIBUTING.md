@@ -22,6 +22,7 @@ You can test this lab in a dedicated account that preferably has the following a
 * python3.8+
 * `pip3 install -U boto3 pytest cfn-flip pylint checkov`
 * Configured AWS credentials
+* Install and configure [git-secrets](https://github.com/awslabs/git-secrets#installing-git-secrets)
 
 ## Testing
 
