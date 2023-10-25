@@ -170,3 +170,5 @@ ta.zip
 # Local sandbox
 sandbox/
 scratch/
+# Pylint custom script temporal folder
+.tmp

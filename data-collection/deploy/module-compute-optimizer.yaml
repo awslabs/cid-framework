@@ -143,8 +143,8 @@ Resources:
 
   ReplicationBucketsStackSet:
     Type: AWS::CloudFormation::StackSet
-    DependsOn:
-      - StackSetExecutionRole
+    # DependsOn: # managed via tags. DependsOn does not work in this case and Role can be deleted before StackSet
+    #  - StackSetExecutionRole
     Properties:
       Description: !Sub "S3 buckets in multiple regions replicating data to s3://${DestinationBucket}."
       PermissionModel: SELF_MANAGED
@@ -287,6 +287,9 @@ Resources:
                     NoncurrentVersionExpiration:
                       NoncurrentDays: 1
                       NewerNoncurrentVersions: 1
+      Tags: # Hacky way to manage dependencies
+        - Key: IgnoreMeIamOnlyWorkaround
+          Value: !GetAtt StackSetExecutionRole.Arn
 
   LambdaTriggerExportRole:
     Type: AWS::IAM::Role

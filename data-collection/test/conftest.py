@@ -44,6 +44,10 @@ def org_unit_id():
     return boto3.client("organizations").list_roots()["Roots"][0]["Id"]
 
 @pytest.fixture(scope='session')
+def org_unit_id():
+    return boto3.client("organizations").list_roots()["Roots"][0]["Id"]
+
+@pytest.fixture(scope='session')
 def glue():
     return boto3.client("glue")
 

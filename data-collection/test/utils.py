@@ -153,34 +153,31 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
                 logger.error(exc)
 
 
-def initial_deploy_stacks(cloudformation, account_id, root, bucket):
+def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name='OptimizationManagementDataRoleStack',
-        file=root / 'deploy' / 'deploy-in-management-account.yaml',
+        stack_name='OptimizationDataReadPermissionsStack',
+        file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
         parameters=[
-            {'ParameterKey': 'DataCollectionAccountID', 'ParameterValue': account_id},
-            {'ParameterKey': 'ManagementAccountRole',   'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-            {'ParameterKey': 'RolePrefix',              'ParameterValue': "WA-"},
-        ]
-    )
-
-    deploy_stack(
-        cloudformation=cloudformation,
-        stack_name='OptimizationDataRoleStack',
-        file=root / 'deploy' / 'deploy-in-linked-account.yaml',
-        parameters=[
+            {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
             {'ParameterKey': 'DataCollectionAccountID',         'ParameterValue': account_id},
-            {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
+            {'ParameterKey': 'AllowModuleReadInMgmt',           'ParameterValue': "yes"},
+            {'ParameterKey': 'OrganizationalUnitIds',           'ParameterValue': org_unit_id},
+            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeOrgDataModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
-            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
+            {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
         ]
     )
 
@@ -211,8 +208,7 @@ def initial_deploy_stacks(cloudformation, account_id, root, bucket):
 
     logger.info('Waiting for stacks')
     watch_stacks(cloudformation, [
-        "OptimizationManagementDataRoleStack",
-        "OptimizationDataRoleStack",
+        "OptimizationDataReadPermissionsStack",
         "OptimizationDataCollectionStack",
     ])
 
@@ -349,8 +345,7 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
         logger.warning(f'Exception: {exc}')
 
     for stack_name in [
-        'OptimizationManagementDataRoleStack',
-        'OptimizationDataRoleStack',
+        'OptimizationDataReadPermissionsStack',
         'OptimizationDataCollectionStack',
         ]:
         try:
@@ -360,8 +355,7 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
             logger.error(f'{stack_name} {exc}')
 
     watch_stacks(cloudformation, [
-        'OptimizationManagementDataRoleStack',
-        'OptimizationDataRoleStack',
+        'OptimizationDataReadPermissionsStack',
         'OptimizationDataCollectionStack',
     ])
     try:
@@ -378,8 +372,8 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
     except Exception:
         pass
 
-def prepare_stacks(cloudformation, account_id, s3, s3client, bucket):
+def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
     root = Path(__file__).parent.parent
-    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, root=root, bucket=bucket)
+    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, root=root, bucket=bucket)
     clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)
