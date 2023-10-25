@@ -358,11 +358,14 @@ Conditions:
     - !Condition DeployRDSUtilizationModule
   DeployAccountCollector: !Or
     - !Condition DeployTAModule
+    - !Condition DeployRightsizingModule
+    - !Condition DeployCostAnomalyModule
     - !Condition DeployInventoryCollectorModule
-    - !Condition DeployRDSUtilizationModule
+    - !Condition DeployComputeOptimizerModule
     - !Condition DeployEcsChargebackModule
-    - !Condition DeployBudgetsModule
     - !Condition DeployRDSUtilizationModule
+    - !Condition DeployOrgDataModule
+    - !Condition DeployBudgetsModule
     - !Condition DeployTransitGatewayModule
   ComputeOptimizerRegionsIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
