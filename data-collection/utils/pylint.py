@@ -56,6 +56,7 @@ def tab(text, indent="\t"):
 def main():
     """ run pylint for all lambda functions """
     file_list = glob.glob(os.path.join(FOLDER_PATH, "*.yaml"))
+    file_list.sort(key=os.path.getmtime, reverse=True)
     for filename in file_list:
         try:
             with open(filename, encoding='utf-8') as template_file:
