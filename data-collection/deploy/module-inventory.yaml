@@ -117,7 +117,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda Function to retrieve ${CFDataName}"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           """ Scan linked accounts and store instances info to s3 bucket
@@ -207,7 +207,7 @@ Resources:
                               'InstanceCount': domain['ClusterConfig']['InstanceCount'],
                           }
                   except Exception as exc:  #pylint: disable=broad-exception-caught
-                              logger.info(f'scan {service}/{account_id}/{region}: {exc}')
+                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
@@ -334,7 +334,7 @@ Resources:
             AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
             Crawlers: !Sub '["${RolePrefix}${CFDataName}-${AwsObject}-Crawler"]'
-            CollectionType: "MULTI"
+            CollectionType: "LINKED"
             Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
       'RefreshSchedule${AwsObject}':
         Type: AWS::Scheduler::Schedule

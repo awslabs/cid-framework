@@ -327,7 +327,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Trigger-Export'
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Environment:
         Variables:
           REGIONS: !Ref DeployRegions

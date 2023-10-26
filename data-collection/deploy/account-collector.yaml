@@ -66,8 +66,8 @@ Resources:
     Properties:
       FunctionName: !Sub '${RolePrefix}account-collector-Lambda'
       Description: "Lambda function to retrieve the account list"
-      Runtime: python3.8
-      Architectures: [arm64]
+      Runtime: python3.10
+      Architectures: [x86_64]
       Code:
           ZipFile: |
             import os
@@ -98,16 +98,16 @@ Resources:
                 try:
                     accounts = main(event[key], MANAGEMENT_ACCOUNT_IDS, ROLE_NAME)
                     
-                except KeyError as e:
+                except KeyError as exc:
                     logger.error(f"Lambda event parameter '{key}' not defined (fatal)")
                     raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter in {MODULE_NAME} module")
                     
-                except CidError as e:
-                    logger.error(f"CID error: {e} (fatal)")
+                except CidError as exc:
+                    logger.error(f"CID error: {exc} (fatal)")
                     raise RuntimeError(f"(CidError) in {MODULE_NAME} module")
                     
-                except Exception as e:
-                    logger.error(f"Unhandled {type(e).__name__} exception: {e}")
+                except Exception as exc:
+                    logger.error(f"Unhandled {type(exc).__name__} exception: {exc}")
                     raise RuntimeError(f"(UnhandledExceptionError) in {MODULE_NAME} module")
                     
                 return {
@@ -119,13 +119,13 @@ Resources:
                 logger.info(f"Processing for type '{module_type}' and using role '{role_name}'")
                 account_list = []
                 for payer_id in [r.strip() for r in management_accounts.split(',')]:
-                    if (module_type.upper()) == 'MULTI':
+                    if (module_type.upper()) == 'LINKED':
                         try:
                             for account in iterate_accounts(role_name, payer_id):
                                 if account['Status'] != 'ACTIVE':
-                                  logger.info(f"Account {account['Id']} is not active")
-                                  continue
-                                account_data = populate_account(account.get('Id'), account.get('Name'), payer_id)
+                                    logger.info(f"Account {account['Id']} is not active")
+                                    continue
+                                account_data = {'account_id': account.get('Id'), 'account_name': account.get('Name'), 'payer_id': payer_id, } 
                                 account_list.append({"account" : json.dumps(account_data)})
                         except CidNonFatalError as exc:
                             logger.warning(f"Payer account '{payer_id}' encountered access issues")
@@ -152,11 +152,7 @@ Resources:
                     raise e
 
             def populate_account(account_id, account_name, payer_id):
-              account_data = {}
-              account_data['account_id'] = account_id
-              account_data['account_name'] = account_name
-              account_data['payer_id'] = payer_id
-              return account_data
+                return { 'account_id': account_id, 'account_name': account_name, 'payer_id': payer_id, }
 
             def get_client_with_role(role_name, account_id, service, region):
                 logger.debug(f"Getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")

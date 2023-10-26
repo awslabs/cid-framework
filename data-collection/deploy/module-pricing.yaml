@@ -41,18 +41,6 @@ Parameters:
   CodeBucket:
     Type: String
     Description: S3 Bucket that exists and holds code
-  AccountCollectorLambdaARN:
-    Type: String
-    Description: Arn of the Account Collector Lambda
-  StepFunctionTemplate:
-    Type: String
-    Description: JSON representation of common StepFunction template
-  StepFunctionExecutionRoleARN:
-    Type: String
-    Description: Common role for Step Function execution
-  SchedulerExecutionRoleARN:
-    Type: String
-    Description: Common role for module Scheduler execution
     
 Mappings:
   ServicesMap:
@@ -350,7 +338,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           # Author Stephanie Gooch 2021 and Iakov Gan 2023

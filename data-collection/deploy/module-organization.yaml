@@ -100,7 +100,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           """ Get Account info from AWS Organizations and store on s3 bucket
@@ -161,19 +161,11 @@ Resources:
                   for line in data:
                       file_.write(json.dumps(line, default=json_converter) + '\n')
               try:
-                  prefix = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/acc-org.json" # No time/date info. Each time we override data
+                  prefix = f"{PREFIX}/organization-data/payer_id={payer_id}/acc-org.json" # No time/date info. Each time we override data
                   boto3.client('s3').upload_file(tmp_file, BUCKET, prefix)
                   logger.info(f"Uploaded {len(data)} records in s3://{BUCKET}/{prefix}")
               except Exception as exc:
                   logger.error(exc)
-
-          def start_crawler(crawler):
-              """start crawler"""
-              try:
-                  boto3.client("glue").start_crawler(Name=crawler)
-                  logger.info(f"{crawler} has been started")
-              except Exception as exc:
-                  logging.warning(exc)
 
           def json_converter(obj):
               """ Help json encode date"""
@@ -281,7 +273,7 @@ Resources:
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/organization-data/" #Preserve legacy name in Athena
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

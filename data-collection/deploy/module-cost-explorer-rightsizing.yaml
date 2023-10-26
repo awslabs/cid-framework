@@ -96,7 +96,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           """ Collect RightSizing info from Cost Explorer and Upload to S3

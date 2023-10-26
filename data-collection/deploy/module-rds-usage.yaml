@@ -100,7 +100,7 @@ Resources:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           import os
@@ -348,7 +348,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
-        CollectionType: "MULTI"
+        CollectionType: "LINKED"
         Params: ''
 
   ModuleRefreshSchedule:
@@ -363,7 +363,6 @@ Resources:
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn
           RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
