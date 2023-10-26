@@ -44,6 +44,10 @@ GitHub provides additional document on [forking a repository](https://help.githu
 Looking at the existing issues is a great way to find something to contribute on. As our projects, by default, use the default GitHub issue labels (enhancement/bug/duplicate/help wanted/invalid/question/wontfix), looking at any 'help wanted' issues is a great place to start.
 
 
+## Contribution to different modules
+Please follow specific guides for contribution to specific elements of the CID framework
+* [data-collection](/data-collection/CONTRIBUTING.md)
+
 ## Code of Conduct
 This project has adopted the [Amazon Open Source Code of Conduct](https://aws.github.io/code-of-conduct).
 For more information see the [Code of Conduct FAQ](https://aws.github.io/code-of-conduct-faq) or contact
