@@ -74,51 +74,82 @@ Resources:
             import json
             import logging
             import boto3
+            from botocore.exceptions import BotoCoreError
+            from botocore.exceptions import ClientError
 
-            ROLE = os.environ['ROLENAME']
+            ROLE_NAME = os.environ['ROLENAME']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
+            MODULE_NAME = "account-collector"
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
+            # Helper Exception classes
+            class CidError(Exception):
+                pass
+            class CidNonFatalError(CidError):
+                pass
+            class CidFatalError(CidError):
+                pass
+
             def lambda_handler(event, context):
-                logger.info(event)
+                logger.info(f"Incoming event: {event}")
+                key = "Type"
                 try:
-                    accounts = main(event["Type"], MANAGEMENT_ACCOUNT_IDS)
-                    statusCode = 200
-                except Exception as exc:
-                    accounts = []
-                    statusCode = 500
-                    logger.error(f"Exception {exc}")
-                    raise exc
+                    accounts = main(event[key], MANAGEMENT_ACCOUNT_IDS, ROLE_NAME)
+                    
+                except KeyError as e:
+                    logger.error(f"Lambda event parameter '{key}' not defined (fatal)")
+                    raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter in {MODULE_NAME} module")
+                    
+                except CidError as e:
+                    logger.error(f"CID error: {e} (fatal)")
+                    raise RuntimeError(f"(CidError) in {MODULE_NAME} module")
+                    
+                except Exception as e:
+                    logger.error(f"Unhandled {type(e).__name__} exception: {e}")
+                    raise RuntimeError(f"(UnhandledExceptionError) in {MODULE_NAME} module")
                     
                 return {
-                    'statusCode': statusCode,
+                    'statusCode': 200,
                     'accountList': accounts
                 }
 
-            def main(type, managementAccounts):
-                logger.info(f"Processing for type '{type}'")
+            def main(module_type, management_accounts, role_name):
+                logger.info(f"Processing for type '{module_type}' and using role '{role_name}'")
                 account_list = []
-                if (type) == 'MULTI':
-                    for account in iterate_accounts(ROLE, managementAccounts):
-                        if account['Status'] != 'ACTIVE':
-                          logger.info(f"Account {account['Id']} is not active")
-                          continue
-                        account_data = populate_account(account.get('Id'), account.get('Name'), managementAccounts)
-                        account_list.append({"account" : json.dumps(account_data)})
-
-                else:
-                    for payer_id in [r.strip() for r in managementAccounts.split(',')]:
+                for payer_id in [r.strip() for r in management_accounts.split(',')]:
+                    if (module_type.upper()) == 'MULTI':
+                        try:
+                            for account in iterate_accounts(role_name, management_accounts):
+                                if account['Status'] != 'ACTIVE':
+                                  logger.info(f"Account {account['Id']} is not active")
+                                  continue
+                                account_data = populate_account(account.get('Id'), account.get('Name'), management_accounts)
+                                account_list.append({"account" : json.dumps(account_data)})
+                        except CidNonFatalError as exc:
+                            logger.warning(f"Payer account '{payer_id}' encountered access issues")
+                    else:
                         account_data = populate_account(payer_id, payer_id, payer_id)
                         account_list.append({"account" : json.dumps(account_data)})
-                            
-                if not account_list:
-                    logger.warning("No accounts were collected.")
-                    raise RuntimeError("No accounts were collected.")
+
+                if len(account_list) == 0:
+                    raise CidFatalError("No accounts were collected")
                 
-                logger.info(f"Successfully found accounts: {account_list}")
+                logger.info(f"Successfully found {len(account_list)} accounts")
+                logger.debug(f"Successfully found accounts: {json.dumps(account_list)}")
                 return account_list
+
+            def iterate_accounts(role_name, payer_id):
+                logger.info(f"Iterating accounts for payer '{payer_id}'")
+                try:
+                    client = get_client_with_role(role_name, payer_id, region="us-east-1", service="organizations") #This MUST be us-east-1 regardless of lambda region
+                    for page in client.get_paginator("list_accounts").paginate():
+                        for account in page['Accounts']:
+                            yield account
+                            
+                except CidNonFatalError as e:
+                    raise e
 
             def populate_account(account_id, account_name, payer_id):
               account_data = {}
@@ -127,48 +158,33 @@ Resources:
               account_data['payer_id'] = payer_id
               return account_data
 
-            def iterate_accounts(role_name, payer_id):
-                logging.info("Iterating accounts ...")
+            def get_client_with_role(role_name, account_id, service, region):
+                logger.debug(f"Getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
                 try:
-                    creds = assume_role(role_name, payer_id)
-                    client = get_client(creds, region="us-east-1", service="organizations") #This MUST be us-east-1 regardless of lambda region
-                    for page in client.get_paginator("list_accounts").paginate():
-                        for account in page['Accounts']:
-                            yield account
-                except RuntimeError as exc:
-                    raise exc
-                except Exception as exc:
-                    logger.error(f"Unknown error '{exc}'")
-                    raise RuntimeError("Unknown error in 'iterate_accounts'")
-                    
-            def assume_role(role_name, payer_id):
-                logging.info("Assuming role ...")
-                try:
-                    creds = boto3.client('sts').assume_role(
-                        RoleArn=f"arn:aws:iam::{payer_id}:role/{role_name}",
+                    credentials = boto3.client('sts').assume_role(
+                        RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
                         RoleSessionName="data_collection"
                     )['Credentials']
-                    logging.info(f"Successfully assumed role")
-                    return creds
-                except Exception as exc:
-                    logger.error(f"Error '{exc}' assuming role: role_name={role_name}, payer_id={payer_id}")
-                    raise RuntimeError("Error building client")
-                
-            def get_client(credentials, region, service):
-                logging.info("Getting client from credentials ...")
-                try:
-                    service_client = boto3.client(
+                    logger.debug(f"Successfully assumed role, now getting client")
+                    client = boto3.client(
                         service,
                         region_name = region,
                         aws_access_key_id=credentials['AccessKeyId'],
                         aws_secret_access_key=credentials['SecretAccessKey'],
                         aws_session_token=credentials['SessionToken'],
                     )
-                    logging.info("Successfully got client")
-                    return service_client
-                except Exception as exc:
-                    logger.error(f"Error '{exc}' building client: service={service}, region={region}")
-                    raise RuntimeError("Error building client")
+                    logger.debug(f"Successfully got client with assumed role")
+                    return client
+                    
+                except BotoCoreError as e:
+                    raise get_non_fatal_exception(e, f"BotoCore exception: '{e}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'", "(BotoCore) exception")    
+
+                except ClientError as e:
+                    raise get_non_fatal_exception(e, f"(BotoCoreClient) exception: '{e}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'", "(BotoCoreClient) exception")    
+
+            def get_non_fatal_exception(e, log_msg, e_msg):
+                logger.warning(log_msg)
+                return CidNonFatalError(e_msg)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
