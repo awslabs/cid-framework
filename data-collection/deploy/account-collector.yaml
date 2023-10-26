@@ -121,11 +121,11 @@ Resources:
                 for payer_id in [r.strip() for r in management_accounts.split(',')]:
                     if (module_type.upper()) == 'MULTI':
                         try:
-                            for account in iterate_accounts(role_name, management_accounts):
+                            for account in iterate_accounts(role_name, payer_id):
                                 if account['Status'] != 'ACTIVE':
                                   logger.info(f"Account {account['Id']} is not active")
                                   continue
-                                account_data = populate_account(account.get('Id'), account.get('Name'), management_accounts)
+                                account_data = populate_account(account.get('Id'), account.get('Name'), payer_id)
                                 account_list.append({"account" : json.dumps(account_data)})
                         except CidNonFatalError as exc:
                             logger.warning(f"Payer account '{payer_id}' encountered access issues")
