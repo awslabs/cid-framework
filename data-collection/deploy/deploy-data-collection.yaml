@@ -883,20 +883,21 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEventDrivenDataCollector
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy/event-driven-datacollection.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/event-driven-datacollection.yaml"
       Parameters:
         AWSOrganizationID: !Ref AWSOrganizationID
         DestinationBucket: !Ref S3Bucket
+        QuicksightServiceRole: !Ref QuicksightServiceRole
 
   EventDrivenHealthModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployHeathModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy/module-health.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/module-health.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DataCollectionBusName: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusName
+        DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
         DataCollectionKinesisFirehoseArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionKinesisFirehoseArn
         DataCollectionRuleRoleArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionRuleRoleArn
-        QuicksightServiceRole: !Ref QuicksightServiceRole
         QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor

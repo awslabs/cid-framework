@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: (DataCollection) Stack to enable link account to send data to central DataCollectionBus
+Description: Event Driven Data Collection Stack
 
 Parameters:
   AWSOrganizationID:
@@ -10,36 +10,28 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  AthenaResultBucket:
+    Type: String
+    Default: "aws-athena-query-results-*"
+    Description: S3 Bucket where Amazon Athena stores results
   DestinationBucketKmsArn:
     Type: String
     Default: "N"
     Description: Enter KMS Arn if supplied Destination bucket is encrypted with KMS(Type N for SSE encryption)
+  AthenaBucketKmsArn:
+    Type: String
+    Default: "N"
+    Description: Enter KMS Arn if Athena Results bucket is encrypted with KMS(Type N for SSE encryption)
+  QuicksightServiceRole:
+    Type: String
+    Default: aws-quicksight-service-role-v0
+    Description: The Quicksight Service role attached to QS, Default is aws-quicksight-service-role-v0
 
 Conditions:
   DestinationBucketKmsArn: !Not [!Equals [!Ref DestinationBucketKmsArn, "N"]]
+  AthenaBucketKmsArn: !Not [!Equals [!Ref AthenaBucketKmsArn, "N"]]
 
 Resources:
-  # Define an AWS Events Event Bus for DataCollection
-  DataCollectionBus:
-    Type: "AWS::Events::EventBus"
-    Properties:
-      Name: !Sub DataCollectionBus-${AWS::AccountId}
-
-  # Define the policy for the event bus to allow all accounts from the specified organization to put events
-  DataCollectionBusPolicy:
-    Type: AWS::Events::EventBusPolicy
-    Properties:
-      EventBusName: !Ref DataCollectionBus
-      StatementId: AllowAllAccountsInOrganizationToPutEvents
-      Statement:
-        Effect: "Allow"
-        Principal: "*"
-        Action: "events:PutEvents"
-        Resource: !GetAtt DataCollectionBus.Arn
-        Condition:
-          StringEquals:
-            aws:PrincipalOrgID: !Ref AWSOrganizationID
-
   # Define an IAM Role for the Kinesis Firehose delivery stream
   DataCollectionKinesisFirehoseRole:
     Type: AWS::IAM::Role
@@ -101,6 +93,174 @@ Resources:
                     - !Ref DestinationBucketKmsArn
           - !Ref AWS::NoValue
 
+  DataCollectionRuleRole:
+  #This is common EventBridge event role that give EB necessary permission to put events to Kinesis Firehose
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        # Policy allowing the role to put records to the Kinesis Firehose
+        - PolicyName: !Sub "DataCollectionRule-${AWS::AccountId}-${AWS::Region}-Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "firehose:PutRecord"
+                  - "firehose:PutRecordBatch"
+                Resource: 
+                  - !GetAtt DataCollectionKinesisFirehose.Arn
+        - PolicyName: !Sub "DataCollectionRuleDefault-${AWS::AccountId}-${AWS::Region}-Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "events:PutEvents"
+                Resource: 
+                  - !GetAtt DataCollectionBus.Arn
+
+  QuicksightServiceRolePolicy:
+  # Create an AWS IAM Managed Policy for QuickSight service role with necessary permissions     
+    Type: AWS::IAM::ManagedPolicy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W13
+            reason: "Requires generic access for QS to list all buckets"
+    Properties:
+      Description: "Grants Amazon QuickSight to run awshealthevent athena queries"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "s3:GetBucketLocation"
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:ListBucketMultipartUploads"
+              - "s3:AbortMultipartUpload"
+              - "s3:PutObject"
+              - "s3:ListMultipartUploadParts"
+              - "s3:CreateBucket"
+            Resource: 
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucket}
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucket}/*
+              - !Sub arn:${AWS::Partition}:s3:::${AthenaResultBucket}
+              - !Sub arn:${AWS::Partition}:s3:::${AthenaResultBucket}/*
+          - Effect: "Allow"
+            Action:
+              - athena:BatchGetQueryExecution
+              - athena:CancelQueryExecution
+              - athena:GetCatalogs
+              - athena:GetExecutionEngine
+              - athena:GetExecutionEngines
+              - athena:GetNamespace
+              - athena:GetNamespaces
+              - athena:GetQueryExecution
+              - athena:GetQueryExecutions
+              - athena:GetQueryResults
+              - athena:GetQueryResultsStream
+              - athena:GetTable
+              - athena:GetTables
+              - athena:ListQueryExecutions
+              - athena:RunQuery
+              - athena:StartQueryExecution
+              - athena:StopQueryExecution
+              - athena:ListWorkGroups
+              - athena:ListEngineVersions
+              - athena:GetWorkGroup
+              - athena:GetDataCatalog
+              - athena:GetDatabase
+              - athena:GetTableMetadata
+              - athena:ListDataCatalogs
+              - athena:ListDatabases
+              - athena:ListTableMetadata
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "glue:CreateDatabase"
+              - "glue:DeleteDatabase"
+              - "glue:GetDatabase"
+              - "glue:GetDatabases"
+              - "glue:UpdateDatabase"
+              - "glue:CreateTable"
+              - "glue:DeleteTable"
+              - "glue:BatchDeleteTable"
+              - "glue:UpdateTable"
+              - "glue:GetTable"
+              - "glue:GetTables"
+              - "glue:BatchCreatePartition"
+              - "glue:CreatePartition"
+              - "glue:DeletePartition"
+              - "glue:BatchDeletePartition"
+              - "glue:UpdatePartition"
+              - "glue:GetPartition"
+              - "glue:GetPartitions"
+              - "glue:BatchGetPartition"
+            Resource:
+              - "*"
+          - Effect: "Allow"
+            Action:
+              - "lakeformation:GetDataAccess"
+            Resource:
+              - "*"
+          - !If
+            - DestinationBucketKmsArn
+            - Effect: Allow
+              Action:
+                - "kms:Encrypt"
+                - "kms:Decrypt"
+                - "kms:ReEncrypt*"
+                - "kms:GenerateDataKey*"
+              Resource:
+                - !Ref DestinationBucketKmsArn
+            - !Ref AWS::NoValue
+          - !If
+            - AthenaBucketKmsArn
+            - Effect: Allow
+              Action:
+                - "kms:Encrypt"
+                - "kms:Decrypt"
+                - "kms:ReEncrypt*"
+                - "kms:GenerateDataKey*"
+              Resource:
+                - !Ref AthenaBucketKmsArn
+            - !Ref AWS::NoValue
+      Roles: 
+       - !Ref QuicksightServiceRole
+
+  # Define an AWS Events Event Bus for DataCollection
+  DataCollectionBus:
+    Type: "AWS::Events::EventBus"
+    Properties:
+      Name: !Sub DataCollectionBus-${AWS::AccountId}
+
+  # Define the policy for the event bus to allow all accounts from the specified organization to put events
+  DataCollectionBusPolicy:
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+      EventBusName: !Ref DataCollectionBus
+      StatementId: AllowAllAccountsInOrganizationToPutEvents
+      Statement:
+        Effect: "Allow"
+        Principal: "*"
+        Action: "events:PutEvents"
+        Resource: !GetAtt DataCollectionBus.Arn
+        Condition:
+          StringEquals:
+            aws:PrincipalOrgID: !Ref AWSOrganizationID
+            
   # Define an AWS Kinesis Firehose Delivery Stream for data ingestion
   DataCollectionKinesisFirehose:
     Type: "AWS::KinesisFirehose::DeliveryStream"
@@ -136,31 +296,6 @@ Resources:
                   ParameterValue: "{source:.source}"
                 - ParameterName: JsonParsingEngine
                   ParameterValue: JQ-1.6
-
-  DataCollectionRuleRole:
-  #This is common EventBridge event role that give EB necessary permission to put events to Kinesis Firehose
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: sts:AssumeRole
-      Path: "/"
-      Policies:
-        # Policy allowing the role to put records to the Kinesis Firehose
-        - PolicyName: !Sub "DataCollectionRule-${AWS::AccountId}-${AWS::Region}-Policy"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - "firehose:PutRecord"
-                  - "firehose:PutRecordBatch"
-                Resource: 
-                  - !GetAtt DataCollectionKinesisFirehose.Arn
 
 Outputs:
   # Output the ARN of the created Data Collection Bus
