@@ -1,0 +1,457 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: (DataCollection) Stack to enable link account to send data to central DataCollectionBus
+
+Parameters:
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold data information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DataCollectionBusName:
+    Type: String
+    Description: Centerlized DataCollection EventBus Name in data collection account
+  DataCollectionKinesisFirehoseArn:
+    Type: String
+    Description: Data Collection Kinesis Firehose Arn
+  DataCollectionRuleRoleArn:
+    Type: String
+    Description: This is the EventBridge role that give EB necessary permission to put events to Kinesis Firehose
+  DestinationBucketKmsArn:
+    Type: String
+    Default: "N"
+    Description: Enter KMS Arn if supplied Destination bucket is encrypted with KMS(Type N for SSE encryption)
+  AthenaResultBucket:
+    Type: String
+    Default: "aws-athena-query-results-*"
+    Description: S3 Bucket where Amazon Athena stores results
+  AthenaBucketKmsArn:
+    Type: String
+    Default: "N"
+    Description: Enter KMS Arn if Athena Results bucket is encrypted with KMS(Type N for SSE encryption)
+  QuicksightServiceRole:
+    Type: String
+    Default: aws-quicksight-service-role-v0
+    Description: The Quicksight Service role attached to QS, Default is aws-quicksight-service-role-v0
+  QuickSightAnalysisAuthor:
+    Type: String
+    Description: The QuickSight analysis author Arn that is allowed configure and manage the QS Analyses and dashboards. e.g. arn:aws:quicksight:<Region>:<AccountID>:user/default/<username>
+
+Conditions:
+  DestinationBucketKmsArn: !Not [!Equals [!Ref DestinationBucketKmsArn, "N"]]
+  AthenaBucketKmsArn: !Not [!Equals [!Ref AthenaBucketKmsArn, "N"]]
+
+Resources:
+  # Define an IAM Role for the AWS Events Rule with policy to get events from EB and put in Kinesis Firehose
+  DataCollectionRuleHealth:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: DataCollectionRuleForHealth
+      EventBusName: !Ref DataCollectionBusName
+      EventPattern:
+        source:
+          - aws.health
+          - awshealthtest
+      Name: !Sub "DataCollectionRuleHealth-${AWS::AccountId}-${AWS::Region}"
+      State: ENABLED
+      Targets:
+        - Id: DataCollectionRule
+          Arn: !Ref  DataCollectionKinesisFirehoseArn
+          RoleArn: !Ref  DataCollectionRuleRoleArn
+
+  GlueDatabaseDataCollection:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Sub '${AWS::AccountId}'
+      DatabaseInput:
+        Name: awshealtheventdb
+        Description: AWSHealthEventDB
+
+  GlueTableAccountMap:
+  # AWS Glue Table resource representing the AWS Account table map
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref GlueDatabaseDataCollection
+      CatalogId: !Sub '${AWS::AccountId}'
+      TableInput:
+        Name: awshealtheventaccinfo
+        Description: AWS Health Event Account Data
+        Parameters:
+          skip.header.line.count: '1'
+        TableType: EXTERNAL_TABLE
+        StorageDescriptor:
+          Columns:
+            - { Name: accountid, Type: string }
+            - { Name: arn, Type: string }
+            - { Name: email, Type: string }
+            - { Name: name, Type: string }
+            - { Name: status, Type: string }
+            - { Name: joinedmethod, Type: string }
+            - { Name: joinedtimestamp, Type: string }
+            - { Name: Tag, Type: string }
+          Location: !Sub 's3://${DestinationBucket}/DataCollection-metadata/AWSHealthModule/accountinfo-metadata/'
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde
+            Parameters:
+              separatorChar: ","
+              quoteChar: "\""
+              escapeChar: "\\"
+              columns: "accountid,arn,email,name,status,joinedmethod,joinedtimestamp"
+        PartitionKeys: []
+  
+  GlueHealthTable:
+  # AWS Glue Table resource representing  AWS Health External Table
+    Type: AWS::Glue::Table
+    Properties:
+      # Reference to the AWS Glue Database
+      DatabaseName: !Ref GlueDatabaseDataCollection
+      CatalogId: !Sub '${AWS::AccountId}'
+      TableInput:
+        Name: awshealthevent
+        Description: 'AWS Health Events Data'
+        Owner: GlueTeam
+        PartitionKeys:
+          - Name: date_created
+            Type: string
+          - Name: source_partition 
+            Type: string
+        Parameters:
+          EXTERNAL: 'TRUE'  # 'EXTERNAL' should be a string
+          projection.enabled: 'true'
+          projection.date_created.type: 'date'
+          projection.date_created.format: 'yyyy/MM/dd'
+          projection.date_created.interval: '1'
+          projection.date_created.interval.unit: 'DAYS'
+          projection.date_created.range: '2021/01/01,NOW'
+          projection.source_partition.type: 'enum'
+          projection.source_partition.values: 'awshealthtest,aws.health'
+          storage.location.template: !Join ['', ['s3://', !Ref DestinationBucket, '/DataCollection-data/${source_partition}/${date_created}/']]
+        StorageDescriptor:
+          # Columns and their data types for the table
+          Columns:
+            - Name: version
+              Type: string
+              Comment: 'from deserializer'
+            - Name: id
+              Type: string
+              Comment: 'from deserializer'
+            - Name: detail-type
+              Type: string
+              Comment: 'from deserializer'
+            - Name: source
+              Type: string
+              Comment: 'from deserializer'
+            - Name: account
+              Type: string
+              Comment: 'from deserializer'
+            - Name: time
+              Type: string
+              Comment: 'from deserializer'
+            - Name: region
+              Type: string
+              Comment: 'from deserializer'
+            - Name: resources
+              Type: array<string>
+              Comment: 'from deserializer'
+            - Name: detail
+              Type: struct<eventarn:string,affectedAccount:string,service:string,eventscopecode:string,communicationid:string,lastupdatedtime:string,eventregion:string,eventtypecode:string,eventtypecategory:string,starttime:string,endtime:string,eventdescription:array<struct<language:string,latestdescription:string>>,affectedentities:array<struct<entityvalue:string,statusCode:string,entityarn:string,entityaz:string,entitytags:array<struct<value:string,key:string>>>>>
+              Comment: 'from deserializer'
+          # S3 location of the data for the Athena External Table
+          Location: !Sub 's3://${DestinationBucket}/DataCollection-data'
+          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
+          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+          SerdeInfo:
+            SerializationLibrary: 'org.openx.data.jsonserde.JsonSerDe'
+            Parameters:
+              paths: 'account,detail,detail-type,id,region,resources,source,time,version'
+          Compressed: false
+        TableType: EXTERNAL_TABLE
+        Retention: 30
+
+  QuicksightServiceRolePolicy:
+  # Create an AWS IAM Managed Policy for QuickSight service role with necessary permissions     
+    Type: AWS::IAM::ManagedPolicy
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W13
+            reason: "Requires generic access for QS to list all buckets"
+    Properties:
+      Description: "Grants Amazon QuickSight to run awshealthevent federated query"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - s3:ListAllMyBuckets
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "s3:GetBucketLocation"
+              - "s3:GetObject"
+              - "s3:ListBucket"
+              - "s3:ListBucketMultipartUploads"
+              - "s3:AbortMultipartUpload"
+              - "s3:PutObject"
+              - "s3:ListMultipartUploadParts"
+              - "s3:CreateBucket"
+            Resource: 
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucket}
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucket}/*
+              - !Sub arn:${AWS::Partition}:s3:::${AthenaResultBucket}
+              - !Sub arn:${AWS::Partition}:s3:::${AthenaResultBucket}/*
+          - Effect: "Allow"
+            Action:
+              - athena:BatchGetQueryExecution
+              - athena:CancelQueryExecution
+              - athena:GetCatalogs
+              - athena:GetExecutionEngine
+              - athena:GetExecutionEngines
+              - athena:GetNamespace
+              - athena:GetNamespaces
+              - athena:GetQueryExecution
+              - athena:GetQueryExecutions
+              - athena:GetQueryResults
+              - athena:GetQueryResultsStream
+              - athena:GetTable
+              - athena:GetTables
+              - athena:ListQueryExecutions
+              - athena:RunQuery
+              - athena:StartQueryExecution
+              - athena:StopQueryExecution
+              - athena:ListWorkGroups
+              - athena:ListEngineVersions
+              - athena:GetWorkGroup
+              - athena:GetDataCatalog
+              - athena:GetDatabase
+              - athena:GetTableMetadata
+              - athena:ListDataCatalogs
+              - athena:ListDatabases
+              - athena:ListTableMetadata
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "glue:CreateDatabase"
+              - "glue:DeleteDatabase"
+              - "glue:GetDatabase"
+              - "glue:GetDatabases"
+              - "glue:UpdateDatabase"
+              - "glue:CreateTable"
+              - "glue:DeleteTable"
+              - "glue:BatchDeleteTable"
+              - "glue:UpdateTable"
+              - "glue:GetTable"
+              - "glue:GetTables"
+              - "glue:BatchCreatePartition"
+              - "glue:CreatePartition"
+              - "glue:DeletePartition"
+              - "glue:BatchDeletePartition"
+              - "glue:UpdatePartition"
+              - "glue:GetPartition"
+              - "glue:GetPartitions"
+              - "glue:BatchGetPartition"
+            Resource:
+              - "*"
+          - Effect: "Allow"
+            Action:
+              - "lakeformation:GetDataAccess"
+            Resource:
+              - "*"
+          - !If
+            - DestinationBucketKmsArn
+            - Effect: Allow
+              Action:
+                - "kms:Encrypt"
+                - "kms:Decrypt"
+                - "kms:ReEncrypt*"
+                - "kms:GenerateDataKey*"
+              Resource:
+                - !Ref DestinationBucketKmsArn
+            - !Ref AWS::NoValue
+          - !If
+            - AthenaBucketKmsArn
+            - Effect: Allow
+              Action:
+                - "kms:Encrypt"
+                - "kms:Decrypt"
+                - "kms:ReEncrypt*"
+                - "kms:GenerateDataKey*"
+              Resource:
+                - !Ref AthenaBucketKmsArn
+            - !Ref AWS::NoValue
+      Roles: 
+       - !Ref QuicksightServiceRole
+
+  DataSource:
+  # Create an AWS QuickSight DataSource for DataCollection
+    Type: AWS::QuickSight::DataSource
+    Properties:
+      DataSourceId: !Sub "DataSource-${AWS::AccountId}-${AWS::Region}"
+      AwsAccountId: !Sub ${AWS::AccountId}
+      Name: !Sub "DataSource-${AWS::AccountId}-${AWS::Region}"
+      Type: ATHENA
+      DataSourceParameters:
+        AthenaParameters:
+          WorkGroup: primary
+      SslProperties:
+        DisableSsl: false
+
+  QSDataSetHealthEvent:
+  # Create an AWS QuickSight DataSet for AWS Health events
+      Type: AWS::QuickSight::DataSet
+      Properties:
+        AwsAccountId: !Sub ${AWS::AccountId}
+        ImportMode: SPICE
+        DataSetId: !Sub "awshealthevents-${AWS::AccountId}-${AWS::Region}"
+        Name: !Sub "awshealthevents-${AWS::AccountId}-${AWS::Region}"
+        PhysicalTableMap:
+          "AWSHealthQSPT":
+            CustomSql:
+              DataSourceArn: !GetAtt DataSource.Arn
+              Name: !Sub "awshealthevents-${AWS::AccountId}-${AWS::Region}"
+              SqlQuery: |-
+                  WITH latestRow AS (select * from (SELECT
+                          detail.eventTypeCode,
+                          source AS eventSource,
+                          COALESCE(detail.affectedAccount, account) as account,
+                          detail.service,
+                          detail.eventScopeCode,
+                          detail.eventTypeCategory,
+                          detail.eventArn,
+                          detail.communicationid,
+                          detail.eventRegion,
+                          entities.entityValue AS affectedEntities,
+                          entities.statusCode As affectedEntityStatus,
+                          detail.eventdescription[1].latestdescription AS eventDescription,
+                          rank() OVER (PARTITION BY detail.eventarn,account ORDER BY detail.lastUpdatedTime DESC) AS rowrank,
+                          array_join(resources, ', ') AS resources,
+                          CAST(from_iso8601_timestamp("time") AS timestamp) AS ingestionTime,
+                          CAST(date_parse(detail.endTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS endTime,
+                          CAST(date_parse(detail.startTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS startTime,
+                          CAST(date_parse(detail.lastUpdatedTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS lastUpdatedTime,
+                          CAST(DATE_DIFF('HOUR', CAST(date_parse(detail.startTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp), CAST(date_parse(detail.endTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp)) AS BIGINT) AS eventDuration,
+                          CASE
+                              WHEN (CAST(date_parse(detail.endTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) > current_timestamp) THEN 'Upcoming'
+                              WHEN ((CAST(date_parse(detail.endTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) IS NULL) AND (detail.eventTypeCategory = 'scheduledChange')) THEN 'Upcoming'
+                              WHEN (((CAST(date_parse(detail.startTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) + (7 * INTERVAL '1' DAY)) < current_timestamp) AND (detail.eventTypeCategory = 'accountNotification') AND (CAST(date_parse(detail.endTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) IS NULL)) THEN 'Archived'
+                              WHEN (CAST(date_parse(detail.endTime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) IS NULL) THEN 'Active'
+                              ELSE 'Archived'
+                          END AS "Status"
+                      FROM "AwsDataCatalog"."awshealtheventdb"."awshealthevent"
+                      LEFT JOIN UNNEST(detail.affectedEntities) AS t(entities) ON TRUE)
+                      WHERE rowrank = 1)
+                  SELECT detail.*, COALESCE(accountinfo."name", detail."account") AS accountName, accountinfo.Tag as accountTag
+                  FROM latestRow detail
+                  LEFT JOIN "AwsDataCatalog"."awshealtheventdb"."awshealtheventaccinfo" accountinfo ON detail.account = accountinfo."accountid"
+              Columns:
+              - Name: eventTypeCode
+                Type: STRING
+              - Name: affectedEntityStatus
+                Type: STRING
+              - Name: rowrank
+                Type: INTEGER
+              - Name: eventSource
+                Type: STRING
+              - Name: account
+                Type: STRING
+              - Name: eventScopeCode
+                Type: STRING
+              - Name: eventTypeCategory
+                Type: STRING
+              - Name: eventArn
+                Type: STRING
+              - Name: communicationid
+                Type: STRING
+              - Name: eventDescription
+                Type: STRING
+              - Name: resources
+                Type: STRING
+              - Name: ingestionTime
+                Type: DATETIME
+              - Name: endTime
+                Type: DATETIME
+              - Name: startTime
+                Type: DATETIME
+              - Name: lastUpdatedTime
+                Type: DATETIME
+              - Name: eventDuration
+                Type: INTEGER
+              - Name: Status
+                Type: STRING
+              - Name: eventRegion
+                Type: STRING
+              - Name: service
+                Type: STRING
+              - Name: accountName
+                Type: STRING
+              - Name: accountTag
+                Type: STRING
+              - Name: affectedEntities
+                Type: STRING
+        LogicalTableMap:
+          AWSHealthQSLT:
+            Alias: !Sub "awshealthevents-${AWS::AccountId}-${AWS::Region}"
+            DataTransforms:
+            - ProjectOperation:
+                ProjectedColumns:
+                - eventTypeCode
+                - affectedEntityStatus
+                - rowrank
+                - eventSource
+                - account
+                - eventScopeCode
+                - eventTypeCategory
+                - eventArn
+                - communicationid
+                - eventDescription
+                - resources
+                - ingestionTime
+                - endTime
+                - startTime
+                - lastUpdatedTime
+                - eventDuration
+                - Status
+                - eventRegion
+                - service
+                - accountName
+                - accountTag
+                - affectedEntities
+            Source:
+              PhysicalTableId: AWSHealthQSPT
+        Permissions:
+        - Principal: !Sub "${QuickSightAnalysisAuthor}"
+          Actions:
+            - quicksight:DescribeDataSet
+            - quicksight:DescribeDataSetPermissions
+            - quicksight:PassDataSet
+            - quicksight:DescribeIngestion
+            - quicksight:ListIngestions
+            - quicksight:UpdateDataSet
+            - quicksight:DeleteDataSet
+            - quicksight:CreateIngestion
+            - quicksight:CancelIngestion
+            - quicksight:UpdateDataSetPermissions
+
+  QSDataSetHealthEventRefresh:
+    # Create an AWS QuickSight Refresh Schedule for AWS Health events
+    DependsOn: QSDataSetHealthEvent
+    Type: AWS::QuickSight::RefreshSchedule
+    Properties: 
+      AwsAccountId: !Sub ${AWS::AccountId}
+      DataSetId: !Sub "awshealthevents-${AWS::AccountId}-${AWS::Region}"
+      Schedule:
+        RefreshType: FULL_REFRESH
+        ScheduleFrequency:
+          Interval: HOURLY
+        ScheduleId: QSDataSetHealthEventRefresh
+
+Outputs:
+  DataSourceArn:
+    Value: !GetAtt DataSource.Arn
+    Export:
+      Name: DataSourceArn
+  GlueDatabaseDataCollection:
+    Value: !Ref GlueDatabaseDataCollection
+    Export:
+      Name: GlueDatabaseDataCollection
