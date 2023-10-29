@@ -28,6 +28,8 @@ Metadata:
           - IncludeOrgDataModule
           - IncludeBudgetsModule
           - IncludeTransitGatewayModule
+          - IncludeHealthModule
+          - IncludeCasesModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -67,6 +69,10 @@ Metadata:
         default: 'Include AWS Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include AWS TransitGateway Collection Module'
+      IncludeHealthModule:
+        default: 'AWS Health Events Intelligence Dashboards and Insights (HEIDI) Module'
+      IncludeCasesModule:
+        default: 'Include Case Insights for Multiple Accounts(CIMA) Module'
 
 Mappings:
   RegionMap:
@@ -236,8 +242,11 @@ Parameters:
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket that needs to be created to hold information
-    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
     Default: costoptimizationdata
+  AWSOrganizationID:
+    Type: String
+    Description: Required for Health Module. The AWS Organizations ID for the organization that should be allowed to put events on the event bus.
   ManagementAccountRole:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -331,6 +340,26 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthModule:
+    Type: String
+    Description: AWS health event intelligence dashboards and insights.
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeCasesModule:
+    Type: String
+    Description: AWS health module Heidi
+    AllowedValues:
+      - "yes"
+      - "no"
+  QuicksightServiceRole:
+    Type: String
+    Default: aws-quicksight-service-role-v0
+    Description: The Quicksight Service role attached to QS, Default is aws-quicksight-service-role-v0
+  QuickSightAnalysisAuthor:
+    Type: String
+    Description: The QuickSight analysis author Arn that is allowed configure and manage the QS Analyses and dashboards. e.g. arn:aws:quicksight:<Region>:<AccountID>:user/default/<username>
+
 Outputs:
   S3Bucket:
     Description: Name of S3 Bucket which will store the AWS Cost Explorer Rightsizing recommendations
@@ -353,6 +382,8 @@ Conditions:
   DeployOrgDataModule: !Equals [ !Ref IncludeOrgDataModule, "yes"]
   DeployBudgetsModule: !Equals [ !Ref IncludeBudgetsModule, "yes"]
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
+  DeployHeathModule: !Equals [ !Ref IncludeHealthModule, "yes"]
+  DeployCasesModule: !Equals [ !Ref IncludeCasesModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -368,6 +399,9 @@ Conditions:
     - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
     - ""
   ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
+  DeployEventDrivenDataCollector: !Or
+    - !Condition DeployHeathModule
+    - !Condition DeployCasesModule
 
 Resources:
 
@@ -844,3 +878,25 @@ Resources:
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix
+
+  EventDrivenDataCollector:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployEventDrivenDataCollector
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy/event-driven-datacollection.yaml"
+      Parameters:
+        AWSOrganizationID: !Ref AWSOrganizationID
+        DestinationBucket: !Ref S3Bucket
+
+  EventDrivenHealthModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployHeathModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy/module-health.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DataCollectionBusName: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusName
+        DataCollectionKinesisFirehoseArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionKinesisFirehoseArn
+        DataCollectionRuleRoleArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionRuleRoleArn
+        QuicksightServiceRole: !Ref QuicksightServiceRole
+        QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor
