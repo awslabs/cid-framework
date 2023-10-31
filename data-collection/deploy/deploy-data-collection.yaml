@@ -99,7 +99,7 @@ Mappings:
               "Type": "Task",
               "Resource": "arn:aws:states:::lambda:invoke",
               "Parameters": {
-                "Payload.$": "$",
+                "Payload": {"Type": "${CollectionType}"},
                 "FunctionName": "${AccountCollectorLambdaARN}"
               },
               "Retry": [
@@ -358,11 +358,14 @@ Conditions:
     - !Condition DeployRDSUtilizationModule
   DeployAccountCollector: !Or
     - !Condition DeployTAModule
+    - !Condition DeployRightsizingModule
+    - !Condition DeployCostAnomalyModule
     - !Condition DeployInventoryCollectorModule
-    - !Condition DeployRDSUtilizationModule
+    - !Condition DeployComputeOptimizerModule
     - !Condition DeployEcsChargebackModule
-    - !Condition DeployBudgetsModule
     - !Condition DeployRDSUtilizationModule
+    - !Condition DeployOrgDataModule
+    - !Condition DeployBudgetsModule
     - !Condition DeployTransitGatewayModule
   ComputeOptimizerRegionsIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
@@ -657,7 +660,7 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:stateMachine:${RolePrefix}*"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${RolePrefix}*"
 
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack
@@ -675,7 +678,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
@@ -685,24 +687,30 @@ Resources:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
-        ManagementAccountID: !Ref ManagementAccountID
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-cost-anomaly.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
-        ManagementAccountID: !Ref ManagementAccountID
         GlueRoleARN: !GetAtt GlueRole.Arn
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
@@ -720,7 +728,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-
+        
   PricingModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployPricingModule
@@ -752,6 +760,10 @@ Resources:
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref ComputeOptimizerRegions  ] ] # remove spaces
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   EcsChargebackModule:
     Type: AWS::CloudFormation::Stack
@@ -794,12 +806,16 @@ Resources:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-organization.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
         Schedule: !Ref Schedule
         ManagementRoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
-        ManagementAccountID: !Ref ManagementAccountID
         RolePrefix: !Ref RolePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   BudgetsModule:
     Type: AWS::CloudFormation::Stack

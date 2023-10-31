@@ -44,6 +44,10 @@ def org_unit_id():
     return boto3.client("organizations").list_roots()["Roots"][0]["Id"]
 
 @pytest.fixture(scope='session')
+def org_unit_id():
+    return boto3.client("organizations").list_roots()["Roots"][0]["Id"]
+
+@pytest.fixture(scope='session')
 def glue():
     return boto3.client("glue")
 
@@ -76,7 +80,7 @@ def start_time():
     return _start_time
 
 def pytest_addoption(parser):
-    parser.addoption("--mode", action="store", default="full", choices=("full", "no_clean", "clean_only") )
+    parser.addoption("--mode", action="store", default="normal", choices=("normal", "no-teardown") )
 
 @pytest.fixture(scope='session')
 def mode(request):
@@ -84,7 +88,6 @@ def mode(request):
 
 @pytest.fixture(scope='session', autouse=True)
 def prepare_setup(athena, cloudformation, s3, s3client, account_id, org_unit_id, bucket, start_time, mode, glue):
-    if mode != "clean_only":
-        yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket, s3=s3, s3client=s3client)
-    if mode != "no_clean":
+    yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket, s3=s3, s3client=s3client)
+    if mode != "no-teardown":
         cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, s3client=s3client, athena=athena, glue=glue)
