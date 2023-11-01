@@ -28,9 +28,9 @@ Parameters:
     Default: 'costoptimization'
     Description: This prefix will be used for buckets creation
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
-  DeployRegions:
+  RegionsInScope:
     Type: String
-    Description: "A comma separated list of AWS regions where compute-optimizer needs to collect info. Example: us-east-1,eu-west-1"
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -161,7 +161,7 @@ Resources:
         - DeploymentTargets:
             Accounts:
               - !Ref "AWS::AccountId"
-          Regions: !Split [ ',', !Ref DeployRegions]
+          Regions: !Split [ ',', !Ref RegionsInScope]
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
@@ -324,13 +324,13 @@ Resources:
   LambdaTriggerExport:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Trigger-Export'
+      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
       Runtime: python3.10
       Architectures: [x86_64]
       Environment:
         Variables:
-          REGIONS: !Ref DeployRegions
+          REGIONS: !Ref RegionsInScope
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
           INCLUDE_MEMBER_ACCOUNTS: !Ref IncludeMemberAccounts
           ROLE_NAME: !Ref ManagementRoleName
@@ -408,7 +408,7 @@ Resources:
                   if error_messages:
                       raise Exception(f"There were {len(error_messages)} errors, out of {len(result_messages) + len(error_messages)} exports: \n" + "\n".join(error_messages))
               except Exception as e:
-                  logger.info(payer_id, type(e), e)
+                  logger.error(f"Error {type(e).__name__} with message {e}")
       Handler: index.lambda_handler
       MemorySize: 2688
       Timeout: 300
@@ -537,7 +537,7 @@ Resources:
       Timeout: 300
       Environment:
         Variables:
-          REGIONS: !Ref DeployRegions
+          REGIONS: !Ref RegionsInScope
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
           TRIGGER_LAMBDA:  !GetAtt LambdaTriggerExport.Arn
     Metadata:

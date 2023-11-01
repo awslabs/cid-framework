@@ -167,7 +167,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'AllowModuleReadInMgmt',           'ParameterValue': "yes"},
             {'ParameterKey': 'OrganizationalUnitIds',           'ParameterValue': org_unit_id},
-            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
+            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "ODC-"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
@@ -187,7 +187,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
         file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
-            {'ParameterKey': 'ComputeOptimizerRegions',         'ParameterValue': "us-east-1,eu-west-1"},
+            {'ParameterKey': 'RegionsInScope',                  'ParameterValue': "us-east-1,eu-west-1"},
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': "costoptimizationdata"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
@@ -202,7 +202,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "WA-"},
+            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "ODC-"},
         ]
     )
 
@@ -310,26 +310,32 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
 def trigger_update(account_id):
     region = boto3.session.Session().region_name
     state_machine_arns = [
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-budgets-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-ecs-chargeback-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-OpensearchDomains-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-ElasticacheClusters-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-RdsDbInstances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-EBS-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-AMI-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-inventory-Snapshot-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-rds-usage-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-transit-gateway-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:WA-trusted-advisor-StateMachine',
-        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-cost-anomaly-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-cost-explorer-rightsizing-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-organizations-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:WA-compute-optimizer-StateMachine",
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-budgets-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-ecs-chargeback-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-OpensearchDomains-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-ElasticacheClusters-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-RdsDbInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-EBS-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-AMI-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-Snapshot-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-Ec2Instances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-inventory-VpcInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-rds-usage-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-transit-gateway-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:ODC-trusted-advisor-StateMachine',
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-cost-anomaly-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-cost-explorer-rightsizing-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-organizations-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-compute-optimizer-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-pricing-AmazonRDS-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-pricing-AmazonEC2-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-pricing-AmazonElastiCache-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-pricing-AmazonES-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-pricing-AWSComputeSavingsPlan-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:ODC-pricing-RegionNames-StateMachine",
     ]
     lambda_arns = []
-    lambda_norun_arns = [
-        f"arn:aws:lambda:{region}:{account_id}:function:WA-pricing-Lambda-Collect-Pricing", 
-    ]
+    lambda_norun_arns = []
     launch_(state_machine_arns, lambda_arns, lambda_norun_arns, wait=True)
 
 

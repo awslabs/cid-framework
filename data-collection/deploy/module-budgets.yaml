@@ -191,6 +191,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+
     Metadata:
       cfn_nag:
         rules_to_suppress:

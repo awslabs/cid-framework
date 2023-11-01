@@ -48,7 +48,7 @@ Parameters:
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
-    Default: "WA-"
+    Default: "ODC-"
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -187,6 +187,8 @@ Resources:
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeRegions"
+              - "ec2:DescribeInstances"
+              - "ec2:DescribeVpcs"
               - "rds:DescribeDBInstances"
               - "es:ListDomainNames"
               - "es:DescribeDomain"

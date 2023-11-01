@@ -73,9 +73,8 @@ Resources:
             import os
             import json
             import logging
+
             import boto3
-            from botocore.exceptions import BotoCoreError
-            from botocore.exceptions import ClientError
 
             ROLE_NAME = os.environ['ROLENAME']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
@@ -86,30 +85,40 @@ Resources:
 
             # Helper Exception classes
             class CidError(Exception):
-                pass
-            class CidNonFatalError(CidError):
-                pass
-            class CidFatalError(CidError):
-                pass
+                def __init__(self, message="", exc=None):
+                    message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                    if type(self) == CidNonCriticalError.__class__:
+                        logger.warning(message)
+                    else:
+                        logger.error(message)
+                    super().__init__(message)
+            class CidNonCriticalError(CidError):
+                def __init__(self, message="", exc=None):
+                    super().__init__(message, exc)
+            class CidCriticalError(CidError):
+                def __init__(self, message="", exc=None):
+                    super().__init__(message, exc)
+            class ClientAccessError(Exception):
+                def __init__(self, exc, role_name, account_id, service, region):
+                    message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                    logger.warning(message)
+                    super().__init__(message)
 
             def lambda_handler(event, context):
                 logger.info(f"Incoming event: {event}")
                 key = "Type"
                 try:
                     accounts = main(event[key], MANAGEMENT_ACCOUNT_IDS, ROLE_NAME)
-                    
+
                 except KeyError as exc:
-                    logger.error(f"Lambda event parameter '{key}' not defined (fatal)")
-                    raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter in {MODULE_NAME} module")
-                    
-                except CidError as exc:
-                    logger.error(f"CID error: {exc} (fatal)")
-                    raise RuntimeError(f"(CidError) in {MODULE_NAME} module")
-                    
+                    raise CidCriticalError(f"(MissingParameterError) Lambda event missing '{key}' parameter in {MODULE_NAME} module", exc)
+                except CidNonCriticalError as exc:
+                    pass
+                except CidCriticalError as exc:
+                    raise exc
                 except Exception as exc:
-                    logger.error(f"Unhandled {type(exc).__name__} exception: {exc}")
-                    raise RuntimeError(f"(UnhandledExceptionError) in {MODULE_NAME} module")
-                    
+                    raise CidCriticalError(f"(UnhandledExceptionError) in {MODULE_NAME} module", exc)
+
                 return {
                     'statusCode': 200,
                     'accountList': accounts
@@ -125,17 +134,17 @@ Resources:
                                 if account['Status'] != 'ACTIVE':
                                     logger.info(f"Account {account['Id']} is not active")
                                     continue
-                                account_data = {'account_id': account.get('Id'), 'account_name': account.get('Name'), 'payer_id': payer_id, } 
+                                account_data = {'account_id': account.get('Id'), 'account_name': account.get('Name'), 'payer_id': payer_id, }
                                 account_list.append({"account" : json.dumps(account_data)})
-                        except CidNonFatalError as exc:
-                            logger.warning(f"Payer account '{payer_id}' encountered access issues")
+                        except CidNonCriticalError as exc:
+                            pass #Not necessarily fatal
                     else:
                         account_data = populate_account(payer_id, payer_id, payer_id)
                         account_list.append({"account" : json.dumps(account_data)})
 
                 if len(account_list) == 0:
-                    raise CidFatalError("No accounts were collected")
-                
+                    raise CidCriticalError("No accounts were collected")
+
                 logger.info(f"Successfully found {len(account_list)} accounts")
                 logger.debug(f"Successfully found accounts: {json.dumps(account_list)}")
                 return account_list
@@ -147,9 +156,10 @@ Resources:
                     for page in client.get_paginator("list_accounts").paginate():
                         for account in page['Accounts']:
                             yield account
-                            
-                except CidNonFatalError as e:
-                    raise e
+
+                except ClientAccessError as exc:
+                    raise CidNonCriticalError(f"Payer account '{payer_id}' encountered access issues when iterating accounts", exc)
+
 
             def populate_account(account_id, account_name, payer_id):
                 return { 'account_id': account_id, 'account_name': account_name, 'payer_id': payer_id, }
@@ -161,7 +171,7 @@ Resources:
                         RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
                         RoleSessionName="data_collection"
                     )['Credentials']
-                    logger.debug(f"Successfully assumed role, now getting client")
+                    logger.debug("Successfully assumed role, now getting client")
                     client = boto3.client(
                         service,
                         region_name = region,
@@ -169,18 +179,11 @@ Resources:
                         aws_secret_access_key=credentials['SecretAccessKey'],
                         aws_session_token=credentials['SessionToken'],
                     )
-                    logger.debug(f"Successfully got client with assumed role")
+                    logger.debug("Successfully got client with assumed role")
                     return client
-                    
-                except BotoCoreError as e:
-                    raise get_non_fatal_exception(e, f"BotoCore exception: '{e}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'", "(BotoCore) exception")    
 
-                except ClientError as e:
-                    raise get_non_fatal_exception(e, f"(BotoCoreClient) exception: '{e}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'", "(BotoCoreClient) exception")    
-
-            def get_non_fatal_exception(e, log_msg, e_msg):
-                logger.warning(log_msg)
-                return CidNonFatalError(e_msg)
+                except Exception as exc:
+                    raise ClientAccessError(exc, role_name, account_id, service, region)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600

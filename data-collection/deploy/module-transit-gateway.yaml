@@ -30,6 +30,9 @@ Parameters:
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  RegionsInScope:
+    Type: String
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -117,6 +120,7 @@ Resources:
           prefix = os.environ["PREFIX"]
           role_name = os.environ['ROLENAME']
           local_file = "/tmp/data.json"
+          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -145,7 +149,11 @@ Resources:
                   logger.info(f"Collecting data for account: {account_id}")
 
                   session = assume_session(account_id)
-                  ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
+                  if len(REGIONS) > 0:
+                      ec2_regions = REGIONS
+                      logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
+                  else:
+                      ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
                   svc_regions = boto3.Session().get_available_regions('ec2')
                   regions = list(set(ec2_regions).intersection(svc_regions))
 
@@ -248,6 +256,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+          REGIONS: !Ref RegionsInScope
     Metadata:
       cfn_nag:
         rules_to_suppress:

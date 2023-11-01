@@ -27,25 +27,32 @@ Parameters:
   RolePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  RegionsInScope:
+    Type: String
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
   AwsServices:
     Type: CommaDelimitedList
-    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan
+    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, RegionNames
     Description: Services for pulling price data
-  FilterRegions:
-    Type: String
-    Default: ''
-    Description: Comma Separated Region Filter. If empty, will pull all available regions. If provided, only certain regions data will be collected
   CodeBucket:
     Type: String
     Description: S3 Bucket that exists and holds code
-    
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
 Mappings:
   ServicesMap:
     AmazonRDS:
       path: rds
+      partition:
+          - { Name: region, Type: string }
       fields:
           - { Type: string, Name: sku }
           - { Type: string, Name: offertermcode }
@@ -103,6 +110,8 @@ Mappings:
           - { Type: string, Name: engine media type }
     AmazonEC2:
       path: ec2
+      partition:
+          - { Name: region, Type: string }
       fields:
           - { Type: string, Name: sku }
           - { Type: string, Name: offertermcode }
@@ -195,9 +204,10 @@ Mappings:
           - { Type: string, Name: instance capacity - 10xlarge }
           - { Type: string, Name: instance capacity - medium }
           - { Type: string, Name: to region code }
-
     AmazonElastiCache:
       path: elasticache
+      partition:
+          - { Name: region, Type: string }
       fields:
           - { Type: string, Name: sku }
           - { Type: string, Name: offertermcode }
@@ -230,9 +240,10 @@ Mappings:
           - { Type: string, Name: region code }
           - { Type: string, Name: servicename }
           - { Type: string, Name: compute type }
-
     AmazonES:
       path: opensearch
+      partition:
+          - { Name: region, Type: string }
       fields:
           - { Type: string, Name: sku }
           - { Type: string, Name: offertermcode }
@@ -267,6 +278,8 @@ Mappings:
           - { Type: string, Name: compute type }
     AWSComputeSavingsPlan:
       path: computesavingsplan
+      partition:
+          - { Name: region, Type: string }
       fields:
           - { Type: string, Name: sku }
           - { Type: string, Name: ratecode }
@@ -290,6 +303,16 @@ Mappings:
           - { Type: string, Name: location type }
           - { Type: string, Name: granularity }
           - { Type: string, Name: product family }
+    RegionNames:
+      path: regionnames
+      partition:
+          - { Name: partition, Type: string }
+      fields:
+          - { Type: string, Name: region }
+          - { Type: string, Name: regionname }
+          - { Type: string, Name: endpoint }
+          - { Type: string, Name: protocol }
+
 
 Resources:
   LambdaRole:
@@ -318,14 +341,20 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-        - PolicyName: "StartCrawler"
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+        - PolicyName: "SSM"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${RolePrefix}${CFDataName}-*"
+                  - "ssm:GetParameter"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*/longName"
+
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -341,8 +370,6 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          # Author Stephanie Gooch 2021 and Iakov Gan 2023
-          # Please reachout to costoptimization@amazon.com if there's any comments or suggestions
           import os
           import json
           import urllib3
@@ -355,26 +382,14 @@ Resources:
 
           OFFERS_URL = 'https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/index.json'
           BASE_URL = '/'.join(OFFERS_URL.split('/')[:3])
-          SERVICES = {
-              'AmazonRDS',
-              'AmazonEC2',
-              'AmazonElastiCache',
-              'AmazonES',
-              'AWSComputeSavingsPlan',
-          }
           CODE_BUCKET = os.environ['CODE_BUCKET']
           BUCKET_NAME = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["DEST_PREFIX"]
-          FILTER_REGIONS = [r.strip() for r in os.environ["FILTER_REGIONS"].split(',') if r]
+          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
+          TMP_FILE = "/tmp/data.json"
 
           def get_json(url):
               return json.loads(urllib3.PoolManager().request('GET', url).data)
-
-          def start_crawler(name):
-              try:
-                  boto3.client('glue').start_crawler(Name=name)
-              except Exception as exc:
-                  logger.warning(exc)
 
           def upload_pricing(service, path):
               s3 = boto3.client('s3')
@@ -383,7 +398,7 @@ Resources:
 
               errors = ''
 
-              logger.debug(f'list regional pricing for {service}')
+              logger.info(f'Getting regional pricing for {service}')
               try:
                   if service == 'AWSComputeSavingsPlan':
                       url = offers['AmazonEC2']['currentSavingsPlanIndexUrl']
@@ -397,14 +412,14 @@ Resources:
                       'statusCode': 500,
                       'errors': err,
                   }
-              logger.debug(json.dumps(regions))
+              logger.debug(f"Regions {json.dumps(regions)}")
               if isinstance(regions, dict): # pricing data has different formats
                   regions = regions.values()
 
               # pull pricing for each region
               for region in regions:
                   region_code = region["regionCode"]
-                  if FILTER_REGIONS and (region_code not in FILTER_REGIONS):
+                  if REGIONS and (region_code not in REGIONS):
                       logger.debug(f'Filtering out {region_code}')
                       continue
                   try:
@@ -420,7 +435,7 @@ Resources:
                           file_obj.readline()
 
                       # Upload
-                      key = f"pricing/{path}-pricing/region={region_code}/index.csv"
+                      key = f"pricing/pricing-{path}-data/region={region_code}/index.csv"
                       res = s3.upload_fileobj(Fileobj=file_obj, Bucket=BUCKET_NAME, Key=key)
                       logger.debug(f'{res} Uploaded to s3://{BUCKET_NAME}/{key}')
                   except Exception as exc:
@@ -443,21 +458,43 @@ Resources:
               )
               print(f'added file {dest_key}')
 
+          def process_region_list(regions):
+              logger.info(f"Processing region list {regions}")
+              ssm_client = boto3.client('ssm')
+              lines = []
+              for region in regions:
+                  long_name = ssm_client.get_parameter(Name=f"/aws/service/global-infrastructure/regions/{region}/longName")["Parameter"]["Value"]
+                  lines.append(",".join([region,long_name,f"rds.{region}.amazonaws.com","HTTPS"]))
+
+              with open(TMP_FILE, "w") as f:
+                  f.write("Region,Long Name,Endpoint,Protocol\n")
+                  f.write("\n".join(lines))
+
+              # Upload
+              key = f"pricing/pricing-regionnames-data/pricing_region_names/pricing_region_names.csv"
+              res = boto3.client('s3').upload_file(TMP_FILE, Bucket=BUCKET_NAME, Key=key)
+              logger.info(f"Uploaded pricing_region_names")
+              return {
+                  'statusCode': 200
+              }
 
           def lambda_handler(event, context):
-              print('event:' + str(event))
+              logger.info(f"Incoming event: {event}")
               try:
                   service = event['service']
                   path = event['path']
-                  crawler = event['crawler']
-              except Exception:
-                  print('please provide service, path and crawler')
-                  print('ex: {"service": "AmazonElastiCache", "path": "elasticache", "crawler": "WA-pricing-AmazonElastiCache-Crawler"}')
+              except Exception as exc:
+                  logger.error('please provide service and path')
+                  raise Exception(f'({type(exc).__name__}) raised. Please provide service and path parameters.')
+
+              if service == "RegionNames":
+                  res = process_region_list(REGIONS)
                   return {
-                      'statusCode': 500,
-                      'body': {service: 'wrong payload'}
+                      'statusCode': 200,
+                      'body': {service: res}
                   }
-              res = upload_pricing(service, path)
+              else:
+                  res = upload_pricing(service, path)
 
               # FIXME: move it to separate lambda?
               try:
@@ -468,13 +505,10 @@ Resources:
               except Exception as exc:
                   res['errors'] += f'rds_graviton_mapping: {exc}'
 
-              start_crawler(crawler)
-
               return {
                   'statusCode': 200,
                   'body': {service: res}
               }
-
       Handler: 'index.lambda_handler'
       MemorySize: 2880
       Timeout: 600
@@ -484,7 +518,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           CODE_BUCKET: !Ref CodeBucket
           DEST_PREFIX: !Ref CFDataName
-          FILTER_REGIONS: !Ref FilterRegions
+          REGIONS: !Ref RegionsInScope
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -492,29 +526,6 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 # Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
-
-  LambdaScheduleRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - scheduler.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      Policies:
-        - PolicyName: InvokeLambda
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource:
-                  - !GetAtt LambdaFunction.Arn
 
   'Fn::ForEach::Service':
     - AwsService
@@ -529,17 +540,134 @@ Resources:
           FlexibleTimeWindow:
             Mode: 'OFF'
           Target:
-            Arn: !GetAtt LambdaFunction.Arn
-            RoleArn: !GetAtt LambdaScheduleRole.Arn
-            Input:
-              Fn::Sub:
-                - |
-                  {
-                    "service": "${AwsService}",
-                    "path": "${path}",
-                    "crawler": "${RolePrefix}${CFDataName}-${AwsService}-Crawler"
+            Arn: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${RolePrefix}${CFDataName}-${AwsService}-StateMachine'
+            RoleArn: !Ref SchedulerExecutionRoleARN
+
+      'ModuleStepFunction${AwsService}':
+        Type: AWS::StepFunctions::StateMachine
+        Properties:
+          StateMachineName: !Sub '${RolePrefix}${CFDataName}-${AwsService}-StateMachine'
+          StateMachineType: STANDARD
+          RoleArn: !Ref StepFunctionExecutionRoleARN
+          DefinitionString: |
+            {
+              "Comment": "Orchestrate the collection of pricing data",
+              "StartAt": "PricingCollectorInvoke",
+              "States": {
+                "PricingCollectorInvoke": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Parameters": {
+                    "Payload": {
+                      "service": "${Service}",
+                      "path": "${Path}"
+                    },
+                    "FunctionName": "arn:aws:lambda:us-east-1:317256447485:function:${Prefix}pricing-Lambda"
+                  },
+                  "Retry": [
+                    {
+                      "ErrorEquals": [
+                        "Lambda.ServiceException",
+                        "Lambda.AWSLambdaException",
+                        "Lambda.SdkClientException",
+                        "Lambda.TooManyRequestsException"
+                      ],
+                      "IntervalSeconds": 2,
+                      "MaxAttempts": 6,
+                      "BackoffRate": 2
+                    }
+                  ],
+                  "Next": "CrawlerMap",
+                  "ResultSelector": {
+                    "crawlers": [${Crawlers}]
                   }
-                - path: !FindInMap [ServicesMap, !Ref AwsService, path]
+                },
+                "CrawlerMap": {
+                  "Type": "Map",
+                  "ItemProcessor": {
+                    "ProcessorConfig": {
+                      "Mode": "INLINE"
+                    },
+                    "StartAt": "GetCrawler",
+                    "States": {
+                      "GetCrawler": {
+                        "Type": "Task",
+                        "Parameters": {
+                          "Name.$": "$"
+                        },
+                        "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "BackoffRate": 2,
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 8
+                          }
+                        ],
+                        "Next": "IsRunning?",
+                        "OutputPath": "$.Crawler"
+                      },
+                      "IsRunning?": {
+                        "Type": "Choice",
+                        "Choices": [
+                          {
+                            "Or": [
+                              {
+                                "Variable": "$.State",
+                                "StringEquals": "RUNNING"
+                              },
+                              {
+                                "Variable": "$.State",
+                                "StringEquals": "STOPPING"
+                              }
+                            ],
+                            "Next": "WaitForCrawler"
+                          }
+                        ],
+                        "Default": "StartCrawler",
+                        "OutputPath": "$"
+                      },
+                      "WaitForCrawler": {
+                        "Type": "Wait",
+                        "Seconds": 30,
+                        "Next": "GetCrawler",
+                        "OutputPath": "$.Name",
+                        "InputPath": "$"
+                      },
+                      "StartCrawler": {
+                        "Type": "Task",
+                        "Parameters": {
+                          "Name.$": "$"
+                        },
+                        "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+                        "Retry": [
+                          {
+                            "ErrorEquals": [
+                              "States.ALL"
+                            ],
+                            "BackoffRate": 2,
+                            "IntervalSeconds": 1,
+                            "MaxAttempts": 8
+                          }
+                        ],
+                        "End": true,
+                        "InputPath": "$.Name"
+                      }
+                    }
+                  },
+                  "ItemsPath": "$.crawlers",
+                  "End": true
+                }
+              },
+              "TimeoutSeconds": 1200
+            }
+          DefinitionSubstitutions:
+            Service: !Ref AwsService
+            Path: !FindInMap [ServicesMap, !Ref AwsService, path]
+            Prefix: !Ref RolePrefix
+            Crawlers: !Sub '"${RolePrefix}${CFDataName}-${AwsService}-Crawler"'
 
       'PricingCrawler${AwsService}':
         Type: AWS::Glue::Crawler
@@ -554,7 +682,7 @@ Resources:
             S3Targets:
               - Path:
                   Fn::Sub:
-                    - "s3://${DestinationBucket}/${CFDataName}/${path}-pricing/"
+                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
                     - path: !FindInMap [ServicesMap, !Ref AwsService, path]
           Configuration: |
             {
@@ -576,7 +704,7 @@ Resources:
           TableInput:
             Name:
               Fn::Sub:
-                - '${path}_pricing' # note '_' not '-'
+                - 'pricing_${path}_data' # note '_' not '-'
                 - path: !FindInMap [ServicesMap, !Ref AwsService, path]
             Owner: owner
             Retention: 0
@@ -587,14 +715,13 @@ Resources:
               classification: csv
               skip.header.line.count: '1'
               UPDATED_BY_CRAWLER: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Crawler'
-            PartitionKeys:
-              - { Name: region, Type: string }
+            PartitionKeys: !FindInMap [ServicesMap, !Ref AwsService, partition]
             StorageDescriptor:
               Columns: !FindInMap [ServicesMap, !Ref AwsService, fields]
               InputFormat: org.apache.hadoop.mapred.TextInputFormat
               Location:
                 Fn::Sub:
-                  - "s3://${DestinationBucket}/${CFDataName}/${path}-pricing/"
+                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
                   - path: !FindInMap [ServicesMap, !Ref AwsService, path]
               OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
               SerdeInfo:
