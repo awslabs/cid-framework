@@ -257,6 +257,22 @@ Resources:
           - id: W35 #S3 Bucket should have access logging configured
             reason: "The bucket is used with Athena and logging can be extensive."
 
+  S3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Bucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowSSLRequestsOnly
+            Action: s3:*
+            Effect: Deny
+            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Principal: "*"
+
   GlueDatabase:
     Type: "AWS::Glue::Database"
     Properties:
@@ -523,7 +539,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule

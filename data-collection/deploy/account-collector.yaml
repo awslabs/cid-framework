@@ -73,8 +73,9 @@ Resources:
             import os
             import json
             import logging
-
             import boto3
+            from botocore.exceptions import BotoCoreError
+            from botocore.exceptions import ClientError
 
             ROLE_NAME = os.environ['ROLENAME']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
