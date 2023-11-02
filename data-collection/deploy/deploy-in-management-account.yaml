@@ -167,10 +167,10 @@ Resources:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}account-collector-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-organization"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-compute-optimizer"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-cost-anomaly"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}Lambda-Role-cost-explorer-rightsizing"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}organizations-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}compute-optimizer-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}cost-anomaly-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}cost-explorer-rightsizing-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:

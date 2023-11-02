@@ -74,7 +74,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}" # Need to assume a Read role in all Accounts
+                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
         - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -95,8 +95,8 @@ Resources:
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.8
-      Architectures: [arm64]
+      Runtime: python3.10
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           import os
@@ -123,7 +123,7 @@ Resources:
             }
           )
 
-          logger = logging.getLogger()
+          logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           def lambda_handler(event, context):
@@ -240,6 +240,7 @@ Resources:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "LINKED"
         Params: ''
 
   ModuleRefreshSchedule:

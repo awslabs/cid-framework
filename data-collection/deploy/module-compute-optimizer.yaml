@@ -39,10 +39,24 @@ Parameters:
     AllowedValues: ["yes", "no"]
     Default: 'yes'
     Description: Include Member Accounts or not. Set to 'yes' when working with payer 
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
 Outputs:
-  LambdaARN:
-    Description: Lambda Arn
-    Value: !GetAtt LambdaTriggerExport.Arn
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
 Resources:
   StackSetAdminRole:
     Type: AWS::IAM::Role
@@ -280,7 +294,7 @@ Resources:
   LambdaTriggerExportRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
+      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -290,17 +304,17 @@ Resources:
               Service:
                 - lambda.amazonaws.com
         Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "Assume-Management-${CFDataName}-Account-Role"
+        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
                 Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -312,14 +326,8 @@ Resources:
     Properties:
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Trigger-Export'
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
-      Handler: index.lambda_handler
-      Runtime: python3.9
-      MemorySize: 2688
-      Timeout: 300
-      Role:
-        Fn::GetAtt:
-          - LambdaTriggerExportRole
-          - Arn
+      Runtime: python3.10
+      Architectures: [x86_64]
       Environment:
         Variables:
           REGIONS: !Ref DeployRegions
@@ -330,7 +338,9 @@ Resources:
       Code:
         ZipFile: |
           import os
+          import json
           import boto3
+          import logging
           from datetime import date
 
           BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
@@ -338,59 +348,71 @@ Resources:
           REGIONS = os.environ["REGIONS"]
           ROLE_NAME = os.environ['ROLE_NAME']
 
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
           def lambda_handler(event, context):
+              logger.info(f"Event data {json.dumps(event)}")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
               today = date.today()
               year = today.year
               month = today.month
 
-              MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-              for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  try:
-                      ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE_NAME}"
-                      sts_connection = boto3.client('sts')
-                      acct_b = sts_connection.assume_role(RoleArn=ROLE_ARN, RoleSessionName="data_collection")
+              account = json.loads(event["account"])
+              payer_id = account["account_id"]
+              try:
+                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE_NAME}"
+                  sts_connection = boto3.client('sts')
+                  acct_b = sts_connection.assume_role(RoleArn=ROLE_ARN, RoleSessionName="data_collection")
 
-                      account_b_creds = {
-                        "aws_access_key_id":     acct_b['Credentials']['AccessKeyId'],
-                        "aws_secret_access_key": acct_b['Credentials']['SecretAccessKey'],
-                        "aws_session_token":     acct_b['Credentials']['SessionToken'],
+                  account_b_creds = {
+                    "aws_access_key_id":     acct_b['Credentials']['AccessKeyId'],
+                    "aws_secret_access_key": acct_b['Credentials']['SecretAccessKey'],
+                    "aws_session_token":     acct_b['Credentials']['SessionToken'],
+                  }
+
+                  acc = boto3.client("sts", **account_b_creds).get_caller_identity()["Account"]
+
+                  result_messages = []
+                  error_messages = []
+                  for region in [r.strip() for r in REGIONS.split(',')]:
+                      # create service client using the assumed role credentials
+                      co = boto3.client("compute-optimizer", region_name=region, **account_b_creds)
+                      export_funcs = {
+                          'ec2_instance': co.export_ec2_instance_recommendations,
+                          'auto_scale':   co.export_auto_scaling_group_recommendations,
+                          'lambda':       co.export_lambda_function_recommendations,
+                          'ebs_volume':   co.export_ebs_volume_recommendations,
+                          'ecs_service':  co.export_ecs_service_recommendations,
                       }
-
-                      acc = boto3.client("sts", **account_b_creds).get_caller_identity()["Account"]
-
-                      result_messages = []
-                      error_messages = []
-                      for region in [r.strip() for r in REGIONS.split(',')]:
-                          # create service client using the assumed role credentials
-                          co = boto3.client("compute-optimizer", region_name=region, **account_b_creds)
-                          export_funcs = {
-                              'ec2_instance': co.export_ec2_instance_recommendations,
-                              'auto_scale':   co.export_auto_scaling_group_recommendations,
-                              'lambda':       co.export_lambda_function_recommendations,
-                              'ebs_volume':   co.export_ebs_volume_recommendations,
-                              'ecs_service':  co.export_ecs_service_recommendations,
-                          }
-                          bkt = BUCKET_PREFIX + '-' + region
-                          print(f"INFO: bucket={bkt}")
-                          for name, func in export_funcs.items():
-                              try:
-                                  res = func(
-                                      includeMemberAccounts=INCLUDE_MEMBER_ACCOUNTS,
-                                      s3DestinationConfig={'bucket': bkt, 'keyPrefix': f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year={year}/month={month}'}
-                                  )
-                                  result_messages.append(f"{region} {name} export queued. JobId: {res['jobId']}")
-                              except Exception as exc:
-                                  if 'LimitExceededException' in str(exc):
-                                      result_messages.append(f"{region} {name} export is already in progress.")
-                                  else:
-                                      error_messages.append(f"ERROR: {region} {name} - {exc}")
-                      if result_messages:
-                          print("Success:\n"+"\n".join(result_messages))
-                      if error_messages:
-                          raise Exception(f"There were {len(error_messages)} errors, out of {len(result_messages) + len(error_messages)} exports: \n" + "\n".join(error_messages))
-                  except Exception as e:
-                      print(payer_id, type(e), e)
-                      continue
+                      bkt = BUCKET_PREFIX + '-' + region
+                      logger.info(f"INFO: bucket={bkt}")
+                      for name, func in export_funcs.items():
+                          try:
+                              res = func(
+                                  includeMemberAccounts=INCLUDE_MEMBER_ACCOUNTS,
+                                  s3DestinationConfig={'bucket': bkt, 'keyPrefix': f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year={year}/month={month}'}
+                              )
+                              result_messages.append(f"{region} {name} export queued. JobId: {res['jobId']}")
+                          except Exception as exc:
+                              if 'LimitExceededException' in str(exc):
+                                  result_messages.append(f"{region} {name} export is already in progress.")
+                              else:
+                                  error_messages.append(f"ERROR: {region} {name} - {exc}")
+                  if result_messages:
+                      logger.info("Success:\n"+"\n".join(result_messages))
+                  if error_messages:
+                      raise Exception(f"There were {len(error_messages)} errors, out of {len(result_messages) + len(error_messages)} exports: \n" + "\n".join(error_messages))
+              except Exception as e:
+                  logger.info(payer_id, type(e), e)
+      Handler: index.lambda_handler
+      MemorySize: 2688
+      Timeout: 300
+      Role: !GetAtt LambdaTriggerExportRole.Arn
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -399,34 +421,40 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
     Properties:
-      Description: !Sub "Scheduler-For-${RolePrefix}${CFDataName}"
-      Name: !Sub "Scheduler-For-${RolePrefix}${CFDataName}"
+      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaTriggerExport.Arn
+        Crawlers: '[]'
+        CollectionType: "Payers"
+        Params: ''
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
-      Targets:
-        - Arn:
-            Fn::GetAtt:
-              - LambdaTriggerExport
-              - Arn
-          Id: TriggerForGetAccounts
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaTriggerExport.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+
   CustomResourceFunctionFinalize:
     Type: AWS::Lambda::Function
     Properties:
       Role: !GetAtt 'FinalizeLambdaExecutionRole.Arn'
       FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-FinalizeSetup-DoNotRun'
       Description: "Lambda to Finalize Setup (call trigger lambda) or Start teardown (Cleanup buckets)"
-      Runtime: python3.8
+      Runtime: python3.10
       Architectures: [ arm64 ]
       Code:
         ZipFile: |
@@ -436,13 +464,17 @@ Resources:
           import boto3
           import botocore
           import urllib3
+          import logging
 
           REGIONS = os.environ['REGIONS'].replace(' ', '').split(',')
           BUCKET_PREFIX = os.environ['BUCKET_PREFIX']
           LAMBDA_ARN = os.environ['TRIGGER_LAMBDA']
 
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
           def lambda_handler(event, context):
-              print(event)
+              logger.info(event)
               type_ = event.get('RequestType', 'Undef')
               if type_ == 'Create': res = on_create()
               elif type_ == 'Delete': res = on_delete()
@@ -459,15 +491,15 @@ Resources:
               body['LogicalResourceId'] = event.get('LogicalResourceId')
               body['NoEcho'] = False
               body['Data'] = response_data
-              print(body)
+              logger.info(body)
               if not url: return
               json_body=json.dumps(body)
               try:
                   http = urllib3.PoolManager()
                   response = http.request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  print(f"Status code: {response}" )
+                  logger.info(f"Status code: {response}" )
               except Exception as exc:
-                  print("send(..) failed executing requests.put(..): " + str(exc))
+                  logger.info("send(..) failed executing requests.put(..): " + str(exc))
 
           def on_create():
               try:
@@ -498,7 +530,7 @@ Resources:
                           log.append(f'ERROR: {name} - {errcode}')
                   except Exception as exc:
                       log.append(f'ERROR: {name} Error: {exc}')
-              print('\n'.join(log))
+              logger.info('\n'.join(log))
               return (True, '\n'.join(log))
       Handler: 'index.lambda_handler'
       MemorySize: 2688
@@ -551,6 +583,7 @@ Resources:
                 Resource: !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}-*'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
   FinalizeSetup:
     DependsOn:
       - LambdaTriggerExport
@@ -559,6 +592,7 @@ Resources:
     Type: Custom::CustomResource
     Properties:
       ServiceToken: !GetAtt CustomResourceFunctionFinalize.Arn
+
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
