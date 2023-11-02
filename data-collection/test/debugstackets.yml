@@ -12,7 +12,7 @@ Resources:
   ExecutionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: ODC-ComputeOptimizer-StackSetExecutionRole
+      RoleName: CID-DC-ComputeOptimizer-StackSetExecutionRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -40,7 +40,7 @@ Resources:
               - sts:AssumeRole
       Path: /
       Policies:
-        - PolicyName: AssumeRole-ODC-ComputeOptimizer-StackSetExecutionRole
+        - PolicyName: AssumeRole-CID-DC-ComputeOptimizer-StackSetExecutionRole
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -48,4 +48,4 @@ Resources:
                 Action:
                   - sts:AssumeRole
                 Resource:
-                  - "arn:*:iam::*:role/ODC-ComputeOptimizer-StackSetExecutionRole"
+                  - "arn:*:iam::*:role/CID-DC-ComputeOptimizer-StackSetExecutionRole"

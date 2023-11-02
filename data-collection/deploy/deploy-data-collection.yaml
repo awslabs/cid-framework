@@ -91,7 +91,24 @@ Mappings:
   CodeTemplates:
     StepFunction:
       code: |
-        {"Comment": "Orchestrate the collection of cost optimization data","StartAt": "AccountCollectorInvoke","States": {"AccountCollectorInvoke": {"Type": "Task","Resource": "arn:aws:states:::lambda:invoke","Parameters": {"Payload": {"Type": "${CollectionType}"},"FunctionName": "${AccountCollectorLambdaARN}"},"Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException","Lambda.TooManyRequestsException"],"IntervalSeconds": 2,"MaxAttempts": 6,"BackoffRate": 2}],"Next": "AccountMap","ResultPath": "$.accountLambdaOutput"},"AccountMap": {"Type": "Map","ItemProcessor": {"ProcessorConfig": {"Mode": "INLINE"},"StartAt": "InvokeModuleLambda","States": {"InvokeModuleLambda": {"Type": "Task","Resource": "arn:aws:states:::lambda:invoke","OutputPath": "$.Payload","Parameters": {"Payload": {"account.$": "$.account","params": "${Params}"},"FunctionName": "${ModuleLambdaARN}"},"Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException","Lambda.TooManyRequestsException"],"IntervalSeconds": 2,"MaxAttempts": 6,"BackoffRate": 2}],"End": true}}},"ItemsPath": "$.accountLambdaOutput.Payload.accountList","Next": "CrawlerMap","ResultSelector": {"crawlers": ${Crawlers}}},"CrawlerMap": {"Type": "Map","ItemProcessor": {"ProcessorConfig": {"Mode": "INLINE"},"StartAt": "GetCrawler","States": {"GetCrawler": {"Type": "Task","Parameters": {"Name.$": "$"},"Resource": "arn:aws:states:::aws-sdk:glue:getCrawler","Retry": [{"ErrorEquals": ["States.ALL"],"BackoffRate": 2,"IntervalSeconds": 1,"MaxAttempts": 8,"JitterStrategy": "FULL"}],"Next": "IsRunning?","OutputPath": "$.Crawler"},"IsRunning?": {"Type": "Choice","Choices": [{"Or": [{"Variable": "$.State","StringEquals": "RUNNING"},{"Variable": "$.State","StringEquals": "STOPPING"}],"Next": "WaitForCrawler"}],"Default": "StartCrawler","OutputPath": "$"},"WaitForCrawler": {"Type": "Wait","Seconds": 30,"Next": "GetCrawler","OutputPath": "$.Name","InputPath": "$"},"StartCrawler": {"Type": "Task","Parameters": {"Name.$": "$"},"Resource": "arn:aws:states:::aws-sdk:glue:startCrawler","End": true,"InputPath": "$.Name","Retry": [{"ErrorEquals": ["States.ALL"],"BackoffRate": 2,"IntervalSeconds": 1,"MaxAttempts": 8,"JitterStrategy": "FULL"}]}}},"ItemsPath": "$.crawlers","End": true}},"TimeoutSeconds": 1200}
+        {
+          "Comment": "Orchestrate the collection of cost optimization data",
+          "StartAt": "AccountCollectorInvoke",
+          "States": {
+            "AccountCollectorInvoke": {"Type": "Task","Resource": "arn:aws:states:::lambda:invoke","Parameters": {"Payload": {"Type": "${CollectionType}"},"FunctionName": "${AccountCollectorLambdaARN}"},"Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException","Lambda.TooManyRequestsException"],"IntervalSeconds": 2,"MaxAttempts": 6,"BackoffRate": 2}],"Next": "AccountMap","ResultPath": "$.accountLambdaOutput"},
+
+            "AccountMap": {"Type": "Map","ItemProcessor": {"ProcessorConfig": {"Mode": "INLINE"},"StartAt": "InvokeModuleLambda",
+              "States": {
+                "InvokeModuleLambda": {"Type": "Task","Resource": "arn:aws:states:::lambda:invoke","OutputPath": "$.Payload","Parameters": {"Payload": {"account.$": "$.account","params": "${Params}"},"FunctionName": "${ModuleLambdaARN}"},"Retry": [{"ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException","Lambda.TooManyRequestsException"],"IntervalSeconds": 2,"MaxAttempts": 6,"BackoffRate": 2}],"End": true}}},"ItemsPath": "$.accountLambdaOutput.Payload.accountList","Next": "CrawlerMap","ResultSelector": {"crawlers": ${Crawlers}}},
+
+            "CrawlerMap": {"Type": "Map","ItemProcessor": {"ProcessorConfig": {"Mode": "INLINE"},"StartAt": "GetCrawler",
+              "States": {
+                "GetCrawler": {"Type": "Task","Parameters": {"Name.$": "$"},"Resource": "arn:aws:states:::aws-sdk:glue:getCrawler","Retry": [{"ErrorEquals": ["States.ALL"],"BackoffRate": 2,"IntervalSeconds": 1,"MaxAttempts": 8,"JitterStrategy": "FULL"}],"Next": "IsRunning?","OutputPath": "$.Crawler"},
+                "IsRunning?": {"Type": "Choice","Choices": [{"Or": [{"Variable": "$.State","StringEquals": "RUNNING"},{"Variable": "$.State","StringEquals": "STOPPING"}],"Next": "WaitForCrawler"}],"Default": "StartCrawler","OutputPath": "$"},
+                "WaitForCrawler": {"Type": "Wait","Seconds": 30,"Next": "GetCrawler","OutputPath": "$.Name","InputPath": "$"},
+                "StartCrawler": {"Type": "Task","Parameters": {"Name.$": "$"},"Resource": "arn:aws:states:::aws-sdk:glue:startCrawler","End": true,"InputPath": "$.Name","Retry": [{"ErrorEquals": ["States.ALL"],"BackoffRate": 2,"IntervalSeconds": 1,"MaxAttempts": 8,"JitterStrategy": "FULL"}]}}},"ItemsPath": "$.crawlers","End": true}
+          },"TimeoutSeconds": 1200
+        }
 
 Parameters:
   DestinationBucket:
@@ -126,8 +143,8 @@ Parameters:
     Default: optimization_data
   RolePrefix:
     Type: String
-    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
-    Default: "ODC-"
+    Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
+    Default: "CID-DC-"
   CFNTemplateSourceBucket:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
