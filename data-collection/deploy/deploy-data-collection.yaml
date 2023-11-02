@@ -387,7 +387,7 @@ Resources:
       Timeout: 15
       Environment:
         Variables:
-          WA_ANALYTICS_ENDPOINT: https://okakvoavfg.execute-api.eu-west-1.amazonaws.com/
+          CID_ANALYTICS_ENDPOINT: https://cid.workshops.aws.dev/adoption-tracking
       Code:
         ZipFile: |
           import os
@@ -396,7 +396,7 @@ Resources:
           import urllib3
           import boto3
 
-          endpoint = os.environ['WA_ANALYTICS_ENDPOINT']
+          endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
           account_id = boto3.client("sts").get_caller_identity()["Account"]
 
           def lambda_handler(event, context):
@@ -408,7 +408,7 @@ Resources:
                   name = event['ResourceProperties']['Name']
                   method = {'CREATE':'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(action)
                   via_key = {'CREATE':'created_via', 'UPDATE': 'updated_via', 'DELETE': 'deleted_via'}.get(action)
-                  payload = {'dashboard_id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
+                  payload = {'id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
                   r =  urllib3.PoolManager().request(method, endpoint, body=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
                   if r.status != 200:
                       raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored")
