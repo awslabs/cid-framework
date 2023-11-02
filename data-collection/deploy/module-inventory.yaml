@@ -550,7 +550,7 @@ Resources:
             region region_code
           , regionname
           FROM
-            optimization_data.regionnames_pricing
+            optimization_data.pricing_regionnames_data
         )  region ON (snapshots.region = region.region_code))
         LEFT JOIN (
           SELECT DISTINCT
@@ -567,7 +567,7 @@ Resources:
           , priceperunit
           , unit
           FROM
-            optimization_data.pricing_ec2
+            optimization_data.pricing_ec2_data
           WHERE ((("productfamily" = 'Storage Snapshot') AND (usagetype LIKE '%SnapshotUsage%')) AND ("locationtype" = 'AWS Region'))
         )  snap_unit_price ON (s.regionname = snap_unit_price.location))
 
@@ -589,7 +589,7 @@ Resources:
           SELECT
             region region_code
           , regionname
-          FROM optimization_data.regionnames_pricing
+          FROM optimization_data.pricing_regionnames_data
           )  region
           ON (inventory_ebs_data.region = region.region_code)
 
@@ -614,7 +614,7 @@ Resources:
             "region" "region_code"
           , regionname
           FROM
-            optimization_data.regionnames_pricing
+            optimization_data.pricing_regionnames_data
         )  region ON (inventory_ebs_data.region = region.region_code)
 
   AthenaEBSTAPricing:
@@ -654,7 +654,7 @@ Resources:
             , unit
             , "product family"
             FROM
-              optimization_data.pricing_ec2
+              optimization_data.pricing_ec2_data
             WHERE ("product family" = 'Storage')
           )  ebs_price ON ((inventory_ebs_view.volumetype = ebs_price."volume api name") AND (inventory_ebs_view.regionname = ebs_price.location)))
           LEFT JOIN (
@@ -666,7 +666,7 @@ Resources:
             , "product family"
             , usagetype
             FROM
-              optimization_data.pricing_ec2
+              optimization_data.pricing_ec2_data
             WHERE ((("Product Family" = 'System Operation') AND ("volume api name" IN ('io1', 'io2'))) AND ((usagetype LIKE '%EBS:VolumeP-IOPS.io2') OR (usagetype LIKE '%EBS:VolumeP-IOPS.piops')))
           )  ebs_iops_price ON ((inventory_ebs_view.volumetype = ebs_iops_price."volume api name") AND (inventory_ebs_view.regionname = ebs_iops_price.location)))
           ORDER BY volumeid DESC
@@ -694,8 +694,8 @@ Resources:
                     WHEN "volume api name" = 'gp3' AND unit = 'GiBps-mo' THEN 'gp3_GiBps-mo'
                     ELSE unit
                 END, priceperunit) kv1
-        FROM optimization_data.pricing_ec2
-        JOIN optimization_data.regionnames_pricing ON regionnames_pricing.regionname = pricing_ec2.location
+        FROM optimization_data.pricing_ec2_data
+        JOIN optimization_data.pricing_regionnames_data ON pricing_regionnames_data.regionname = pricing_ec2.location
         WHERE "volume api name" IN ('io1','io2','gp3','gp2')
         GROUP BY region
         ),
@@ -782,4 +782,4 @@ Resources:
       Description: Use as needed if queries were previously dependent upon pricing_region_names, which has been renamed for standardization
       Name: backward_compat_pricing_region_names
       QueryString: |
-        CREATE OR REPLACE VIEW pricing_region_names AS SELECT * FROM regionnames_pricing
+        CREATE OR REPLACE VIEW pricing_region_names AS SELECT * FROM optimization_data.pricing_regionnames_data
