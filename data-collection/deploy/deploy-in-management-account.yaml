@@ -8,7 +8,7 @@ Metadata:
         Parameters:
           - ManagementAccountRole
           - DataCollectionAccountID
-          - RolePrefix
+          - ResourcePrefix
       - Label:
           default: "Available modules"
         Parameters:
@@ -27,7 +27,7 @@ Metadata:
         default: "Management account role"
       DataCollectionAccountID:
         default: "Cost Account Id"
-      RolePrefix:
+      ResourcePrefix:
         default: "Role Prefix"
       IncludeBudgetsModule:
         default: "Include AWS Budgets Collection Module"
@@ -57,10 +57,10 @@ Parameters:
     Type: String
     Description: Name of role deployed into Management account to read high level data
     Default: "Lambda-Assume-Role-Management-Account"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
-    Default: "WA-"
+    Default: "CID-DC-"
   IncludeBudgetsModule:
     Type: String
     Description: Collects budgets from your accounts
@@ -153,7 +153,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${ManagementAccountRole}"
+      RoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -166,11 +166,11 @@ Resources:
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}account-collector-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}organizations-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}compute-optimizer-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}cost-anomaly-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}cost-explorer-rightsizing-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}account-collector-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}organizations-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}compute-optimizer-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-anomaly-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-explorer-rightsizing-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:

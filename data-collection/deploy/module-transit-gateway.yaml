@@ -27,9 +27,12 @@ Parameters:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  RegionsInScope:
+    Type: String
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -59,7 +62,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -98,7 +101,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -117,6 +120,7 @@ Resources:
           prefix = os.environ["PREFIX"]
           role_name = os.environ['ROLENAME']
           local_file = "/tmp/data.json"
+          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -145,7 +149,11 @@ Resources:
                   logger.info(f"Collecting data for account: {account_id}")
 
                   session = assume_session(account_id)
-                  ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
+                  if len(REGIONS) > 0:
+                      ec2_regions = REGIONS
+                      logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
+                  else:
+                      ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
                   svc_regions = boto3.Session().get_available_regions('ec2')
                   regions = list(set(ec2_regions).intersection(svc_regions))
 
@@ -248,6 +256,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+          REGIONS: !Ref RegionsInScope
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -259,7 +268,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -269,22 +278,26 @@ Resources:
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionString: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
         CollectionType: "LINKED"
         Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
@@ -292,7 +305,7 @@ Resources:
       Target:
           Arn: !GetAtt ModuleStepFunction.Arn
           RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${ResourcePrefix}${CFDataName}-Crawler"]}'
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
@@ -394,10 +407,10 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Provides a chargeback view of joined data from cloudwath and transigateway 
+      Description: Provides a chargeback view of joined data from cloudwath and transigateway
       Name: transit_gateway_chargeback_cw
       QueryString: !Sub
-        CREATE OR REPLACE VIEW "transit_gateway_chargeback_to_customer_final_results" AS 
+        CREATE OR REPLACE VIEW "transit_gateway_chargeback_to_customer_final_results" AS
         WITH
           summary AS (
             SELECT
@@ -407,7 +420,7 @@ Resources:
             FROM
               ${DatabaseName}.transit_gateway_data a
             LEFT JOIN ${DatabaseName}.transit_gateway_chargeback b ON a.customeraccount = b.line_item_usage_account_id AND a.year = b.year AND a.month = b.month
-            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29
+            GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30
             ORDER BY bytesIn DESC
           )
           SELECT

@@ -65,22 +65,27 @@ def test_inventory_ami_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_ami_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_ami_data is empty'
 
-
 def test_inventory_ebs_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_ebs_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_ebs_data is empty'
-
 
 def test_inventory_snapshot_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_snapshot_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_snapshot_data is empty'
 
+def test_inventory_ec2_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_ec2_instances_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory_ec2_data is empty'
+
+def test_inventory_vpc_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_vpc_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory_vpc_data is empty'
 
 def test_rds_usage_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_usage_data" LIMIT 10;')
     assert len(data) > 0, 'rds_usage_data is empty'
 
-def test_organization_data(athena):
+def test_organizations_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."organization_data" LIMIT 10;')
     assert len(data) > 0, 'organizations_data is empty'
 
@@ -108,6 +113,29 @@ def test_rds_db_instances_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_rds_db_instances_data" LIMIT 10;')
     assert len(data) > 0, 'rds_db_instances_data is empty'
 
+def test_pricing_computesavingsplan_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_computesavingsplan_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_computesavingsplan_data is empty'
+
+def test_pricing_ec2_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_ec2_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_ec2_data is empty'
+
+def test_pricing_elasticache_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_elasticache_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_elasticache_data is empty'
+
+def test_pricing_opensearch_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_opensearch_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_opensearch_data is empty'
+
+def test_pricing_rds_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_rds_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_rds_data is empty'
+
+def test_pricing_regionnames_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_regionnames_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_regionnames_data is empty'
 
 def test_compute_optimizer_export_triggered(compute_optimizer, start_time):
     jobs = compute_optimizer.describe_recommendation_export_jobs()['recommendationExportJobs']

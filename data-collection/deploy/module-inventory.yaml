@@ -27,9 +27,12 @@ Parameters:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  RegionsInScope:
+    Type: String
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -47,13 +50,8 @@ Parameters:
     Description: Common role for module Scheduler execution
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances
     Description: Services for pulling price data
-  FilterRegions:
-    Type: String
-    Default: ''
-    Description: Comma Separated Region Filter. If empty, will pull all available regions. If provided, only certain regions data will be collected,
-
 
 Mappings:
   ServicesMap:
@@ -69,13 +67,16 @@ Mappings:
       path: ami
     Snapshot:
       path: snapshot
-
+    Ec2Instances:
+      path: ec2-instances
+    VpcInstances:
+      path: vpc
 
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -114,7 +115,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda Function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -136,7 +137,10 @@ Resources:
           PREFIX = os.environ['PREFIX']
           BUCKET = os.environ["BUCKET_NAME"]
           ROLENAME = os.environ['ROLENAME']
-          FILTER_REGIONS = [r.strip() for r in os.environ["FILTER_REGIONS"].split(',') if r]
+          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
+          TRACKING_TAGS = os.environ.get("TRACKING_TAGS")
+          TAG_LIST = TRACKING_TAGS.split(",") if TRACKING_TAGS else []
+
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -165,25 +169,45 @@ Resources:
           @lru_cache(maxsize=10000)
           def enabled_regions(session):
               """list enabled regions"""
-              return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
+              if len(REGIONS) > 0:
+                  return set(REGIONS)
+                  logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
+              else:
+                  return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
 
           def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
               """ paginated scan """
               session = assume_session(account_id)
-              regions = set(session.get_available_regions(service)) & enabled_regions(session)
+              regions = REGIONS #set(session.get_available_regions(service)) & enabled_regions(session)
               obj_name = obj_name or function_name.split('_')[-1].capitalize()
+              obj_name_keys = obj_name.split(".")
+              logger.info(f"obj_name is {'simple' if len(obj_name_keys) == 1 else 'compound'}")
+              logger.info(f"Regions in scope {regions}")
               for region in regions:
-                  logger.info(f"Collecting {service}.{obj_name} in {region}")
+                  logger.info(f"Collecting in {region}")
                   client = session.client(service, region_name=region)
+                  logger.info(f"Working with result key {obj_name}")
                   try:
                       paginator = client.get_paginator(function_name)
                       for page in paginator.paginate(**(params or {})):
-                          for obj in page[obj_name]:
+                          objs = page
+                          for traversed_key in obj_name_keys:
+                              logger.debug(f"traversed_key = {traversed_key} for type {type(objs).__name__} with length {len(objs)}")
+                              if type(objs) == dict:
+                                  objs = objs[traversed_key]
+                                  logger.debug(f"Processed as dict, result type is {type(objs).__name__}")
+                              elif type(objs) == list and len(objs) > 0:
+                                  logger.debug(f"Processing as list, first pop is type {type(objs[0]).__name__}")
+                                  objs = objs[0][traversed_key]
+                                  logger.debug(f"Processed as list, applied key and result is type {type(objs).__name__}")
+                              if len(objs) == 0:
+                                  break
+                          logger.debug(f"Done traversing and resulting count is {len(objs)}")
+                          for obj in objs:
                               obj['region'] = region
-                              obj['accountid'] = account_id
                               yield obj
                   except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'scan {function_name}/{account_id}: {exc}')
+                      logger.info(f'Error in scan {function_name}/{account_id}: {exc}')
 
           def opensearch_domains_scan(account_id):
               """ special treatment for opensearch_scan """
@@ -192,6 +216,7 @@ Resources:
               regions = set(session.get_available_regions(service)) & enabled_regions(session)
 
               for region in regions:
+                  logger.info(f"Collecting in {region}")
                   client = session.client(service, region_name=region)
                   try:
                       domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
@@ -199,7 +224,6 @@ Resources:
                           domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
                           yield {
                               'region': region,
-                              'accountid': account_id,
                               'DomainName': domain['DomainName'],
                               'DomainId': domain['DomainId'],
                               'EngineVersion': domain['EngineVersion'],
@@ -213,6 +237,7 @@ Resources:
               """ this lambda collects ami, snapshots and volumes from linked accounts
               and must be called from the corresponding Step Function to orchestrate
               """
+              logger.info(f"Event data: {event}")
               if 'account' not in event or 'params' not in event  :
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
@@ -253,6 +278,18 @@ Resources:
                       service='ec2',
                       function_name='describe_snapshots',
                       params={'OwnerIds': ['self']}
+                  ),
+                  'ec2-instances': partial(
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_instances',
+                      obj_name='Reservations.Instances'
+                  ),
+                  'vpc': partial(
+                      paginated_scan,
+                      service='ec2',
+                      function_name='describe_vpcs',
+                      obj_name='Vpcs'
                   )
               }
 
@@ -261,13 +298,20 @@ Resources:
               payer_id = account["payer_id"]
               func = sub_modules[name]
               counter = 0
-              logger.info(f"\nCollecting {name} in account {account_id}")
+              logger.info(f"Collecting {name} for account {account_id}")
+              collection_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
                   with open(TMP_FILE, "w", encoding='utf-8') as file_:
                       for counter, obj in enumerate(func(account_id=account_id), start=1):
-                          logger.debug(obj)
+                          obj['accountid'] = account_id
+                          if len(TAG_LIST) > 0 and "Tags" in obj:
+                              logger.debug(f"Tags enabled and found tags {obj['Tags']}")
+                              for tag in obj["Tags"]:
+                                  if tag["Key"] in TAG_LIST:
+                                      obj[f"tag_{tag['Key']}"] = tag["Value"]
+                          obj['collection_date'] = collection_date
                           file_.write(to_json(obj) + "\n")
-                  logger.info(f"Collected {counter} {name} instances")
+                  logger.info(f"Collected {counter} total {name} instances")
                   upload_to_s3(name, account_id, payer_id)
               except Exception as exc:   #pylint: disable=broad-exception-caught
                   logger.info(f"{name}: {type(exc)} - {exc}" )
@@ -279,7 +323,7 @@ Resources:
                   return
               key =  datetime.now().strftime(
                   f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
-                  f"/year=%Y/month=%m/{account_id}-%d%m%Y-%H%M%S.json"
+                  f"/year=%Y/month=%m/{account_id}-%Y%m%d-%H%M%S.json"
               )
               s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
               try:
@@ -287,6 +331,7 @@ Resources:
                   logger.info(f"Data {account_id} in s3 - {BUCKET}/{key}")
               except Exception as exc:  #pylint: disable=broad-exception-caught
                   logger.info(exc)
+
 
       Handler: 'index.lambda_handler'
       MemorySize: 2688
@@ -297,7 +342,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
-          FILTER_REGIONS: !Ref FilterRegions
+          REGIONS: !Ref RegionsInScope
 
   'Fn::ForEach::Object':
     - AwsObject
@@ -305,7 +350,7 @@ Resources:
     - 'Crawler${AwsObject}':
         Type: AWS::Glue::Crawler
         Properties:
-          Name: !Sub '${RolePrefix}${CFDataName}-${AwsObject}-Crawler'
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler'
           Role: !Ref GlueRoleARN
           DatabaseName: !Ref DatabaseName
           Targets:
@@ -326,21 +371,25 @@ Resources:
       'StepFunction${AwsObject}':
         Type: AWS::StepFunctions::StateMachine
         Properties:
-          StateMachineName: !Sub '${RolePrefix}${CFDataName}-${AwsObject}-StateMachine'
+          StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-StateMachine'
           StateMachineType: STANDARD
           RoleArn: !Ref StepFunctionExecutionRoleARN
           DefinitionString: !Ref StepFunctionTemplate
           DefinitionSubstitutions:
             AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-            Crawlers: !Sub '["${RolePrefix}${CFDataName}-${AwsObject}-Crawler"]'
+            Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
             CollectionType: "LINKED"
             Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
+            Module: !Ref CFDataName
+            DeployRegion: !Ref AWS::Region
+            Account: !Ref AWS::AccountId
+            Prefix: !Ref ResourcePrefix
       'RefreshSchedule${AwsObject}':
         Type: AWS::Scheduler::Schedule
         Properties:
           Description: !Sub 'Scheduler for the ODC ${CFDataName} ${AwsObject} module'
-          Name: !Sub '${RolePrefix}${CFDataName}-${AwsObject}-RefreshSchedule'
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-RefreshSchedule'
           ScheduleExpression: !Ref Schedule
           State: ENABLED
           FlexibleTimeWindow:
@@ -404,9 +453,9 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Identifies snapshots connected to AMI's with CUR data 
+      Description: Identifies snapshots connected to AMI's with CUR data
       Name: inventory_snapshot_connected_to_ami_with_CUR
-      QueryString: | 
+      QueryString: |
           SELECT DISTINCT
             snapshotid
           , volume
@@ -457,7 +506,7 @@ Resources:
                 line_item_usage_account_id,
                 product_region,
                 split("line_item_resource_id", '/')[2]resource_id,
-                ${table_name}.month, 
+                ${table_name}.month,
                 ${table_name}.year,
                 SUM(CAST(line_item_usage_amount AS DOUBLE)) AS sum_line_item_usage_amount,
                 SUM(CAST(line_item_unblended_cost AS DECIMAL(16,8))) AS sum_line_item_unblended_cost
@@ -472,10 +521,10 @@ Resources:
               GROUP BY
                 bill_payer_account_id,
                 line_item_usage_account_id,
-                product_region, 
+                product_region,
                 "line_item_resource_id",month, year
               ORDER BY
-                sum_line_item_unblended_cost DESC, 
+                sum_line_item_unblended_cost DESC,
                 sum_line_item_usage_amount DESC
           ) as cur
           on snapshots.snapshotid = cur.resource_id
@@ -488,10 +537,10 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Identifies snapshots connected to AMI's with Pricing data 
+      Description: Identifies snapshots connected to AMI's with Pricing data
       Name: inventory_snapshot_connected_to_ami_with_pricing
       QueryString: |
-        CREATE OR REPLACE VIEW snapshot_ami_quicksight_view AS 
+        CREATE OR REPLACE VIEW snapshot_ami_quicksight_view AS
         SELECT *,
           CASE
             WHEN snap_ami_id = imageid THEN 'AMI Avalible'
@@ -522,10 +571,10 @@ Resources:
                 description,
                 state,
                 rootdevicetype,
-                virtualizationtype, 
-                month as ami_month, 
+                virtualizationtype,
+                month as ami_month,
                 year as ami_year
-              FROM optimization_data.inventory_ami_data) AS ami 
+              FROM optimization_data.inventory_ami_data) AS ami
             ON snapshots.snap_ami_id = ami.imageid and snapshots.month=ami.ami_month and snapshots.year = ami.ami_year
           )
           LEFT JOIN (
@@ -533,7 +582,7 @@ Resources:
             region region_code
           , regionname
           FROM
-            optimization_data.pricing_region_names
+            optimization_data.pricing_regionnames_data
         )  region ON (snapshots.region = region.region_code))
         LEFT JOIN (
           SELECT DISTINCT
@@ -550,7 +599,7 @@ Resources:
           , priceperunit
           , unit
           FROM
-            optimization_data.pricing_ec2
+            optimization_data.pricing_ec2_data
           WHERE ((("productfamily" = 'Storage Snapshot') AND (usagetype LIKE '%SnapshotUsage%')) AND ("locationtype" = 'AWS Region'))
         )  snap_unit_price ON (s.regionname = snap_unit_price.location))
 
@@ -558,10 +607,10 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Identifies snapshots connected to AMI's with Pricing data 
+      Description: Identifies snapshots connected to AMI's with Pricing data
       Name: inventory_ebs_with_ta_data
       QueryString: |
-        SELECT * 
+        SELECT *
         FROM optimization_data.inventory_ebs_data
         LEFT JOIN (
           SELECT "volume id","volume name", "volume type","volume size",status,	"monthly storage cost" ,accountid as taaccountid, category, region as taregion, year as tayear,month as tamonth
@@ -572,7 +621,7 @@ Resources:
           SELECT
             region region_code
           , regionname
-          FROM optimization_data.pricing_region_names
+          FROM optimization_data.pricing_regionnames_data
           )  region
           ON (inventory_ebs_data.region = region.region_code)
 
@@ -597,14 +646,14 @@ Resources:
             "region" "region_code"
           , regionname
           FROM
-            optimization_data.pricing_region_names
+            optimization_data.pricing_regionnames_data
         )  region ON (inventory_ebs_data.region = region.region_code)
 
   AthenaEBSTAPricing:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: Identifies snapshots connected to AMI's with Pricing data 
+      Description: Identifies snapshots connected to AMI's with Pricing data
       Name: inventory_ebs_with_ta_data_with_pricing
       QueryString: |
         CREATE OR REPLACE VIEW ebs_quicksight_view AS
@@ -637,7 +686,7 @@ Resources:
             , unit
             , "product family"
             FROM
-              optimization_data.pricing_ec2
+              optimization_data.pricing_ec2_data
             WHERE ("product family" = 'Storage')
           )  ebs_price ON ((inventory_ebs_view.volumetype = ebs_price."volume api name") AND (inventory_ebs_view.regionname = ebs_price.location)))
           LEFT JOIN (
@@ -649,7 +698,7 @@ Resources:
             , "product family"
             , usagetype
             FROM
-              optimization_data.pricing_ec2
+              optimization_data.pricing_ec2_data
             WHERE ((("Product Family" = 'System Operation') AND ("volume api name" IN ('io1', 'io2'))) AND ((usagetype LIKE '%EBS:VolumeP-IOPS.io2') OR (usagetype LIKE '%EBS:VolumeP-IOPS.piops')))
           )  ebs_iops_price ON ((inventory_ebs_view.volumetype = ebs_iops_price."volume api name") AND (inventory_ebs_view.regionname = ebs_iops_price.location)))
           ORDER BY volumeid DESC
@@ -677,8 +726,8 @@ Resources:
                     WHEN "volume api name" = 'gp3' AND unit = 'GiBps-mo' THEN 'gp3_GiBps-mo'
                     ELSE unit
                 END, priceperunit) kv1
-        FROM optimization_data.pricing_ec2
-        JOIN optimization_data.pricing_region_names ON pricing_region_names.regionname = pricing_ec2.location
+        FROM optimization_data.pricing_ec2_data
+        JOIN optimization_data.pricing_regionnames_data ON pricing_regionnames_data.regionname = pricing_ec2.location
         WHERE "volume api name" IN ('io1','io2','gp3','gp2')
         GROUP BY region
         ),
@@ -747,8 +796,8 @@ Resources:
                     WHEN volumetype = 'gp2' AND size > 170 THEN gp3_throughput_unit_cost * (250.0 - 125.0)
                 END AS gp3_throughput_cost
             FROM optimization_data.inventory_ebs_view
-            LEFT JOIN pivoted_ebs_pricedata ON pivoted_ebs_pricedata.region = inventory_ebs_view.region            
-            WHERE 
+            LEFT JOIN pivoted_ebs_pricedata ON pivoted_ebs_pricedata.region = inventory_ebs_view.region
+            WHERE
                 volumetype in('io1', 'io2', 'gp2')
                 and cast(iops as integer) < 16000 )
           SELECT
@@ -757,3 +806,12 @@ Resources:
               gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost AS gp3_total_cost,
               (current_gb_cost + current_iops_cost) - (gp3_gb_cost + gp3_iops_cost + gp3_throughput_cost) as gp3_saving
           FROM inventory_ebs_data
+
+  AthenaBackwardCompatPricingRegionNames:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: Use as needed if queries were previously dependent upon pricing_region_names, which has been renamed for standardization
+      Name: backward_compat_pricing_region_names
+      QueryString: |
+        CREATE OR REPLACE VIEW pricing_region_names AS SELECT * FROM optimization_data.pricing_regionnames_data
