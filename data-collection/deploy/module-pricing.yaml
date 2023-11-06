@@ -24,7 +24,7 @@ Parameters:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   RegionsInScope:
@@ -122,7 +122,7 @@ Mappings:
           - { Type: string, Name: startingrange }
           - { Type: string, Name: endingrange }
           - { Type: string, Name: unit }
-          - { Type: string, Name: priceperunit }
+          - { Type: double, Name: priceperunit }
           - { Type: string, Name: currency }
           - { Type: string, Name: product family }
           - { Type: string, Name: servicecode }
@@ -218,7 +218,7 @@ Mappings:
           - { Type: string, Name: startingrange }
           - { Type: string, Name: endingrange }
           - { Type: string, Name: unit }
-          - { Type: string, Name: priceperunit }
+          - { Type: double, Name: priceperunit }
           - { Type: string, Name: currency }
           - { Type: string, Name: leasecontractlength }
           - { Type: string, Name: purchaseoption }
@@ -254,7 +254,7 @@ Mappings:
           - { Type: string, Name: startingrange }
           - { Type: string, Name: endingrange }
           - { Type: string, Name: unit }
-          - { Type: string, Name: priceperunit }
+          - { Type: double, Name: priceperunit }
           - { Type: string, Name: currency }
           - { Type: string, Name: leasecontractlength }
           - { Type: string, Name: purchaseoption }
@@ -318,7 +318,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -364,7 +364,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -534,19 +534,19 @@ Resources:
         Type: 'AWS::Scheduler::Schedule'
         Properties:
           Description: !Sub 'Scheduler for the ODC ${CFDataName}-${AwsService} module'
-          Name: !Sub '${RolePrefix}${CFDataName}-${AwsService}-RefreshSchedule'
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsService}-RefreshSchedule'
           ScheduleExpression: !Ref Schedule
           State: ENABLED
           FlexibleTimeWindow:
             Mode: 'OFF'
           Target:
-            Arn: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${RolePrefix}${CFDataName}-${AwsService}-StateMachine'
+            Arn: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
             RoleArn: !Ref SchedulerExecutionRoleARN
 
       'ModuleStepFunction${AwsService}':
         Type: AWS::StepFunctions::StateMachine
         Properties:
-          StateMachineName: !Sub '${RolePrefix}${CFDataName}-${AwsService}-StateMachine'
+          StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
           StateMachineType: STANDARD
           RoleArn: !Ref StepFunctionExecutionRoleARN
           DefinitionString: |
@@ -562,7 +562,7 @@ Resources:
                       "service": "${Service}",
                       "path": "${Path}"
                     },
-                    "FunctionName": "arn:aws:lambda:us-east-1:317256447485:function:${Prefix}pricing-Lambda"
+                    "FunctionName": "arn:aws:lambda:${DeployRegion}:${Account}:function:${Prefix}pricing-Lambda"
                   },
                   "Retry": [
                     {
@@ -577,87 +577,17 @@ Resources:
                       "BackoffRate": 2
                     }
                   ],
-                  "Next": "CrawlerMap",
-                  "ResultSelector": {
-                    "crawlers": [${Crawlers}]
-                  }
+                  "Next": "CrawlerStepFunctionStartExecution"
                 },
-                "CrawlerMap": {
-                  "Type": "Map",
-                  "ItemProcessor": {
-                    "ProcessorConfig": {
-                      "Mode": "INLINE"
-                    },
-                    "StartAt": "GetCrawler",
-                    "States": {
-                      "GetCrawler": {
-                        "Type": "Task",
-                        "Parameters": {
-                          "Name.$": "$"
-                        },
-                        "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
-                        "Retry": [
-                          {
-                            "ErrorEquals": [
-                              "States.ALL"
-                            ],
-                            "BackoffRate": 2,
-                            "IntervalSeconds": 1,
-                            "MaxAttempts": 8
-                          }
-                        ],
-                        "Next": "IsRunning?",
-                        "OutputPath": "$.Crawler"
-                      },
-                      "IsRunning?": {
-                        "Type": "Choice",
-                        "Choices": [
-                          {
-                            "Or": [
-                              {
-                                "Variable": "$.State",
-                                "StringEquals": "RUNNING"
-                              },
-                              {
-                                "Variable": "$.State",
-                                "StringEquals": "STOPPING"
-                              }
-                            ],
-                            "Next": "WaitForCrawler"
-                          }
-                        ],
-                        "Default": "StartCrawler",
-                        "OutputPath": "$"
-                      },
-                      "WaitForCrawler": {
-                        "Type": "Wait",
-                        "Seconds": 30,
-                        "Next": "GetCrawler",
-                        "OutputPath": "$.Name",
-                        "InputPath": "$"
-                      },
-                      "StartCrawler": {
-                        "Type": "Task",
-                        "Parameters": {
-                          "Name.$": "$"
-                        },
-                        "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
-                        "Retry": [
-                          {
-                            "ErrorEquals": [
-                              "States.ALL"
-                            ],
-                            "BackoffRate": 2,
-                            "IntervalSeconds": 1,
-                            "MaxAttempts": 8
-                          }
-                        ],
-                        "End": true,
-                        "InputPath": "$.Name"
-                      }
+                "CrawlerStepFunctionStartExecution": {
+                  "Type": "Task",
+                  "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                  "Parameters": {
+                    "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                    "Input": {
+                      "crawlers": ${Crawlers}
                     }
                   },
-                  "ItemsPath": "$.crawlers",
                   "End": true
                 }
               },
@@ -666,13 +596,16 @@ Resources:
           DefinitionSubstitutions:
             Service: !Ref AwsService
             Path: !FindInMap [ServicesMap, !Ref AwsService, path]
-            Prefix: !Ref RolePrefix
-            Crawlers: !Sub '"${RolePrefix}${CFDataName}-${AwsService}-Crawler"'
+            Prefix: !Ref ResourcePrefix
+            Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsService}-Crawler"]'
+            Module: !Ref CFDataName
+            DeployRegion: !Ref AWS::Region
+            Account: !Ref AWS::AccountId
 
       'PricingCrawler${AwsService}':
         Type: AWS::Glue::Crawler
         Properties:
-          Name: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Crawler'
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsService}-Crawler'
           Role: !Ref GlueRoleARN
           DatabaseName: !Ref DatabaseName
           SchemaChangePolicy:
@@ -714,7 +647,7 @@ Resources:
               delimiter: ','
               classification: csv
               skip.header.line.count: '1'
-              UPDATED_BY_CRAWLER: !Sub '${RolePrefix}${CFDataName}-${AwsService}-Crawler'
+              UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-${AwsService}-Crawler'
             PartitionKeys: !FindInMap [ServicesMap, !Ref AwsService, partition]
             StorageDescriptor:
               Columns: !FindInMap [ServicesMap, !Ref AwsService, fields]

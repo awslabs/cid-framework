@@ -167,7 +167,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'AllowModuleReadInMgmt',           'ParameterValue': "yes"},
             {'ParameterKey': 'OrganizationalUnitIds',           'ParameterValue': org_unit_id},
-            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
@@ -202,7 +202,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'RolePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
         ]
     )
 

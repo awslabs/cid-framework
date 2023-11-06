@@ -8,7 +8,7 @@ Parameters:
     Type: String
     AllowedPattern: ([a-z0-9\-, ]*?$)
     Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
 Outputs:
@@ -23,7 +23,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}account-collector-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}account-collector-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -64,7 +64,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}account-collector-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}account-collector-Lambda'
       Description: "Lambda function to retrieve the account list"
       Runtime: python3.10
       Architectures: [x86_64]

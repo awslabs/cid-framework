@@ -74,7 +74,7 @@ def test_inventory_snapshot_data(athena):
     assert len(data) > 0, 'inventory_snapshot_data is empty'
 
 def test_inventory_ec2_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_ec2_data" LIMIT 10;')
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_ec2_instances_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_ec2_data is empty'
 
 def test_inventory_vpc_data(athena):
