@@ -8,6 +8,7 @@ Metadata:
         Parameters:
           - DestinationBucket
           - ManagementAccountRole
+          - AWSOrganizationID
           - ManagementAccountID
           - MultiAccountRoleName
           - Schedule
@@ -37,6 +38,9 @@ Metadata:
         default: 'Management account role'
       ManagementAccountID:
         default: 'Comma Delimited list of Account IDs for all Management Account IDs'
+      AWSOrganizationID:
+        Type: String
+        Description: Required for Health Module. 'Comma Delimited list of AWS Organization IDs for all Payer Account'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       Schedule:
@@ -242,11 +246,11 @@ Parameters:
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket that needs to be created to hold information
-    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
     Default: costoptimizationdata
   AWSOrganizationID:
     Type: String
-    Description: Required for Health Module. The AWS Organizations ID for the organization that should be allowed to put events on the event bus.
+    Description: Required for Health Module. 'Comma Delimited list of AWS Organization IDs for all Payer Account'
   ManagementAccountRole:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -352,13 +356,6 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  QuicksightServiceRole:
-    Type: String
-    Default: aws-quicksight-service-role-v0
-    Description: The Quicksight Service role attached to QS, Default is aws-quicksight-service-role-v0
-  QuickSightAnalysisAuthor:
-    Type: String
-    Description: The QuickSight analysis author Arn that is allowed configure and manage the QS Analyses and dashboards. e.g. arn:aws:quicksight:<Region>:<AccountID>:user/default/<username>
 
 Outputs:
   S3Bucket:
@@ -899,21 +896,18 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEventDrivenDataCollector
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/event-driven-datacollection.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/event-driven-datacollection-account.yaml"
       Parameters:
         AWSOrganizationID: !Ref AWSOrganizationID
         DestinationBucket: !Ref S3Bucket
-        QuicksightServiceRole: !Ref QuicksightServiceRole
 
   EventDrivenHealthModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployHeathModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/module-health.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health.yaml"
       Parameters:
-        DestinationBucket: !Ref S3Bucket
         DataCollectionBusName: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusName
         DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
         DataCollectionKinesisFirehoseArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionKinesisFirehoseArn
         DataCollectionRuleRoleArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionRuleRoleArn
-        QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor
