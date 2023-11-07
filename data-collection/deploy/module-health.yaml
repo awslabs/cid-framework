@@ -1,12 +1,33 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: (DataCollection) Stack to enable link account to send data to central DataCollectionBus
+Description: Stack to enable link account to send data to central DataCollectionBus
 
 Parameters:
   DataCollectionBusArn:
     Type: String
     Description: Centerlized DataCollection EventBus Arn in data collection account
-
+  IsDataCollectionSetup:
+    Type: String
+    Description: This is to toggle if we need to deploy backfill lambda or no. Backfill Lambda must be deloyed in DataCollection Account.
+    AllowedValues:
+      - "yes"
+      - "no"
+  MultiAccountRoleName:
+    Type: String
+    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
+    Default: "Optimization-Data-Multi-Account-Role"
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: health-backfill
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+    Default: "CID-DC-"
+      
+Conditions:
+  IsDataCollectionSetup: !Equals [!Ref IsDataCollectionSetup, "yes"]
+    
 Resources:
   DataCollectionRuleRole:
     Type: AWS::IAM::Role
@@ -29,8 +50,37 @@ Resources:
                 Resource: 
                   - !Ref DataCollectionBusArn
 
-  # Define an IAM Role for the AWS Events Rule with policy to get events from EB and put in Kinesis Firehose
+#We want to create wait condition. Otherwise DataCollection Account may miss the backfill.
+  WaitConditionForBackfillStack:
+    Type: AWS::CloudFormation::WaitConditionHandle
+    Metadata:
+      SecondaryCIDRready: !If
+        - IsDataCollectionSetup
+        - !Ref EventToTriggerBackfillLambda
+        - ""
+
+  SendEventToDataCollectionAccount:
+    DependsOn: WaitConditionForBackfillStack
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "EventBridge default rule for aws.health events"
+      EventBusName: "default"
+      EventPattern:
+        source:
+          - "aws.cloudformation"
+        detail:
+          logical-resource-id:
+            - DefaultBusRuleHealth
+          status-details:
+            status:
+              - CREATE_COMPLETE
+      Targets:
+        - Arn: !Ref DataCollectionBusArn
+          Id: CallHomeRuleOnDefaultBus
+          RoleArn: !GetAtt  DataCollectionRuleRole.Arn
+
   DefaultBusRuleHealth:
+    DependsOn: SendEventToDataCollectionAccount
     Type: "AWS::Events::Rule"
     Properties:
       Description: "EventBridge default rule for aws.health events"
@@ -43,3 +93,201 @@ Resources:
         - Arn: !Ref DataCollectionBusArn
           Id: DataCollectionRuleOnDefaultBus
           RoleArn: !GetAtt  DataCollectionRuleRole.Arn
+
+#This is health Backfill lambda and must only be deployed in datacollection account. This would be executed based on IsDataCollectionSetup flag.
+  BackfillHealthEventLambdaRole:
+    Condition: IsDataCollectionSetup
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: "AssumeMultiAccountRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
+        - PolicyName: Healthapiaccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - health:DescribeEvents
+                  - health:DescribeEventDetails
+                  - health:DescribeAffectedEntities
+                Resource: "*"
+        - PolicyName: PutEventtoDefaultBus-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "events:PutEvents"
+                Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  BackfillHealthEventLambda: 
+    Condition: IsDataCollectionSetup             
+    Type: AWS::Lambda::Function
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W58
+            reason: "Given AWSLambdaBasicExecutionRole and allows Cloudwatch"
+    Properties:
+      Code:
+          ZipFile: |
+            import boto3
+            import json
+            from datetime import datetime
+            import os
+
+            def lambda_handler(event, context):
+                client = boto3.client('sts')
+                curr_account = client.get_caller_identity()['Account']
+
+                account_id = event['account']
+                region = event['region']
+                session_name = 'backfillhealtheventLambda'
+                AssumeRoleName = os.environ['AssumeRoleName']
+                RoleArn = f"arn:aws:iam::{account_id}:role/{AssumeRoleName}"
+
+                if curr_account != account_id:
+                    assumed_role = client.assume_role(RoleArn=RoleArn, RoleSessionName=session_name)
+                    assumed_credentials = assumed_role['Credentials']
+
+                    # Create separate clients for Health and EventBridge using the assumed credentials
+                    health_client = boto3.client('health', region_name=region,
+                                                aws_access_key_id=assumed_credentials['AccessKeyId'],
+                                                aws_secret_access_key=assumed_credentials['SecretAccessKey'],
+                                                aws_session_token=assumed_credentials['SessionToken'])
+                    eventbridge_client = boto3.client('events', region_name=region,
+                                                    aws_access_key_id=assumed_credentials['AccessKeyId'],
+                                                    aws_secret_access_key=assumed_credentials['SecretAccessKey'],
+                                                    aws_session_token=assumed_credentials['SessionToken'])
+                else:
+                    health_client = boto3.client('health')
+                    eventbridge_client = boto3.client('events')
+                    
+                send_events(health_client, eventbridge_client)
+
+            def get_events(health_client):
+                events = []
+                next_token = None
+                try:
+                    while True:
+                        kwargs = {}
+                        if next_token and len(next_token) >= 4:
+                            kwargs['nextToken'] = next_token
+                        events_response = health_client.describe_events(filter={}, **kwargs)
+                        events += events_response['events']
+                        if 'nextToken' in events_response:
+                            next_token = events_response['nextToken']
+                        else:
+                            break
+                    return events
+                except Exception as e:
+                    print(e)
+                    return []
+
+            def get_event_data(event_details, event_description,health_client):
+                event_data = {
+                    'eventArn': event_details['arn'],
+                    'eventRegion': event_details.get('region', ''),
+                    'eventTypeCode': event_details.get('eventTypeCode', ''),
+                    'startTime': event_details.get('startTime').strftime('%a, %d %b %Y %H:%M:%S GMT'),
+                    'eventDescription': [{'latestDescription': event_description['latestDescription']}]
+                }
+                # Check if 'timefield' exists in event_details before including it in event_data
+                if 'endTime' in event_details:
+                    event_data['endTime'] = event_details['endTime'].strftime('%a, %d %b %Y %H:%M:%S GMT')
+                if 'lastUpdatedTime' in event_details:
+                    event_data['lastUpdatedTime'] = event_details['lastUpdatedTime'].strftime('%a, %d %b %Y %H:%M:%S GMT')
+                event_data.update((key, value) for key, value in event_details.items() if key not in event_data)
+                print(event_data)
+                return event_data
+
+            def send_event_defaultBus(event_data,eventbridge_client):
+                # Send the event to EventBridge
+                eventbridge_client.put_events(
+                    Entries=[{
+                            'Source': 'awshealthtest',
+                            'DetailType': 'awshealthtest',
+                            'Detail': json.dumps(event_data),
+                            'EventBusName': 'default'
+                        }]
+                        )
+            def send_events(health_client,eventbridge_client):
+                events = get_events(health_client)
+                print(health_client)
+                try:
+                    for awsevent in events:
+                        event_details_response = health_client.describe_event_details(eventArns=[awsevent['arn']])
+                        event_affected_response = health_client.describe_affected_entities(filter={'eventArns': [awsevent['arn']]})
+                        entities = event_affected_response['entities']
+                        entity_values = ', '.join([entity['entityValue'] for entity in entities])
+                        successful_set_details = event_details_response.get('successfulSet')
+                        if not successful_set_details:
+                            continue
+                        event_details = successful_set_details[0]['event']
+                        event_details['affectedEntities'] = [{'entityValue':entity_values}]
+                        event_description = successful_set_details[0]['eventDescription']
+                        event_data = get_event_data(event_details, event_description,health_client)
+                        send_event_defaultBus(event_data,eventbridge_client)
+                except Exception as e:
+                    print(e)
+
+      Handler: index.lambda_handler
+      Runtime: python3.10
+      ReservedConcurrentExecutions: 5
+      Timeout: 900
+      Role: !GetAtt BackfillHealthEventLambdaRole.Arn
+      Environment:
+        Variables:
+          AssumeRoleName: !Ref MultiAccountRoleName
+
+  EventToTriggerBackfillLambda:
+    Condition: IsDataCollectionSetup
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "EventBridge rule to trigger backfill Lambda"
+      EventBusName: !Select [1, !Split ["/", !Ref DataCollectionBusArn]]
+      EventPattern:
+        source:
+          - "aws.cloudformation"
+        detail:
+          logical-resource-id:
+            - DefaultBusRuleHealth
+          status-details:
+            status:
+              - CREATE_COMPLETE
+      Targets:
+        - Arn: !GetAtt BackfillHealthEventLambda.Arn
+          Id: EventToTriggerBackfillLambda
+
+  BackfillHealthEventLambdaPermissions:
+    Condition: IsDataCollectionSetup
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt BackfillHealthEventLambda.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt EventToTriggerBackfillLambda.Arn

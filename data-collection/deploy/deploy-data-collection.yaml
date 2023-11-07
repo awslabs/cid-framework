@@ -188,7 +188,7 @@ Parameters:
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket that needs to be created to hold information
-    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
     Default: costoptimizationdata
   AWSOrganizationID:
     Type: String
@@ -995,7 +995,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health.yaml"
       Parameters:
-        DataCollectionBusName: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusName
         DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
-        DataCollectionKinesisFirehoseArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionKinesisFirehoseArn
-        DataCollectionRuleRoleArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionRuleRoleArn
+        IsDataCollectionSetup: "yes"
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
+        ResourcePrefix: !Ref ResourcePrefix

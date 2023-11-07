@@ -10,10 +10,15 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+    Default: "CID-DC-"
   DestinationBucketKmsArn:
     Type: String
     Default: "N"
     Description: Enter KMS Arn if supplied Destination bucket is encrypted with KMS(Type N for SSE encryption)
+
 
 Conditions:
   DestinationBucketKmsArn: !Not [!Equals [!Ref DestinationBucketKmsArn, "N"]]
@@ -117,7 +122,7 @@ Resources:
   DataCollectionBus:
     Type: "AWS::Events::EventBus"
     Properties:
-      Name: !Sub DataCollectionBus-${AWS::AccountId}
+      Name: !Sub ${ResourcePrefix}DataCollectionBus-${AWS::AccountId}
 
   # Define the policy for the event bus to allow all accounts from the specified organization to put events
   DataCollectionBusPolicy:
@@ -138,7 +143,7 @@ Resources:
   DataCollectionKinesisFirehose:
     Type: "AWS::KinesisFirehose::DeliveryStream"
     Properties:
-      DeliveryStreamName: !Sub "DataCollection-${AWS::AccountId}-${AWS::Region}"
+      DeliveryStreamName: !Sub "${ResourcePrefix}DataCollection-${AWS::AccountId}-${AWS::Region}"
       DeliveryStreamType: "DirectPut"
       DeliveryStreamEncryptionConfigurationInput:
         KeyType: AWS_OWNED_CMK
@@ -176,11 +181,12 @@ Resources:
       Description: DataCollectionRuleForHealth
       EventBusName: !Ref DataCollectionBus
       EventPattern:
-        source: "*"
+        source: 
+          - prefix: aws
       Targets:
         - Id: DataCollectionRuleOnDataCollectionBus
-          Arn: !Ref  DataCollectionKinesisFirehose
-          RoleArn: !Ref  DataCollectionRuleRole
+          Arn: !GetAtt DataCollectionKinesisFirehose.Arn
+          RoleArn: !GetAtt  DataCollectionRuleRole.Arn
 
 Outputs:
   # Output the ARN of the created Data Collection Bus
