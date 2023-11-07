@@ -21,7 +21,7 @@ Metadata:
         - IncludeTransitGatewayModule
         - CFNTemplateSourceBucket
         - IncludeHealthModule
-        - IncludeCasesModule
+        # - IncludeCasesModule
     ParameterLabels:
       DataCollectionAccountID:
         default: 'Data Collection Account ID'
@@ -41,6 +41,10 @@ Metadata:
         default: 'Include Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include Transit Gateway Module'
+      IncludeHealthModule:
+        default: 'Include Health Module'
+      # IncludeCasesModule:
+      #   default: 'Include Health Module'
       DataCollectionBusArn:
         Description: 'Centerlized DataCollection EventBus Arn in data collection account'
       CFNTemplateSourceBucket:
@@ -102,16 +106,16 @@ Parameters:
       - "no"
   IncludeHealthModule:
     Type: String
-    Description: AWS health event intelligence dashboards and insights(Heidi). DO NOT enable if DataCollection is deployed in delegated health module.
+    Description: Collects AWS Health from your accounts. DO NOT enable if DataCollection is deployed in delegated health account.
     AllowedValues:
       - "yes"
       - "no"
-  IncludeCasesModule:
-    Type: String
-    Description: AWS Case module Cima
-    AllowedValues:
-      - "yes"
-      - "no"
+  # IncludeCasesModule:
+  #   Type: String
+  #   Description: Collects AWS Support Cases from your accounts
+  #   AllowedValues:
+  #     - "yes"
+  #     - "no"
 
 Conditions:
   IncludeTAModulePolicy: !Equals
@@ -135,9 +139,9 @@ Conditions:
   IncludeHealthModule: !Equals
     - !Ref IncludeHealthModule 
     - "yes"
-  IncludeCasesModule: !Equals 
-    - !Ref IncludeCasesModule 
-    - "yes"
+  # IncludeCasesModule: !Equals 
+  #   - !Ref IncludeCasesModule 
+  #   - "yes"
 
 Outputs:
   LambdaRole:

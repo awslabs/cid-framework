@@ -74,9 +74,9 @@ Metadata:
       IncludeTransitGatewayModule:
         default: 'Include AWS TransitGateway Collection Module'
       IncludeHealthModule:
-        default: 'AWS Health Events Intelligence Dashboards and Insights (HEIDI) Module'
+        default: Collects AWS Health Events from your accounts
       IncludeCasesModule:
-        default: 'Include Case Insights for Multiple Accounts(CIMA) Module'
+        default: Collects AWS Support Cases from your accounts
 
 Mappings:
   RegionMap:
@@ -188,7 +188,7 @@ Parameters:
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket that needs to be created to hold information
-    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
     Default: costoptimizationdata
   AWSOrganizationID:
     Type: String
@@ -288,13 +288,13 @@ Parameters:
       - "no"
   IncludeHealthModule:
     Type: String
-    Description: AWS health event intelligence dashboards and insights.
+    Description: Collects AWS Health Events from your accounts
     AllowedValues:
       - "yes"
       - "no"
   IncludeCasesModule:
     Type: String
-    Description: AWS health module Heidi
+    Description: Collects AWS Support Cases from your accounts
     AllowedValues:
       - "yes"
       - "no"

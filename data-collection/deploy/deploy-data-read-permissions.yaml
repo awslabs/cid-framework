@@ -13,6 +13,7 @@ Metadata:
           - AllowModuleReadInMgmt
           - ResourcePrefix
           - CFNTemplateSourceBucket
+          - DataCollectionBusArn
       - Label:
           default: "Available modules"
         Parameters:
@@ -26,11 +27,15 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeHealthModule
+        # - IncludeCasesModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
         default: "Cost Account Id"
+      DataCollectionBusArn:
+        Description: 'Centerlized DataCollection EventBus Arn in data collection account'
       MultiAccountRoleName:
         default: "Multi Account Role Name"
       OrganizationalUnitIds:
@@ -69,6 +74,9 @@ Parameters:
   DataCollectionAccountID:
     Type: String
     Description: AccountId of where the collector is deployed
+  DataCollectionBusArn:
+    Type: String
+    Description: 'Centerlized DataCollection EventBus Arn in data collection account'
   MultiAccountRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -151,6 +159,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthModule:
+    Type: String
+    Description: Collects AWS Health Events from your accounts. DO NOT enable if DataCollection is deployed in delegated health account.
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -189,10 +203,12 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeHealthModule: !Ref IncludeHealthModule
+        DataCollectionBusArn: !Ref DataCollectionBusArn
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organisation accounts"
+      Description: "StackSet in charge of deploying read roles across organization accounts"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: false
