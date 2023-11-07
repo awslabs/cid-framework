@@ -594,13 +594,13 @@ Resources:
         )  mapping ON (mapping.volume_mapping = snapshots.volume)) s
         LEFT JOIN (
           SELECT
-            "productfamily"
+            "product family"
           , location
           , priceperunit
           , unit
           FROM
             optimization_data.pricing_ec2_data
-          WHERE ((("productfamily" = 'Storage Snapshot') AND (usagetype LIKE '%SnapshotUsage%')) AND ("locationtype" = 'AWS Region'))
+          WHERE ((("product family" = 'Storage Snapshot') AND (usagetype LIKE '%SnapshotUsage%')) AND ("location type" = 'AWS Region'))
         )  snap_unit_price ON (s.regionname = snap_unit_price.location))
 
   AthenaEBSTA:
@@ -712,7 +712,7 @@ Resources:
       QueryString: |
         WITH raw_ebs_pricedata AS (
         SELECT
-            region,
+            pricing_regionnames_data.region,
             map_agg(
                 CASE WHEN "volume api name" = 'io1' AND unit = 'GB-Mo' THEN 'io1_GB-Mo'
                     WHEN "volume api name" = 'io2' AND unit = 'GB-month' THEN 'io2_GB-Mo'
@@ -727,9 +727,9 @@ Resources:
                     ELSE unit
                 END, priceperunit) kv1
         FROM optimization_data.pricing_ec2_data
-        JOIN optimization_data.pricing_regionnames_data ON pricing_regionnames_data.regionname = pricing_ec2.location
+        JOIN optimization_data.pricing_regionnames_data ON pricing_regionnames_data.regionname = pricing_ec2_data.location
         WHERE "volume api name" IN ('io1','io2','gp3','gp2')
-        GROUP BY region
+        GROUP BY pricing_regionnames_data.region
         ),
         pivoted_ebs_pricedata AS (
             SELECT region,
