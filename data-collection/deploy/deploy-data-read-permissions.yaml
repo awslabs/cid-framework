@@ -8,12 +8,12 @@ Metadata:
         Parameters:
           - ManagementAccountRole
           - DataCollectionAccountID
+          - DataCollectionRegion
           - MultiAccountRoleName
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
           - ResourcePrefix
           - CFNTemplateSourceBucket
-          - DataCollectionBusArn
       - Label:
           default: "Available modules"
         Parameters:
@@ -33,9 +33,9 @@ Metadata:
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
-        default: "Cost Account Id"
-      DataCollectionBusArn:
-        Description: 'Centerlized DataCollection EventBus Arn in data collection account'
+        default: "Data Collection Account ID"
+      DataCollectionRegion:
+        Description: 'Centerlized DataCollection EventBus region in data collection account'
       MultiAccountRoleName:
         default: "Multi Account Role Name"
       OrganizationalUnitIds:
@@ -74,9 +74,10 @@ Parameters:
   DataCollectionAccountID:
     Type: String
     Description: AccountId of where the collector is deployed
-  DataCollectionBusArn:
+  DataCollectionRegion:
     Type: String
-    Description: 'Centerlized DataCollection EventBus Arn in data collection account'
+    Description: 'Centerlized DataCollection EventBus region in data collection account'
+    Default: "CurrentRegion"
   MultiAccountRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -168,6 +169,7 @@ Parameters:
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
+  DataCollectionRegion: !Equals [!Ref DataCollectionRegion, "CurrentRegion"]
 
 Resources:
   DataCollectorMgmtAccountReadStack:
@@ -204,7 +206,12 @@ Resources:
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeHealthModule: !Ref IncludeHealthModule
-        DataCollectionBusArn: !Ref DataCollectionBusArn
+        DataCollectionBusArn:
+          Fn::If:
+            - DataCollectionRegion
+            - Fn::Sub: "arn:${AWS::Partition}:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus-${DataCollectionAccountID}"
+            - Fn::Sub: "arn:${AWS::Partition}:events:${DataCollectionRegion}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus-${DataCollectionAccountID}"
+
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
