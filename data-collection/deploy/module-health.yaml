@@ -260,7 +260,7 @@ Resources:
       Role: !GetAtt BackfillHealthEventLambdaRole.Arn
       Environment:
         Variables:
-          AssumeRoleName: !Ref MultiAccountRoleName
+          AssumeRoleName: !Sub ${ResourcePrefix}${MultiAccountRoleName}
 
   EventToTriggerBackfillLambda:
     Condition: IsDataCollectionSetup
