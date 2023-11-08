@@ -165,7 +165,6 @@ Resources:
                 curr_account = client.get_caller_identity()['Account']
 
                 account_id = event['account']
-                region = event['region']
                 session_name = 'backfillhealtheventLambda'
                 AssumeRoleName = os.environ['AssumeRoleName']
                 RoleArn = f"arn:aws:iam::{account_id}:role/{AssumeRoleName}"
@@ -175,16 +174,16 @@ Resources:
                     assumed_credentials = assumed_role['Credentials']
 
                     # Create separate clients for Health and EventBridge using the assumed credentials
-                    health_client = boto3.client('health', region_name=region,
+                    health_client = boto3.client('health', region_name='us-east-1',
                                                 aws_access_key_id=assumed_credentials['AccessKeyId'],
                                                 aws_secret_access_key=assumed_credentials['SecretAccessKey'],
                                                 aws_session_token=assumed_credentials['SessionToken'])
-                    eventbridge_client = boto3.client('events', region_name=region,
+                    eventbridge_client = boto3.client('events',
                                                     aws_access_key_id=assumed_credentials['AccessKeyId'],
                                                     aws_secret_access_key=assumed_credentials['SecretAccessKey'],
                                                     aws_session_token=assumed_credentials['SessionToken'])
                 else:
-                    health_client = boto3.client('health')
+                    health_client = boto3.client('health','us-east-1')
                     eventbridge_client = boto3.client('events')
                     
                 send_events(health_client, eventbridge_client)
@@ -256,7 +255,7 @@ Resources:
                     print(e)
 
       Handler: index.lambda_handler
-      Runtime: python3.10
+      Runtime: python3.11
       ReservedConcurrentExecutions: 5
       Timeout: 900
       Role: !GetAtt BackfillHealthEventLambdaRole.Arn
