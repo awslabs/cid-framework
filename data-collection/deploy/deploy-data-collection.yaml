@@ -997,5 +997,5 @@ Resources:
       Parameters:
         DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
         IsDataCollectionSetup: "yes"
-        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
+        MultiAccountRoleName: !Ref MultiAccountRoleName
         ResourcePrefix: !Ref ResourcePrefix
