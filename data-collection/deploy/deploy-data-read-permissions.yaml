@@ -201,7 +201,7 @@ Resources:
         Active: true
       OperationPreferences:
         MaxConcurrentPercentage: 100
-        FailureTolerancePercentage: 0
+        FailureTolerancePercentage: 100
         RegionConcurrencyType: PARALLEL
       Parameters:
         - ParameterKey: DataCollectionAccountID
