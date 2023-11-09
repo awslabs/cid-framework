@@ -199,6 +199,10 @@ Resources:
         RetainStacksOnAccountRemoval: false
       ManagedExecution:
         Active: true
+      OperationPreferences:
+        MaxConcurrentPercentage: 100
+        FailureTolerancePercentage: 0
+        RegionConcurrencyType: PARALLEL
       Parameters:
         - ParameterKey: DataCollectionAccountID
           ParameterValue: !Ref DataCollectionAccountID
