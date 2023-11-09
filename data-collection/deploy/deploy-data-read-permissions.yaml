@@ -195,9 +195,14 @@ Resources:
       Description: "StackSet in charge of deploying read roles across organisation accounts"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
-        Enabled: false
+        Enabled: true
+        RetainStacksOnAccountRemoval: false
       ManagedExecution:
         Active: true
+      OperationPreferences:
+        MaxConcurrentPercentage: 100
+        FailureTolerancePercentage: 100
+        RegionConcurrencyType: PARALLEL
       Parameters:
         - ParameterKey: DataCollectionAccountID
           ParameterValue: !Ref DataCollectionAccountID
