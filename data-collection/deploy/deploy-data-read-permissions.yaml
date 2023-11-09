@@ -196,6 +196,7 @@ Resources:
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
+        RetainStacksOnAccountRemoval: false
       ManagedExecution:
         Active: true
       Parameters:
