@@ -42,7 +42,7 @@ List of modules and objects collected:
 
 This stack makes use of stack sets that use [service-managed permissions](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-concepts.html#stacksets-concepts-stackset-permission-models) to deploy stack instances to accounts managed by AWS Organizations.
 
-Before creating this stack, please make sure to [activate trusted access with AWS Organizations](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-activate-trusted-access.html).
+Before creating this stack, please make sure [trusted access with AWS Organizations](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-orgs-activate-trusted-access.html) is activated.
 
 #### 2. Install the data read permissions
 
