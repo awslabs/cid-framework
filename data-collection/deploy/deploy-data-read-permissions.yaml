@@ -195,7 +195,7 @@ Resources:
       Description: "StackSet in charge of deploying read roles across organisation accounts"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
-        Enabled: false
+        Enabled: true
       ManagedExecution:
         Active: true
       Parameters:
