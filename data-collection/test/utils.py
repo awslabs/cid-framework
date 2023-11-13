@@ -167,7 +167,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'AllowModuleReadInMgmt',           'ParameterValue': "yes"},
             {'ParameterKey': 'OrganizationalUnitIds',           'ParameterValue': org_unit_id},
-            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': "CID-DC-"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
@@ -178,6 +178,8 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeHealthModule',             'ParameterValue': "yes"},
+            #{'ParameterKey': 'IncludeCasesModule',              'ParameterValue': "yes"},
         ]
     )
 
@@ -189,6 +191,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
             {'ParameterKey': 'RegionsInScope',                  'ParameterValue': "us-east-1,eu-west-1"},
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': "costoptimizationdata"},
+            {'ParameterKey': 'AWSOrganizationID',               'ParameterValue': org_unit_id},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
@@ -199,10 +202,12 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeHealthModule',             'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCasesModule',              'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': "CID-DC-"},
         ]
     )
 
