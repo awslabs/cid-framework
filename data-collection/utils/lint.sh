@@ -1,5 +1,5 @@
 #!/bin/bash
-# This script runs cfn-lint and cfn_nag_scan for all templates in folder
+# This script runs cfn-lint cfn_nag_scan and checkov for all templates in folder
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
