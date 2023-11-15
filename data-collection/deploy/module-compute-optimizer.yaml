@@ -38,7 +38,7 @@ Parameters:
     Type: String
     AllowedValues: ["yes", "no"]
     Default: 'yes'
-    Description: Include Member Accounts or not. Set to 'yes' when working with payer 
+    Description: Include Member Accounts or not. Set to 'yes' when working with payer
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
@@ -447,10 +447,11 @@ Resources:
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
-        Mode: 'OFF'
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
   CustomResourceFunctionFinalize:
     Type: AWS::Lambda::Function
