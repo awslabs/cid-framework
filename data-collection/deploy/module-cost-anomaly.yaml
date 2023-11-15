@@ -26,7 +26,7 @@ Parameters:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   LambdaAnalyticsARN:
@@ -54,7 +54,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -100,10 +100,10 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           import os
@@ -271,7 +271,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -281,22 +281,26 @@ Resources:
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionString: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
         CollectionType: "Payers"
         Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:

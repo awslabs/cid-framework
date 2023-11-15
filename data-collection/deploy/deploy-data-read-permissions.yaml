@@ -11,7 +11,7 @@ Metadata:
           - MultiAccountRoleName
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
-          - RolePrefix
+          - ResourcePrefix
           - CFNTemplateSourceBucket
       - Label:
           default: "Available modules"
@@ -37,7 +37,7 @@ Metadata:
         default: "Comma Delimited list of Organizational Unit IDs. StackSets will deploy a read role in all AWS Accounts within those OUs. See your OU ID here: https://console.aws.amazon.com/organizations/v2/home/accounts (we recommend choosing OU ID of your Root)"
       AllowModuleReadInMgmt:
         default: "Allow creation of read roles for modules in management account"
-      RolePrefix:
+      ResourcePrefix:
         default: "Role Prefix"
       CFNTemplateSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
@@ -83,10 +83,10 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
-    Default: "WA-"
+    Default: "CID-DC-"
   CFNTemplateSourceBucket:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
@@ -163,7 +163,7 @@ Resources:
       Parameters:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
-        RolePrefix: !Ref RolePrefix
+        ResourcePrefix: !Ref ResourcePrefix
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
@@ -182,7 +182,7 @@ Resources:
       Parameters:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         MultiAccountRoleName: !Ref MultiAccountRoleName
-        RolePrefix: !Ref RolePrefix
+        ResourcePrefix: !Ref ResourcePrefix
         IncludeTAModule: !Ref IncludeTAModule
         IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
@@ -195,16 +195,21 @@ Resources:
       Description: "StackSet in charge of deploying read roles across organisation accounts"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
-        Enabled: false
+        Enabled: true
+        RetainStacksOnAccountRemoval: false
       ManagedExecution:
         Active: true
+      OperationPreferences:
+        MaxConcurrentPercentage: 100
+        FailureTolerancePercentage: 100
+        RegionConcurrencyType: PARALLEL
       Parameters:
         - ParameterKey: DataCollectionAccountID
           ParameterValue: !Ref DataCollectionAccountID
         - ParameterKey: MultiAccountRoleName
           ParameterValue: !Ref MultiAccountRoleName
-        - ParameterKey: RolePrefix
-          ParameterValue: !Ref RolePrefix
+        - ParameterKey: ResourcePrefix
+          ParameterValue: !Ref ResourcePrefix
         - ParameterKey: IncludeTAModule
           ParameterValue: !Ref IncludeTAModule
         - ParameterKey: IncludeInventoryCollectorModule

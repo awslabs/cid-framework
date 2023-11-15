@@ -20,7 +20,7 @@ Parameters:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   BucketPrefix:
@@ -28,9 +28,9 @@ Parameters:
     Default: 'costoptimization'
     Description: This prefix will be used for buckets creation
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
-  DeployRegions:
+  RegionsInScope:
     Type: String
-    Description: "A comma separated list of AWS regions where compute-optimizer needs to collect info. Example: us-east-1,eu-west-1"
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
@@ -78,7 +78,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: sts:AssumeRole
-                Resource: !Sub "arn:aws:iam::*:role/${RolePrefix}ComputeOptimizer-StackSetExecutionRole"
+                Resource: !Sub "arn:aws:iam::*:role/${ResourcePrefix}ComputeOptimizer-StackSetExecutionRole"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -88,7 +88,7 @@ Resources:
   StackSetExecutionRole:  #see https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-prereqs.html
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}ComputeOptimizer-StackSetExecutionRole"
+      RoleName: !Sub "${ResourcePrefix}ComputeOptimizer-StackSetExecutionRole"
       Description: "This role is used by cloudformation to create StackSets in different regions. See https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/stacksets-prereqs.html"
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -161,13 +161,13 @@ Resources:
         - DeploymentTargets:
             Accounts:
               - !Ref "AWS::AccountId"
-          Regions: !Split [ ',', !Ref DeployRegions]
+          Regions: !Split [ ',', !Ref RegionsInScope]
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "${BucketPrefix}${AWS::AccountId}-comp-optim-buckets"
       AdministrationRoleARN: !GetAtt StackSetAdminRole.Arn
-      ExecutionRoleName: !Sub "${RolePrefix}ComputeOptimizer-StackSetExecutionRole"
+      ExecutionRoleName: !Sub "${ResourcePrefix}ComputeOptimizer-StackSetExecutionRole"
       TemplateBody: |
         AWSTemplateFormatVersion: '2010-09-09'
         Description: This template creates a bucket in a given region and configure a replication to the main bucket
@@ -294,7 +294,7 @@ Resources:
   LambdaTriggerExportRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -324,13 +324,13 @@ Resources:
   LambdaTriggerExport:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Trigger-Export'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
       Runtime: python3.10
-      Architectures: [arm64]
+      Architectures: [x86_64]
       Environment:
         Variables:
-          REGIONS: !Ref DeployRegions
+          REGIONS: !Ref RegionsInScope
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
           INCLUDE_MEMBER_ACCOUNTS: !Ref IncludeMemberAccounts
           ROLE_NAME: !Ref ManagementRoleName
@@ -408,7 +408,7 @@ Resources:
                   if error_messages:
                       raise Exception(f"There were {len(error_messages)} errors, out of {len(result_messages) + len(error_messages)} exports: \n" + "\n".join(error_messages))
               except Exception as e:
-                  logger.info(payer_id, type(e), e)
+                  logger.error(f"Error {type(e).__name__} with message {e}")
       Handler: index.lambda_handler
       MemorySize: 2688
       Timeout: 300
@@ -424,7 +424,7 @@ Resources:
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionString: !Ref StepFunctionTemplate
@@ -434,12 +434,16 @@ Resources:
         Crawlers: '[]'
         CollectionType: "Payers"
         Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
@@ -452,7 +456,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Role: !GetAtt 'FinalizeLambdaExecutionRole.Arn'
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-FinalizeSetup-DoNotRun'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-FinalizeSetup-DoNotRun'
       Description: "Lambda to Finalize Setup (call trigger lambda) or Start teardown (Cleanup buckets)"
       Runtime: python3.10
       Architectures: [ arm64 ]
@@ -537,7 +541,7 @@ Resources:
       Timeout: 300
       Environment:
         Variables:
-          REGIONS: !Ref DeployRegions
+          REGIONS: !Ref RegionsInScope
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
           TRIGGER_LAMBDA:  !GetAtt LambdaTriggerExport.Arn
     Metadata:
