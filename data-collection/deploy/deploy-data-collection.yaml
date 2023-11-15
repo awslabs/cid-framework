@@ -179,7 +179,7 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket that needs to be created to hold information
     AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
-    Default: data-collection
+    Default: cid-data-collection-
   ManagementAccountRole:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -318,7 +318,7 @@ Resources:
   S3Bucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub "cid-${AWS::AccountId}-${DestinationBucket}"
+      BucketName: !Sub "${DestinationBucket}${AWS::AccountId}"
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
