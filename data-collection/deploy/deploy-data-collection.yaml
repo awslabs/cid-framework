@@ -996,6 +996,5 @@ Resources:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health.yaml"
       Parameters:
         DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
-        IsDataCollectionSetup: "yes"
-        MultiAccountRoleName: !Ref MultiAccountRoleName
         ResourcePrefix: !Ref ResourcePrefix
+        MultiAccountRoleName: !Ref MultiAccountRoleName

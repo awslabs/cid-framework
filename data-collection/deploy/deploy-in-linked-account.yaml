@@ -9,7 +9,7 @@ Metadata:
         - DataCollectionAccountID
         - MultiAccountRoleName
         - ResourcePrefix
-        - DataCollectionBusArn
+       # - DataCollectionBusArn
     - Label:
         default: 'Available modules'
       Parameters:
@@ -19,7 +19,6 @@ Metadata:
         - IncludeRDSUtilizationModule
         - IncludeBudgetsModule
         - IncludeTransitGatewayModule
-        - CFNTemplateSourceBucket
         - IncludeHealthModule
         # - IncludeCasesModule
     ParameterLabels:
@@ -45,10 +44,6 @@ Metadata:
         default: 'Include Health Module'
       # IncludeCasesModule:
       #   default: 'Include Health Module'
-      DataCollectionBusArn:
-        Description: 'Centerlized DataCollection EventBus Arn in data collection account'
-      CFNTemplateSourceBucket:
-        default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -61,9 +56,9 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "CID-DC-"
-  DataCollectionBusArn:
-    Type: String
-    Description: 'Centerlized DataCollection EventBus Arn in data collection account'
+  #DataCollectionBusArn:
+  #  Type: String
+  #  Description: 'Centerlized DataCollection EventBus Arn in data collection account'
   CFNTemplateSourceBucket:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
@@ -169,7 +164,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-backfill-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -354,7 +349,7 @@ Resources:
               - Effect: Allow
                 Action: "events:PutEvents"
                 Resource:
-                  - !Ref DataCollectionBusArn
+                  - !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
 
   DefaultBusRuleHealth:
     Type: "AWS::Events::Rule"
@@ -367,6 +362,6 @@ Resources:
           - "awshealthtest"
       Targets:
         - Id: DataCollectionRuleOnDefaultBus
-          Arn: !Ref DataCollectionBusArn
+          Arn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
           RoleArn: !GetAtt  DataCollectionRuleRole.Arn
 

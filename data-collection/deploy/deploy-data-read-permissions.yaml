@@ -8,7 +8,6 @@ Metadata:
         Parameters:
           - ManagementAccountRole
           - DataCollectionAccountID
-          - DataCollectionRegion
           - MultiAccountRoleName
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
@@ -33,9 +32,7 @@ Metadata:
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
-        default: "Data Collection Account ID"
-      DataCollectionRegion:
-        Description: 'Centerlized DataCollection EventBus region in data collection account'
+        default: "Cost Account Id"
       MultiAccountRoleName:
         default: "Multi Account Role Name"
       OrganizationalUnitIds:
@@ -74,10 +71,6 @@ Parameters:
   DataCollectionAccountID:
     Type: String
     Description: AccountId of where the collector is deployed
-  DataCollectionRegion:
-    Type: String
-    Description: 'Centerlized DataCollection EventBus region in data collection account'
-    Default: "CurrentRegion"
   MultiAccountRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -160,16 +153,21 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeCasesModule:
+    Type: String
+    Description: Collects AWS Support Cases from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
   IncludeHealthModule:
     Type: String
-    Description: Collects AWS Health Events from your accounts. DO NOT enable if DataCollection is deployed in delegated health account.
+    Description: Collects AWS Health Events from your accounts
     AllowedValues:
       - "yes"
       - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
-  DataCollectionRegion: !Equals [!Ref DataCollectionRegion, "CurrentRegion"]
 
 Resources:
   DataCollectorMgmtAccountReadStack:
@@ -190,6 +188,7 @@ Resources:
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeTAModule: !Ref IncludeTAModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeHealthModule: !Ref IncludeHealthModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -206,19 +205,19 @@ Resources:
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeHealthModule: !Ref IncludeHealthModule
-        DataCollectionBusArn:
-          Fn::If:
-            - DataCollectionRegion
-            - Fn::Sub: "arn:${AWS::Partition}:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus-${DataCollectionAccountID}"
-            - Fn::Sub: "arn:${AWS::Partition}:events:${DataCollectionRegion}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus-${DataCollectionAccountID}"
-
+        #IncludeCasesModule: !Ref IncludeCasesModule
+        #DataCollectionBusArn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
       Description: "StackSet in charge of deploying read roles across organization accounts"
       PermissionModel: SERVICE_MANAGED
+      OperationPreferences:
+        MaxConcurrentPercentage: 100
+        FailureTolerancePercentage: 100
       AutoDeployment:
-        Enabled: false
+        Enabled: true
+        RetainStacksOnAccountRemoval: false
       ManagedExecution:
         Active: true
       Parameters:
@@ -240,6 +239,10 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
+        #- ParameterKey: IncludeCasesModule
+        #  ParameterValue: !Ref IncludeCasesModule
+        - ParameterKey: IncludeHealthModule
+          ParameterValue: !Ref IncludeHealthModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]

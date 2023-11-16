@@ -34,9 +34,8 @@ Resources:
           - Effect: Allow
             Principal:
               Service: firehose.amazonaws.com
-            Action: sts:AssumeRole 
+            Action: sts:AssumeRole
       Policies:
-        # Policy allowing CloudWatch Logs access
         - PolicyName: cloudwatch-logs-access
           PolicyDocument:
             Version: '2012-10-17'
@@ -50,7 +49,6 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/*"
-        # Policy allowing S3 access
         - PolicyName: AllowS3Access
           PolicyDocument:
             Version: '2012-10-17'
@@ -86,7 +84,6 @@ Resources:
           - !Ref AWS::NoValue
 
   DataCollectionRuleRole:
-  #This is common EventBridge event role that give EB necessary permission to put events to Kinesis Firehose
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -98,8 +95,7 @@ Resources:
             Action: sts:AssumeRole
       Path: "/"
       Policies:
-        # Policy allowing the role to put records to the Kinesis Firehose
-        - PolicyName: !Sub "DataCollectionRule-${AWS::AccountId}-${AWS::Region}-Policy"
+        - PolicyName: "PutToKinesisFirehose"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -107,7 +103,7 @@ Resources:
                 Action:
                   - "firehose:PutRecord"
                   - "firehose:PutRecordBatch"
-                Resource: 
+                Resource:
                   - !GetAtt DataCollectionKinesisFirehose.Arn
         - PolicyName: !Sub "DataCollectionRuleDefault-${AWS::AccountId}-${AWS::Region}-Policy"
           PolicyDocument:
@@ -115,14 +111,14 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: "events:PutEvents"
-                Resource: 
+                Resource:
                   - !GetAtt DataCollectionBus.Arn
 
   # Define an AWS Events Event Bus for DataCollection
   DataCollectionBus:
     Type: "AWS::Events::EventBus"
     Properties:
-      Name: !Sub ${ResourcePrefix}DataCollectionBus-${AWS::AccountId}
+      Name: !Sub ${ResourcePrefix}DataCollectionBus
 
   # Define the policy for the event bus to allow all accounts from the specified organization to put events
   DataCollectionBusPolicy:
@@ -138,7 +134,7 @@ Resources:
         Condition:
           StringEquals:
             aws:PrincipalOrgID: !Split [",", !Ref AWSOrganizationID]
-            
+
   # Define an AWS Kinesis Firehose Delivery Stream for data ingestion
   DataCollectionKinesisFirehose:
     Type: "AWS::KinesisFirehose::DeliveryStream"
@@ -181,7 +177,7 @@ Resources:
       Description: DataCollectionRuleForHealth
       EventBusName: !Ref DataCollectionBus
       EventPattern:
-        source: 
+        source:
           - prefix: aws
       Targets:
         - Id: DataCollectionRuleOnDataCollectionBus
@@ -189,7 +185,6 @@ Resources:
           RoleArn: !GetAtt  DataCollectionRuleRole.Arn
 
 Outputs:
-  # Output the ARN of the created Data Collection Bus
   DataCollectionBusName:
     Value: !GetAtt DataCollectionBus.Name
     Export:
