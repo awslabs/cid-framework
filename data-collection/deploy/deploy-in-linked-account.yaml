@@ -334,12 +334,39 @@ Resources:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
 
-#HealthModule Link Account
-  EventDrivenHealthModule:
-    Type: AWS::CloudFormation::Stack
+  DataCollectionRuleRole:
     Condition: IncludeHealthModule
+    Type: AWS::IAM::Role
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health.yaml"
-      Parameters:
-        DataCollectionBusArn: !Ref  DataCollectionBusArn
-        IsDataCollectionSetup: "no"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: PutToDataCollectionBusPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "events:PutEvents"
+                Resource:
+                  - !Ref DataCollectionBusArn
+
+  DefaultBusRuleHealth:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "EventBridge default rule for aws.health events"
+      EventBusName: "default"
+      EventPattern:
+        source:
+          - "aws.health"
+          - "awshealthtest"
+      Targets:
+        - Id: DataCollectionRuleOnDefaultBus
+          Arn: !Ref DataCollectionBusArn
+          RoleArn: !GetAtt  DataCollectionRuleRole.Arn
+
