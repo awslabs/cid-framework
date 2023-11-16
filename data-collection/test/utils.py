@@ -179,7 +179,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthModule',             'ParameterValue': "yes"},
-            #{'ParameterKey': 'IncludeCasesModule',              'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCasesModule',              'ParameterValue': "yes"},
         ]
     )
 
