@@ -380,7 +380,7 @@ Resources:
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
-      ReservedConcurrentExecutions: 100
+      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os
