@@ -93,7 +93,7 @@ Resources:
         rules_to_suppress:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
-            
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
@@ -101,6 +101,7 @@ Resources:
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: 100
       Code:
         ZipFile: |
           """ Get Account info from AWS Organizations and store on s3 bucket

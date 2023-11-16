@@ -463,6 +463,7 @@ Resources:
       Runtime: python3.9
       FunctionName: !Sub ${ResourcePrefix}analytics-Lambda
       Description: "Lambda function to collect general deployment metrics"
+      ReservedConcurrentExecutions: 100
       Handler: index.lambda_handler
       MemorySize: 128
       Role: !GetAtt LambdaAnalyticsRole.Arn
