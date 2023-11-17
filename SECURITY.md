@@ -9,3 +9,5 @@ please notify AWS/Amazon Security via our
 [vulnerability reporting page](http://aws.amazon.com/security/vulnerability-reporting/)
 or directly via email to [AWS Security](mailto:aws-security@amazon.com) and [CID Team](mailto:cloud-intelligence-dashboards@amazon.com).
 Please do *not* create a public GitHub issue in this project.
+
+Also please check Security FAQ [here](https://catalog.workshops.aws/awscid/en-US/faqs#security).
