@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2016,SC2086,SC2162
 # This script can be used for release
 
 export AWS_REGION=us-east-1

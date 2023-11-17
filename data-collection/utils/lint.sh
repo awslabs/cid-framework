@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2086,SC2181
 # This script runs cfn-lint cfn_nag_scan and checkov for all templates in folder
 
 RED='\033[0;31m'
