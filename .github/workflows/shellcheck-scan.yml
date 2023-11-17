@@ -8,7 +8,7 @@ on:
 
 jobs:
 
-  cfn-lint-cfn-nag-scan:
+  shellcheck-scan:
     runs-on: ubuntu-latest
     steps:
       - name: Git clone the repository
