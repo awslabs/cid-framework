@@ -107,7 +107,7 @@ Resources:
                 try:
                     account_id = json.loads(event['account'])['account_id']
                 except:
-                    raise Exception('Please use following format : {"account": "{\"account_id\": \"XXXXXXXXX\""}')
+                    raise Exception('Please use event: {"account": "{\"account_id\": \"XXXXXXXXX\""}')
 
                 assumed_role = boto3.client('sts').assume_role(
                     RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
@@ -224,15 +224,15 @@ Resources:
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Description: !Sub 'Scheduler for the ${ResourcePrefix}${CFDataName}'
       Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
 
   LambdaAnalyticsExecutor:

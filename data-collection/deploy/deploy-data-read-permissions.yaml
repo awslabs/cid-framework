@@ -17,12 +17,12 @@ Metadata:
       - Label:
           default: "Available modules"
         Parameters:
+          - IncludeOrgDataModule
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
           - IncludeECSChargebackModule
           - IncludeInventoryCollectorModule
-          - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
@@ -134,9 +134,10 @@ Parameters:
   IncludeOrgDataModule:
     Type: String
     Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
+    Default: "yes"
     AllowedValues:
       - "yes"
-      - "no"
+     #- "no" mandatory module
   IncludeRDSUtilizationModule:
     Type: String
     Description: Collects RDS CloudWatch metrics from your accounts
@@ -161,21 +162,23 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeCasesModule:
-    Type: String
-    Description: Collects AWS Support Cases from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
   IncludeHealthModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
     AllowedValues:
       - "yes"
       - "no"
+  # IncludeCasesModule:
+  #   Type: String
+  #   Description: Collects AWS Support Cases from your accounts
+  #   AllowedValues:
+  #     - "yes"
+  #     - "no"
 
 Conditions:
-  DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
+  DeployModuleReadInMgmt: !Or
+    - !Equals [!Ref AllowModuleReadInMgmt, "yes"]
+    - !Equals [!Ref IncludeHealthModule, "yes"] # Health module requires linked account module to be deployed
   NeedRegionalDeployment: !And
     - !Not [!Equals [!Ref RegionsInScope, ""]]
     - !Equals [!Ref IncludeHealthModule, "yes"] # only health module needs regional deployment as for now
@@ -190,17 +193,9 @@ Resources:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
         ResourcePrefix: !Ref ResourcePrefix
-        IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
-        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
-        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
-        IncludeOrgDataModule: !Ref IncludeOrgDataModule
-        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
-        IncludeTAModule: !Ref IncludeTAModule
-        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
-        IncludeHealthModule: !Ref IncludeHealthModule
 
   # This is a linked account role to be deployed in management account. The other StackSet is not applied to management account itself
   ReadLinkedAccountDataFromManagementAccount:
@@ -235,10 +230,10 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
-        #- ParameterKey: IncludeCasesModule
-        #  ParameterValue: !Ref IncludeCasesModule
         - ParameterKey: IncludeHealthModule
           ParameterValue: !Ref IncludeHealthModule
+        #- ParameterKey: IncludeCasesModule
+        #  ParameterValue: !Ref IncludeCasesModule
       StackInstancesGroup:
         - DeploymentTargets:
             Accounts:
@@ -289,10 +284,10 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
-        #- ParameterKey: IncludeCasesModule
-        #  ParameterValue: !Ref IncludeCasesModule
         - ParameterKey: IncludeHealthModule
           ParameterValue: !Ref IncludeHealthModule
+        #- ParameterKey: IncludeCasesModule
+        #  ParameterValue: !Ref IncludeCasesModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]
@@ -304,3 +299,39 @@ Resources:
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
+
+
+Outputs:
+  IncludeBudgetsModule:
+    Description: 'IncludeBudgetsModule'
+    Value: !Ref   IncludeBudgetsModule
+  IncludeComputeOptimizerModule:
+    Description: 'IncludeComputeOptimizerModule'
+    Value: !Ref   IncludeComputeOptimizerModule
+  IncludeCostAnomalyModule:
+    Description: 'IncludeCostAnomalyModule'
+    Value: !Ref   IncludeCostAnomalyModule
+  IncludeECSChargebackModule:
+    Description: 'IncludeECSChargebackModule'
+    Value: !Ref   IncludeECSChargebackModule
+  IncludeInventoryCollectorModule:
+    Description: 'IncludeInventoryCollectorModule'
+    Value: !Ref   IncludeInventoryCollectorModule
+  IncludeOrgDataModule:
+    Description: 'IncludeOrgDataModule'
+    Value: !Ref   IncludeOrgDataModule
+  IncludeRDSUtilizationModule:
+    Description: 'IncludeRDSUtilizationModule'
+    Value: !Ref   IncludeRDSUtilizationModule
+  IncludeRightsizingModule:
+    Description: 'IncludeRightsizingModule'
+    Value: !Ref   IncludeRightsizingModule
+  IncludeTAModule:
+    Description: 'IncludeTAModule'
+    Value: !Ref   IncludeTAModule
+  IncludeTransitGatewayModule:
+    Description: 'IncludeTransitGatewayModule'
+    Value: !Ref   IncludeTransitGatewayModule
+  IncludeHealthModule:
+    Description: 'IncludeHealthModule'
+    Value: !Ref   IncludeHealthModule
