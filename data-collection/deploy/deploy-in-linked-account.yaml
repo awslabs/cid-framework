@@ -9,7 +9,6 @@ Metadata:
         - DataCollectionAccountID
         - MultiAccountRoleName
         - ResourcePrefix
-       # - DataCollectionBusArn
         - LeadingRegion
     - Label:
         default: 'Available modules'
@@ -143,7 +142,7 @@ Conditions:
     - !Condition IncludeHealthModule
   # IncludeCasesModule: !Equals [  - !Ref IncludeCasesModule, 'yes']
   #   - "yes"
-  
+
 Outputs:
   LambdaRole:
     Condition: IsLeadingRegion
@@ -312,7 +311,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-
 
   HealthBackfillPolicy:
     Type: 'AWS::IAM::Policy'

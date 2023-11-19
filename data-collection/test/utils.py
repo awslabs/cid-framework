@@ -203,7 +203,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthModule',             'ParameterValue': "yes"},
-            #{'ParameterKey': 'IncludeCasesModule',              'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCasesModule',              'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
