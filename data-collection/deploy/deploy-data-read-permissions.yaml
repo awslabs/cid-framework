@@ -12,6 +12,7 @@ Metadata:
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
           - ResourcePrefix
+          - RegionsInScope
           - CFNTemplateSourceBucket
       - Label:
           default: "Available modules"
@@ -41,6 +42,8 @@ Metadata:
         default: "Allow creation of read roles for modules in management account"
       ResourcePrefix:
         default: "Role Prefix"
+      RegionsInScope:
+        default: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1 . Please note that only AWS Health module needs multi region deployment. "
       CFNTemplateSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       IncludeBudgetsModule:
@@ -89,9 +92,14 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "CID-DC-"
+  RegionsInScope:
+    Type: String
+    Description: "Ex: us-east-1,us-east-2,us-west-1,us-west-2,eu-central-1,eu-west-1,eu-west-2,eu-west-3  if empty, the current region will be used. You can add regions later by updating the stack."
+    Default: ""
+    AllowedPattern: ([a-z0-9\-, ]*?$)
   CFNTemplateSourceBucket:
     Type: String
-    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
   IncludeBudgetsModule:
     Type: String
@@ -168,9 +176,13 @@ Parameters:
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
+  NeedRegionalDeployment: !And
+    - !Not [!Equals [!Ref RegionsInScope, ""]]
+    - !Equals [!Ref IncludeHealthModule, "yes"] # only health module needs regional deployment as for now
 
 Resources:
-  DataCollectorMgmtAccountReadStack:
+
+  ReadManagementAccountSpecificData:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
@@ -189,32 +201,68 @@ Resources:
         IncludeTAModule: !Ref IncludeTAModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeHealthModule: !Ref IncludeHealthModule
-  DataCollectorMgmtAccountModulesReadStack:
-    Type: AWS::CloudFormation::Stack
+
+  # This is a linked account role to be deployed in management account. The other StackSet is not applied to management account itself
+  ReadLinkedAccountDataFromManagementAccount:
     Condition: DeployModuleReadInMgmt
+    Type: AWS::CloudFormation::StackSet
     Properties:
+      StackSetName: !Sub "StackSet-${AWS::AccountId}-ReadDataInManagementAccount"
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      Description: "StackSet in charge of deploying read roles across organization accounts"
+      PermissionModel: SELF_MANAGED
+      OperationPreferences:
+        MaxConcurrentPercentage: 100
+        FailureTolerancePercentage: 0 # All must work as expected in the management account
       Parameters:
-        DataCollectionAccountID: !Ref DataCollectionAccountID
-        MultiAccountRoleName: !Ref MultiAccountRoleName
-        ResourcePrefix: !Ref ResourcePrefix
-        IncludeTAModule: !Ref IncludeTAModule
-        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
-        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
-        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
-        IncludeBudgetsModule: !Ref IncludeBudgetsModule
-        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
-        IncludeHealthModule: !Ref IncludeHealthModule
-        #IncludeCasesModule: !Ref IncludeCasesModule
-        #DataCollectionBusArn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
+        - ParameterKey: DataCollectionAccountID
+          ParameterValue: !Ref DataCollectionAccountID
+        - ParameterKey: MultiAccountRoleName
+          ParameterValue: !Ref MultiAccountRoleName
+        - ParameterKey: ResourcePrefix
+          ParameterValue: !Ref ResourcePrefix
+        - ParameterKey: LeadingRegion
+          ParameterValue: !Ref AWS::Region
+        - ParameterKey: IncludeTAModule
+          ParameterValue: !Ref IncludeTAModule
+        - ParameterKey: IncludeInventoryCollectorModule
+          ParameterValue: !Ref IncludeInventoryCollectorModule
+        - ParameterKey: IncludeECSChargebackModule
+          ParameterValue: !Ref IncludeECSChargebackModule
+        - ParameterKey: IncludeRDSUtilizationModule
+          ParameterValue: !Ref IncludeRDSUtilizationModule
+        - ParameterKey: IncludeBudgetsModule
+          ParameterValue: !Ref IncludeBudgetsModule
+        - ParameterKey: IncludeTransitGatewayModule
+          ParameterValue: !Ref IncludeTransitGatewayModule
+        #- ParameterKey: IncludeCasesModule
+        #  ParameterValue: !Ref IncludeCasesModule
+        - ParameterKey: IncludeHealthModule
+          ParameterValue: !Ref IncludeHealthModule
+      StackInstancesGroup:
+        - DeploymentTargets:
+            Accounts:
+              - !Ref AWS::AccountId
+          Regions:
+            !If
+             - NeedRegionalDeployment
+             - !Split [",", !Ref RegionsInScope] # use list of region
+             - [!Ref AWS::Region]                # use only one current region
+      Capabilities:
+        - CAPABILITY_IAM
+        - CAPABILITY_NAMED_IAM
+
+  # Same stack as above but for all accounts (except management)
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
+      StackSetName: !Sub "StackSet-${AWS::AccountId}-ReadDataInEachAccount"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
       Description: "StackSet in charge of deploying read roles across organization accounts"
       PermissionModel: SERVICE_MANAGED
       OperationPreferences:
         MaxConcurrentPercentage: 100
-        FailureTolerancePercentage: 100
+        FailureTolerancePercentage: 50
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: false
@@ -227,6 +275,8 @@ Resources:
           ParameterValue: !Ref MultiAccountRoleName
         - ParameterKey: ResourcePrefix
           ParameterValue: !Ref ResourcePrefix
+        - ParameterKey: LeadingRegion
+          ParameterValue: !Ref AWS::Region
         - ParameterKey: IncludeTAModule
           ParameterValue: !Ref IncludeTAModule
         - ParameterKey: IncludeInventoryCollectorModule
@@ -247,9 +297,10 @@ Resources:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]
           Regions:
-            - !Ref "AWS::Region"
+            !If
+             - NeedRegionalDeployment
+             - !Split [",", !Ref RegionsInScope] # use list of region
+             - [!Ref AWS::Region]                # use only one current region
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
-      StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"

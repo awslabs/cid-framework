@@ -10,6 +10,7 @@ Metadata:
         - MultiAccountRoleName
         - ResourcePrefix
        # - DataCollectionBusArn
+        - LeadingRegion
     - Label:
         default: 'Available modules'
       Parameters:
@@ -22,6 +23,8 @@ Metadata:
         - IncludeHealthModule
         # - IncludeCasesModule
     ParameterLabels:
+      LeadingRegion:
+        default: 'The region where you will manage IAM (typically the same region where you installed data collection stack)'
       DataCollectionAccountID:
         default: 'Data Collection Account ID'
       MultiAccountRoleName:
@@ -45,6 +48,9 @@ Metadata:
       # IncludeCasesModule:
       #   default: 'Include Health Module'
 Parameters:
+  LeadingRegion:
+    Type: String
+    Description: The region where we will mange roles
   DataCollectionAccountID:
     Type: String
     Description: AccountId of where the collector is deployed
@@ -58,11 +64,7 @@ Parameters:
     Default: "CID-DC-"
   #DataCollectionBusArn:
   #  Type: String
-  #  Description: 'Centerlized DataCollection EventBus Arn in data collection account'
-  CFNTemplateSourceBucket:
-    Type: String
-    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
-    Default: "aws-managed-cost-intelligence-dashboards"
+  #  Description: 'Centralized DataCollection EventBus Arn in data collection account'
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -113,37 +115,44 @@ Parameters:
   #     - "no"
 
 Conditions:
-  IncludeTAModulePolicy: !Equals
-    - !Ref IncludeTAModule
-    - "yes"
-  IncludeInventoryCollectorModulePolicy: !Equals
-    - !Ref IncludeInventoryCollectorModule
-    - "yes"
-  IncludeECSChargebackModulePolicy: !Equals
-    - !Ref IncludeECSChargebackModule
-    - "yes"
-  IncludeRDSUtilizationModulePolicy: !Equals
-    - !Ref IncludeRDSUtilizationModule
-    - "yes"
-  IncludeBudgetsModulePolicy: !Equals
-    - !Ref IncludeBudgetsModule
-    - "yes"
-  IncludeTransitGatewayModulePolicy: !Equals
-    - !Ref IncludeTransitGatewayModule
-    - "yes"
-  IncludeHealthModule: !Equals
-    - !Ref IncludeHealthModule 
-    - "yes"
-  # IncludeCasesModule: !Equals 
-  #   - !Ref IncludeCasesModule 
+  IsLeadingRegion: !Equals [!Ref LeadingRegion, !Ref AWS::Region]
+  IncludeTAModulePolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeTAModule, 'yes']
+  IncludeInventoryCollectorModulePolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeInventoryCollectorModule, 'yes']
+  IncludeECSChargebackModulePolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeECSChargebackModule, 'yes']
+  IncludeRDSUtilizationModulePolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeRDSUtilizationModule, 'yes']
+  IncludeBudgetsModulePolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeBudgetsModule, 'yes']
+  IncludeTransitGatewayModulePolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeTransitGatewayModule, 'yes']
+  IncludeHealthModule: !Equals [!Ref IncludeTransitGatewayModule, 'yes'] # in all regions
+  IncludeHealthBackfillPolicy: !And
+    - !Condition IsLeadingRegion
+    - !Equals [!Ref IncludeHealthModule, 'yes']
+  IncludeBusRole: !And
+    - !Condition IsLeadingRegion
+    - !Condition IncludeHealthModule
+  # IncludeCasesModule: !Equals [  - !Ref IncludeCasesModule, 'yes']
   #   - "yes"
-
+  
 Outputs:
   LambdaRole:
+    Condition: IsLeadingRegion
     Description: For lambda to assume in cost account
     Value: !GetAtt LambdaRole.Arn
+
 Resources:
   LambdaRole:
+    Condition: IsLeadingRegion
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
@@ -303,11 +312,13 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
+
+
   HealthBackfillPolicy:
     Type: 'AWS::IAM::Policy'
-    Condition: IncludeHealthModule
+    Condition: IncludeHealthBackfillPolicy
     Properties:
-      PolicyName: Healthapiaccess
+      PolicyName: HealthAPIAccess
       PolicyDocument:
           Version: '2012-10-17'
           Statement:
@@ -330,9 +341,10 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
 
   DataCollectionRuleRole:
-    Condition: IncludeHealthModule
+    Condition: IncludeBusRole
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub "${ResourcePrefix}put-events-to-data-collection-bus"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -347,11 +359,13 @@ Resources:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: "events:PutEvents"
+                Action:
+                - "events:PutEvents"
                 Resource:
                   - !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
 
   DefaultBusRuleHealth:
+    Condition: IncludeHealthModule
     Type: "AWS::Events::Rule"
     Properties:
       Description: "EventBridge default rule for aws.health events"
@@ -363,5 +377,5 @@ Resources:
       Targets:
         - Id: DataCollectionRuleOnDefaultBus
           Arn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
-          RoleArn: !GetAtt  DataCollectionRuleRole.Arn
+          RoleArn: !Sub "arn:aws:iam::${AWS::AccountId}:role/${ResourcePrefix}put-events-to-data-collection-bus" #DataCollectionRuleRole.Arn
 

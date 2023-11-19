@@ -327,16 +327,20 @@ Conditions:
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
   DeployAccountCollector: !Or
-    - !Condition DeployTAModule
-    - !Condition DeployRightsizingModule
-    - !Condition DeployCostAnomalyModule
-    - !Condition DeployInventoryCollectorModule
-    - !Condition DeployComputeOptimizerModule
-    - !Condition DeployEcsChargebackModule
-    - !Condition DeployRDSUtilizationModule
-    - !Condition DeployOrgDataModule
-    - !Condition DeployBudgetsModule
-    - !Condition DeployTransitGatewayModule
+    - !Or
+      - !Condition DeployTAModule
+      - !Condition DeployRightsizingModule
+      - !Condition DeployCostAnomalyModule
+      - !Condition DeployInventoryCollectorModule
+      - !Condition DeployComputeOptimizerModule
+      - !Condition DeployEcsChargebackModule
+      - !Condition DeployRDSUtilizationModule
+      - !Condition DeployOrgDataModule
+      - !Condition DeployBudgetsModule
+    - !Or
+      - !Condition DeployTAModule
+      - !Condition DeployTransitGatewayModule
+      - !Condition DeployHeathModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -989,12 +993,18 @@ Resources:
         AWSOrganizationID: !Ref AWSOrganizationID
         DestinationBucket: !Ref S3Bucket
 
-  EventDrivenHealthModule:
+  HealthModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployHeathModule
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health.yaml"
       Parameters:
-        DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        MultiAccountRoleName: !Ref MultiAccountRoleName
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+

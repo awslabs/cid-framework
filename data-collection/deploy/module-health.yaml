@@ -3,9 +3,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Stack to enable link account to send data to central DataCollectionBus
 
 Parameters:
-  DataCollectionBusArn:
-    Type: String
-    Description: Centralized DataCollection EventBus Arn in data collection account
   MultiAccountRoleName:
     Type: String
     Description: Name of the IAM role deployed in all accounts which can retrieve AWS Data.
@@ -14,10 +11,29 @@ Parameters:
     Type: String
     Description: The name of what this cf is doing.
     Default: health
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
     Default: "CID-DC-"
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
 
 Resources:
 
@@ -44,7 +60,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ResourcePrefix}${MultiAccountRoleName}"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
         - PolicyName: HealthAPIAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -69,21 +85,29 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  BackfillHealthEventLambda:
+  LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Code:
           ZipFile: |
             import os
             import json
+            import logging
             from datetime import datetime
 
             import boto3
 
+            logger = logging.getLogger()
+            logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
             ROLE_NAME = os.environ['ROLE_NAME']
 
             def lambda_handler(event, context):
-                account_id = event['account']
+                try:
+                    account_id = json.loads(event['account'])['account_id']
+                except:
+                    raise Exception('Please use following format : {"account": "{\"account_id\": \"XXXXXXXXX\""}')
 
                 assumed_role = boto3.client('sts').assume_role(
                     RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
@@ -113,9 +137,9 @@ Resources:
                         if not next_token:
                             break
                 except Exception as exc:
-                    print(exc)
+                    logger.error(exc)
 
-            def get_event_data(event_details, event_description, health):
+            def get_event_data(event_details, event_description):
                 event_data = {
                     'eventArn': event_details['arn'],
                     'eventRegion': event_details.get('region', ''),
@@ -128,12 +152,12 @@ Resources:
                 if 'lastUpdatedTime' in event_details:
                     event_data['lastUpdatedTime'] = event_details['lastUpdatedTime'].strftime('%a, %d %b %Y %H:%M:%S GMT')
                 event_data.update((key, value) for key, value in event_details.items() if key not in event_data)
-                print(event_data)
+                logger.debug(event_data)
                 return event_data
 
             def send_event_default_bus(event, eventbridge):
                 # Send the event to EventBridge
-                eventbridge.put_events(
+                res = eventbridge.put_events(
                     Entries=[{
                         'Source': 'awshealthtest',
                         'DetailType': 'awshealthtest',
@@ -141,6 +165,7 @@ Resources:
                         'EventBusName': 'default'
                     }]
                 )
+                logger.info(res)
 
             def read_and_send_events(health, eventbridge):
                 try:
@@ -159,24 +184,63 @@ Resources:
                         event_details = successful_set_details[0]['event']
                         event_details['affectedEntities'] = [{'entityValue':entity_values}]
                         event_description = successful_set_details[0]['eventDescription']
-                        event_data = get_event_data(event_details, event_description, health)
+                        event_data = get_event_data(event_details, event_description)
 
                         send_event_default_bus(event_data,eventbridge)
                 except Exception as exc:
-                    print(exc)
+                    logger.error(exc)
       Handler: index.lambda_handler
-      Runtime: python3.11
+      Runtime: python3.10
       ReservedConcurrentExecutions: 5
       Timeout: 900
       Role: !GetAtt BackfillHealthEventLambdaRole.Arn
       Environment:
         Variables:
-          ROLE_NAME: !Sub ${ResourcePrefix}${MultiAccountRoleName}
+          ROLE_NAME: !Ref MultiAccountRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:
           - id: W58
             reason: "Given AWSLambdaBasicExecutionRole and allows Cloudwatch"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: '[]' # No need for crawler as Kinesis adds projected partitions
+        CollectionType: 'Payers' #FIXME can probably give a list of delegated accounts instead of payers
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      Target:
+          Arn: !GetAtt ModuleStepFunction.Arn
+          RoleArn: !Ref SchedulerExecutionRoleARN
+
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
+
 
   # EventToTriggerBackfillLambda:
   #   Type: "AWS::Events::Rule"
