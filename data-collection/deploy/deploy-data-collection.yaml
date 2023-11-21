@@ -38,7 +38,7 @@ Metadata:
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       Schedule:
-        default: "Schedule swap to cron(0 8 1 * ? *) for 1st day of the month"
+        default: "Schedule can be swapped to cron, for example: cron(0 8 1,15 * ? *) for 08:00 the 1st and 15th days of the month"
       RegionsInScope:
         default: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
       DatabaseName:
@@ -157,7 +157,8 @@ Mappings:
                 }
               },
               "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
-              "Next": "CrawlerStepFunctionStartExecution"
+              "Next": "CrawlerStepFunctionStartExecution",
+              "MaxConcurrency": 60
             },
             "CrawlerStepFunctionStartExecution": {
               "Type": "Task",
@@ -463,6 +464,7 @@ Resources:
       Runtime: python3.9
       FunctionName: !Sub ${ResourcePrefix}analytics-Lambda
       Description: "Lambda function to collect general deployment metrics"
+      ReservedConcurrentExecutions: 0
       Handler: index.lambda_handler
       MemorySize: 128
       Role: !GetAtt LambdaAnalyticsRole.Arn
@@ -740,6 +742,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule

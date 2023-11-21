@@ -15,10 +15,9 @@ failure_count=0
 # CKV_AWS_117 - Ensure AWS Lambda function is configured inside a VPC
 # CKV_AWS_116 - Ensure the S3 bucket has logging enabled:
 # CKV_AWS_173 - Check encryption settings for Lambda environmental variable
-# CKV_AWS_115 - Ensure AWS Lambda function is configured for function-level concurrent execution limit
 # CKV_AWS_195 - Ensure Glue component has a security configuration associated
 # CKV_SECRET_6 - Base64 High Entropy String
-checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_115,CKV_AWS_195,CKV_SECRET_6
+checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_195,CKV_SECRET_6
 
 export exclude_files=("module-inventory.yaml" "module-pricing.yaml") # For::Each breaks lint :'(
 
