@@ -1,0 +1,18 @@
+
+name: Shellcheck Scan
+
+on:
+  pull_request:
+    branches:
+      - '*'
+
+jobs:
+
+  shellcheck-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git clone the repository
+        uses: actions/checkout@v3
+      - name: Scan all bash
+        run: |
+          find ./ -type f -name "*.sh"  -exec shellcheck {} +

@@ -68,6 +68,7 @@ Resources:
       Description: "Lambda function to retrieve the account list"
       Runtime: python3.10
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: 0
       Code:
           ZipFile: |
             import os
@@ -140,7 +141,9 @@ Resources:
                         except CidNonCriticalError as exc:
                             pass #Not necessarily fatal
                     else:
-                        account_data = populate_account(payer_id, payer_id, payer_id)
+                        client = get_client_with_role(role_name, payer_id, region="us-east-1", service="organizations")
+                        account = client.describe_account(AccountId=payer_id)['Account']
+                        account_data = populate_account(payer_id, account['Name'], payer_id)
                         account_list.append({"account" : json.dumps(account_data)})
 
                 if len(account_list) == 0:

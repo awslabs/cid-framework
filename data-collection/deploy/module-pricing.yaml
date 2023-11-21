@@ -46,6 +46,10 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  RdsGravitonPath:
+    Type: String
+    Description: Path to the RDS Graviton mapping file
+    Default: cfn/data-collection/data/rds_graviton_mapping.csv
 
 Mappings:
   ServicesMap:
@@ -312,7 +316,15 @@ Mappings:
           - { Type: string, Name: regionname }
           - { Type: string, Name: endpoint }
           - { Type: string, Name: protocol }
-
+    RDSGraviton:
+      path: rdsgraviton
+      partition:
+          - { Name: partition, Type: string }
+      fields:
+          - { Type: string, Name: dbtype }
+          - { Type: string, Name: databaseengine }
+          - { Type: string, Name: instancetype }
+          - { Type: string, Name: graviton_instancetype }
 
 Resources:
   LambdaRole:
@@ -368,6 +380,7 @@ Resources:
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os
@@ -387,6 +400,7 @@ Resources:
           PREFIX = os.environ["DEST_PREFIX"]
           REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
           TMP_FILE = "/tmp/data.json"
+          RDS_GRAVITON_PATH = os.environ["RDS_GRAVITON_PATH"]
 
           def get_json(url):
               return json.loads(urllib3.PoolManager().request('GET', url).data)
@@ -499,8 +513,8 @@ Resources:
               # FIXME: move it to separate lambda?
               try:
                   s3copy(
-                      CODE_BUCKET, 'cfn/data-collection/data/graviton/rds_graviton_mapping.csv',
-                      BUCKET_NAME, 'pricing/graviton/rds_graviton_mapping.csv',
+                      CODE_BUCKET, RDS_GRAVITON_PATH,
+                      BUCKET_NAME, 'pricing/pricing-rdsgraviton-data/rds_graviton_mapping.csv',
                   )
               except Exception as exc:
                   res['errors'] += f'rds_graviton_mapping: {exc}'
@@ -519,6 +533,7 @@ Resources:
           CODE_BUCKET: !Ref CodeBucket
           DEST_PREFIX: !Ref CFDataName
           REGIONS: !Ref RegionsInScope
+          RDS_GRAVITON_PATH: !Ref RdsGravitonPath
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -538,7 +553,8 @@ Resources:
           ScheduleExpression: !Ref Schedule
           State: ENABLED
           FlexibleTimeWindow:
-            Mode: 'OFF'
+            MaximumWindowInMinutes: 30
+            Mode: 'FLEXIBLE'
           Target:
             Arn: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
             RoleArn: !Ref SchedulerExecutionRoleARN
