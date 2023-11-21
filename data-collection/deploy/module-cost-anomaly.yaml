@@ -104,64 +104,89 @@ Resources:
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os
           import json
           import logging
           from datetime import date, timedelta, datetime
+
           import boto3
-          from boto3.s3.transfer import S3Transfer
 
           BUCKET = os.environ['BUCKET_NAME']
-          ROLE = os.environ['ROLENAME']
-          PREFIX = os.environ['PREFIX']
+          ROLE_NAME = os.environ['ROLENAME']
+          MODULE_NAME = os.environ['PREFIX']
+          TMP_FILE = '/tmp/tmp.json'
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          logger.setLevel(logging.DEBUG)
+
+          # Helper Exception classes
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                  if type(self) == CidNonCriticalError.__class__:
+                      logger.warning(message)
+                  else:
+                      logger.error(message)
+                  super().__init__(message)
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
+
 
           def lambda_handler(event, context):
-              logger.info(f"Event data {json.dumps(event)}")
-              if 'account' not in event:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
-              start_date, end_date = calculate_dates(s3_path=f'{PREFIX}/cost-anomaly-data/')
-              logger.info(f'start_date={start_date}, end_date={end_date}')
-              total_count = 0
-              account = json.loads(event["account"])
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              key = "account"
               try:
-                  creds = assume_role(ROLE, account["account_id"])
-                  ce = get_client(creds, "us-east-1", "ce")
-                  data = get_ce_costanomaly(ce, start_date, end_date)
-                  flattened_data = flatten_results(data)
-                  total_count += len(flattened_data)
-                  store_data_to_s3(flattened_data, f'{PREFIX}/cost-anomaly-data/payer_id={account["account_id"]}')
+                  account = json.loads(event[key])
+                  main(account, ROLE_NAME, MODULE_NAME, BUCKET)
+
+              except KeyError as e:
+                  logger.error(f"Lambda event parameter '{key}' not defined (fatal) in {MODULE_NAME} module. Please do not trigger this Lambda manually. "
+                      f"Find the corresponding {MODULE_NAME} state machine in Step Functions and trigger from there."
+                  )
+                  raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter")
+
+              except CidNonCriticalError as exc:
+                  pass
+              except CidCriticalError as exc:
+                  raise exc
               except Exception as exc:
-                  logging.warning(exc)
+                  raise CidCriticalError(f"(UnhandledExceptionError) in {MODULE_NAME} module", exc)
 
-              return "Successful"
+              return {
+                  'statusCode': 200
+              }
 
-          def store_data_to_s3(flattened_data, path):
-              today = date.today()
-              year = today.year
-              month = today.strftime('%m')
-              day = today.day
-              local_file = '/tmp/tmp.json'
-              with open(local_file, 'w') as f:
-                  f.write('\n'.join([json.dumps(result) for result in flattened_data]))
-              if os.path.getsize(local_file) == 0:
-                  print(f"No data in file for {path}")
-                  return
-              s3client = boto3.client('s3')
-              key = today.strftime(f"{path}/year={year}/month={month}/day={day}/{year}-{month}-{day}.json")
-              print(f"Uploading file {local_file} to {BUCKET}/{key}")
-              S3Transfer(s3client).upload_file(local_file, BUCKET, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              print('file upload successful')
+          def main(account, role_name, module_name, bucket):
+              start_date, end_date = calculate_dates(bucket, s3_path=f'{module_name}/cost-anomaly-data/')
+              logger.info(f'Using start_date={start_date}, end_date={end_date}')
 
-          def get_ce_costanomaly(ce, start_date, end_date):
+              data_uploaded = False
+              account_id = account["account_id"]
+              records = get_api_data(role_name, account_id, start_date, end_date)
+              if len(records) > 0:
+                  count = process_records(records, TMP_FILE)
+                  if count > 0:
+                      upload_to_s3(account_id, bucket, module_name, TMP_FILE)
+                      data_uploaded = True
+              if not data_uploaded:
+                  logger.info("No file uploaded because no new records were found")
+
+          def get_api_data(role_name, account_id, start_date, end_date):
               results = []
+              client = get_client_with_role(role_name, account_id, region="us-east-1", service="ce")
               next_token = None
               while True:
                   params = dict(
@@ -173,43 +198,120 @@ Resources:
                   )
                   if next_token:
                       params['NextPageToken'] = next_token
-                  response = ce.get_anomalies(**params)
+                  response = client.get_anomalies(**params)
                   results += response['Anomalies']
                   if 'NextPageToken' in response:
                       next_token = response['NextPageToken']
                   else:
                       break
+              logger.info(f"API results total {len(results)}")
               return results
 
-          def flatten_results(results):
-              flattened_results = []
-              for anomaly in results:
-                  flattened_anomaly = {
-                      'AnomalyId': anomaly['AnomalyId'],
-                      'AnomalyStartDate': anomaly['AnomalyStartDate'],
-                      'AnomalyEndDate': anomaly['AnomalyEndDate'],
-                      'DimensionValue': anomaly['DimensionValue'],
-                      'MaxImpact': anomaly['Impact']['MaxImpact'],
-                      'TotalActualSpend': anomaly['Impact']['TotalActualSpend'],
-                      'TotalExpectedSpend': anomaly['Impact']['TotalExpectedSpend'],
-                      'TotalImpact': anomaly['Impact']['TotalImpact'],
-                      'TotalImpactpercentage': anomaly['Impact'].get('TotalImpactPercentage', 0),
-                      'MonitorArn': anomaly['MonitorArn'],
-                      'LinkedAccount': anomaly['RootCauses'][0].get('LinkedAccount'),
-                      'LinkedAccountName': anomaly['RootCauses'][0].get('LinkedAccountName'),
-                      'Region': anomaly['RootCauses'][0].get('Region'),
-                      'Service': anomaly['RootCauses'][0].get('Service'),
-                      'UsageType': anomaly['RootCauses'][0].get('UsageType')
-                  }
-                  flattened_results.append(flattened_anomaly)
-              return flattened_results
 
-          def calculate_dates(s3_path):
+          def process_records(records, tmp_file):
+              count = 0
+              try:
+                  with open(tmp_file, "w", encoding='utf-8') as f:
+                      for record in records:
+                          data = parse_record(record)
+                          f.write(to_json(data))
+                          f.write("\n")
+                          count += 1
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in process_records", exc)
+
+              logger.info(f"Processed a total of {count} new records for account")
+              return count
+
+          def parse_record(record):
+              logger.debug(f"Processing record {record}")
+              result = {
+                  'AnomalyId': get_value_by_path(record, 'AnomalyId'),
+                  'AnomalyStartDate': get_value_by_path(record, 'AnomalyStartDate'),
+                  'AnomalyEndDate': get_value_by_path(record, 'AnomalyEndDate'),
+                  'DimensionValue': get_value_by_path(record, 'DimensionValue'),
+                  'MaxImpact': get_value_by_path(record, 'Impact/MaxImpact'),
+                  'TotalActualSpend': get_value_by_path(record, 'Impact/TotalActualSpend'),
+                  'TotalExpectedSpend': get_value_by_path(record, 'Impact/TotalExpectedSpend'),
+                  'TotalImpact': get_value_by_path(record, 'Impact/TotalImpact'),
+                  'TotalImpactpercentage': get_value_by_path(record, 'Impact/TotalImpactPercentage', 0),
+                  'MonitorArn': get_value_by_path(record, 'MonitorArn'),
+                  'LinkedAccount': get_value_by_path(record, 'RootCauses/0/LinkedAccount'),
+                  'LinkedAccountName': get_value_by_path(record, 'RootCauses/0/LinkedAccountName'),
+                  'Region': get_value_by_path(record, 'RootCauses/0/Region'),
+                  'Service': get_value_by_path(record, 'RootCauses/0/Service'),
+                  'UsageType': get_value_by_path(record, 'RootCauses/0/UsageType')
+              }
+              logger.debug(f"Processing record complete")
+              return result
+
+
+          def upload_to_s3(payer_id, bucket, module_name, tmp_file, sub_name="-"):
+              try:
+                  key = datetime.now().strftime(f"{module_name}/{module_name}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+                  res = boto3.client('s3').upload_file(tmp_file, bucket, key)
+                  logger.info(f"Data stored to s3://{bucket}/{key}")
+
+              except Exception as exc:
+                  raise CidFatalError(exc)
+
+
+          def get_value_by_path(data, path, default=None):
+              logger.debug(f"Traversing for path {path}")
+              keys = path.split("/")
+              current = data
+              for key in keys:
+                  if isinstance(current, dict) and key in current:
+                      logger.debug(f"Found key {key}")
+                      current = current.get(key, default)
+                  elif isinstance(current, list) and key.isdigit():
+                      try:
+                          current = current[int(key)]
+                          logger.debug(f"Found index {key}")
+                      except (IndexError):
+                          logger.debug(f"Index value {key} within path {path} is not valid in get_value_by_path for data {data}, returning default of {default}")
+                          return default
+                  else:
+                      logger.debug(f"Key value {key} within path {path} is not valid in get_value_by_path for data {data}, returning default of {default}")
+                      return default
+              return current
+
+
+          def get_client_with_role(role_name, account_id, service, region):
+              logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              try:
+                  credentials = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                      RoleSessionName="data_collection"
+                  )['Credentials']
+                  logger.debug("Successfully assumed role, now getting client")
+                  client = boto3.client(
+                      service,
+                      region_name = region,
+                      aws_access_key_id=credentials['AccessKeyId'],
+                      aws_secret_access_key=credentials['SecretAccessKey'],
+                      aws_session_token=credentials['SessionToken'],
+                  )
+                  logger.info("Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  return client
+
+              except Exception as exc:
+                  raise ClientAccessError(exc, role_name, account_id, service, region)
+
+          def to_json(obj):
+              return json.dumps(
+                  obj,
+                  default=lambda x:
+                      x.isoformat() if isinstance(x, (date, datetime)) else None
+              )
+
+
+          def calculate_dates(bucket, s3_path):
               end_date = datetime.now().date()
               start_date = datetime.now().date() - timedelta(days=90) #Cost anomalies are available for last 90days
               # Check the create time of objects in the S3 bucket
               paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=BUCKET, Prefix=s3_path)], [])
+              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=bucket, Prefix=s3_path)], [])
               last_modified_date = get_last_modified_date(contents)
               if last_modified_date and last_modified_date >= start_date:
                   start_date = last_modified_date
@@ -221,36 +323,6 @@ Resources:
               if last_modified_dates_within_90_days:
                   return max(last_modified_dates_within_90_days)
               return None
-
-          def assume_role(role_name, payer_id):
-              logging.debug("Assuming role ...")
-              try:
-                  creds = boto3.client('sts').assume_role(
-                        RoleArn=f"arn:aws:iam::{payer_id}:role/{role_name}",
-                        RoleSessionName="data_collection"
-                  )['Credentials']
-                  logging.info(f"Successfully assumed role")
-                  return creds
-              except Exception as exc:
-                  logger.error(f"Error '{exc}' assuming role: role_name={role_name}, payer_id={payer_id}")
-                  raise RuntimeError("Error building client")
-
-          def get_client(credentials, region, service):
-              logging.debug("Getting session from credentials ...")
-              try:
-                  service_client = boto3.client(
-                        service,
-                        region_name = region,
-                        aws_access_key_id=credentials['AccessKeyId'],
-                        aws_secret_access_key=credentials['SecretAccessKey'],
-                        aws_session_token=credentials['SessionToken'],
-                  )
-                  logging.info("Successfully got client")
-                  return service_client
-              except Exception as exc:
-                  logger.error(f"Error '{exc}' building client: service={service}, region={region}")
-                  raise RuntimeError("Error building client")
-                    
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 600
@@ -304,10 +376,11 @@ Resources:
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
-        Mode: 'OFF'
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor

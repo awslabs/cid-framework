@@ -104,6 +104,7 @@ Resources:
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os
@@ -265,7 +266,8 @@ Resources:
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
-        Mode: 'OFF'
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
       Target:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
@@ -284,7 +286,7 @@ Resources:
       Description: Provides a summary view of the lambda data
       Name: ecs_chargeback_cluster_metadata_view
       QueryString: |
-          CREATE OR REPLACE VIEW ecs_chargeback_cluster_metadata_view AS 
+          CREATE OR REPLACE VIEW ecs_chargeback_cluster_metadata_view AS
           SELECT
             *
           , "tag"."value"
@@ -324,7 +326,7 @@ Resources:
       Description: Provides a summary view of the lambda data
       Name: ecs_chargeback_bu_usage
       QueryString: !Sub |
-        CREATE OR REPLACE VIEW ecs_chargeback_bu_usage AS 
+        CREATE OR REPLACE VIEW ecs_chargeback_bu_usage AS
         SELECT
           "bill_payer_account_id"
         , "line_item_product_code"

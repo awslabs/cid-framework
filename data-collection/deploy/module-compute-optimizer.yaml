@@ -38,7 +38,7 @@ Parameters:
     Type: String
     AllowedValues: ["yes", "no"]
     Default: 'yes'
-    Description: Include Member Accounts or not. Set to 'yes' when working with payer 
+    Description: Include Member Accounts or not. Set to 'yes' when working with payer
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
@@ -328,6 +328,7 @@ Resources:
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
       Runtime: python3.10
       Architectures: [x86_64]
+      ReservedConcurrentExecutions: 0
       Environment:
         Variables:
           REGIONS: !Ref RegionsInScope
@@ -447,10 +448,11 @@ Resources:
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
-        Mode: 'OFF'
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
   CustomResourceFunctionFinalize:
     Type: AWS::Lambda::Function
@@ -460,6 +462,7 @@ Resources:
       Description: "Lambda to Finalize Setup (call trigger lambda) or Start teardown (Cleanup buckets)"
       Runtime: python3.10
       Architectures: [ arm64 ]
+      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os
