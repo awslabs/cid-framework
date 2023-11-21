@@ -204,6 +204,7 @@ Parameters:
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
+    AllowedPattern: ([a-z0-9_]*?$)
     Default: optimization_data
   ResourcePrefix:
     Type: String
