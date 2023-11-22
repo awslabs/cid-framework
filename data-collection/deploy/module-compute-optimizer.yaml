@@ -328,7 +328,6 @@ Resources:
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
       Runtime: python3.10
       Architectures: [x86_64]
-      ReservedConcurrentExecutions: 0
       Environment:
         Variables:
           REGIONS: !Ref RegionsInScope
@@ -462,7 +461,6 @@ Resources:
       Description: "Lambda to Finalize Setup (call trigger lambda) or Start teardown (Cleanup buckets)"
       Runtime: python3.10
       Architectures: [ arm64 ]
-      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os

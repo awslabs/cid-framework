@@ -17,7 +17,8 @@ failure_count=0
 # CKV_AWS_173 - Check encryption settings for Lambda environmental variable - No sensitive parameters in environmental variables
 # CKV_AWS_195 - Ensure Glue component has a security configuration associated - AWS managed encryption is used for s3.
 # CKV_SECRET_6 - Base64 High Entropy String - Remove false positives
-checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_195,CKV_SECRET_6
+# CKV_AWS_115 - Ensure that AWS Lambda function is configured for function-level concurrent execution limit - No need for concurency reservation
+checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_195,CKV_SECRET_6,CKV_AWS_115
 
 export exclude_files=("module-inventory.yaml" "module-pricing.yaml") # For::Each breaks lint :'(
 

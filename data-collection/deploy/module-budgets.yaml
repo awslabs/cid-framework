@@ -97,7 +97,6 @@ Resources:
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
-      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           #Author Stephanie Gooch 2021
