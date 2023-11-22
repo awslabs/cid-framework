@@ -154,6 +154,10 @@ def migrate_v2(source_bucket, dest_bucket):
             # Migration from v1.x to v2.0 (read roles as stack set and step functions implementation) (TBC if version is 1.? or 2.0)
             "rds_usage_data/rds-usage-data/payer_id=": "rds-usage/rds-usage-data/payer_id=",  # There is a transformation from rds_metrics to rds-usage from v1.
         },
+        "inventory": {
+            # Migration from v1.x to v2.0 (read roles as stack set and step functions implementation) (TBC if version is 1.? or 2.0)
+            "inventory/inventory([a-z\-]*?)data/payer_id=(\d{12})/year=(\d{4})/month=(\d{2})/inventory-(\d{12})-([0-9]{2})([0-9]{2})([0-9]{4})-([0-9]{2})([0-9]{2})([0-9]{2}).json": rf"inventory/inventory\1data/payer_id=\2/year=\3/month=\4/\5-\8\7\6-\9\10\11.json"  # TODO should we just add the prefix again to the file name in the inventory module template definition?
+        },
     }
 
     # Apply valid mods and copy objects
