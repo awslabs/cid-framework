@@ -33,6 +33,9 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
+  DeprecatedLambdaAnalyticsARN:
+    Type: String
+    Description: Deprecated Arn of lambda for Analytics
   AwsServices:
     Type: CommaDelimitedList
     Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, RegionNames
@@ -682,6 +685,12 @@ Resources:
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref DeprecatedLambdaAnalyticsARN
+      Name: !Ref CFDataName
+
+  LambdaAnalyticsExecutorV3:
+    Type: Custom::LambdaAnalyticsExecutorV3
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
