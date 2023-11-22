@@ -34,6 +34,9 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
+  DeprecatedLambdaAnalyticsARN:
+    Type: String
+    Description: Deprecated Arn of lambda for Analytics
   IncludeMemberAccounts:
     Type: String
     AllowedValues: ["yes", "no"]
@@ -141,7 +144,7 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  ReplicationBucketsStackSet:
+  ReplicaitonBucketsStackSet:
     Type: AWS::CloudFormation::StackSet
     # DependsOn: # managed via tags. DependsOn does not work in this case and Role can be deleted before StackSet
     #  - StackSetExecutionRole
@@ -594,7 +597,7 @@ Resources:
   FinalizeSetup:
     DependsOn:
       - LambdaTriggerExport
-      - ReplicationBucketsStackSet
+      - ReplicaitonBucketsStackSet
       - FinalizeLambdaExecutionRole
     Type: Custom::CustomResource
     Properties:
@@ -602,6 +605,12 @@ Resources:
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref DeprecatedLambdaAnalyticsARN
+      Name: !Ref CFDataName
+
+  LambdaAnalyticsExecutorV3:
+    Type: Custom::LambdaAnalyticsExecutorV3
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
