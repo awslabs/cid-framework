@@ -47,8 +47,8 @@ def migrate(bucket):
         "Compute_Optimizer/Compute_Optimizer_auto_scale/payer_id=": "compute_optimizer/compute_optimizer_auto_scale/payer_id=",
         "Compute_Optimizer/Compute_Optimizer_lambda/payer_id=": "compute_optimizer/compute_optimizer_lambda/payer_id=",
         "Compute_Optimizer/Compute_Optimizer_ebs_volume/payer_id=": "compute_optimizer/compute_optimizer_ebs_volume/payer_id=",
-        "reserveinstance/payer_id=": "reserveinstance/payer_id=",  # TODO Same key prefix, was there a reason to have this?
-        "savingsplan/payer_id=": "savingsplan/payer_id=",  # TODO Same key prefix, was there a reason to have this?
+        "reserveinstance/payer_id=": "reserveinstance/payer_id=",
+        "savingsplan/payer_id=": "savingsplan/payer_id=",
         "transitgateway/payer_id=": "transit-gateway/transit-gateway-data/payer_id=",
         # Migration from v1.1 (adding payer to organizations)
         "organization/organization-data/([a-z\-]*?)-(\d{12}).json": rf"organization/organization-data/payer_id=\2/\1.json",
@@ -127,13 +127,13 @@ def migrate_v2(source_bucket, dest_bucket):
             # Migration from v0 (no payer_id)
             "reserveinstance/year=": f"reserveinstance/payer_id={payer_id}/year=",
             # Migration from v1 (payer_id exists)
-            "reserveinstance/payer_id=": "reserveinstance/payer_id=",  # TODO Same key prefix, was there a reason to have this?
+            "reserveinstance/payer_id=": "reserveinstance/payer_id=",
         },
         "savingsplan": {
             # Migration from v0 (no payer_id)
             "savingsplan/year=": f"savingsplan/payer_id={payer_id}/year=",
             # Migration from v1 (payer_id exists)
-            "savingsplan/payer_id=": "savingsplan/payer_id=",  # TODO Same key prefix, was there a reason to have this?
+            "savingsplan/payer_id=": "savingsplan/payer_id=",
         },
         "transitgateway": {
             # Migration from v0 (no payer_id)
@@ -144,19 +144,16 @@ def migrate_v2(source_bucket, dest_bucket):
         "organization": {
             # Migration from v1.1 (adding payer to organizations)
             "organization/organization-data/([a-z\-]*?)-(\d{12}).json": rf"organization/organization-data/payer_id=\2/\1.json",
-            # Migration from v1.x to v2.0 (read roles as stack set and step functions implementation) (TBC if version is 1.? or 2.0)
-            "organization/organization-data/payer_id=": "organizations/organization-data/payer_id=",  # TBC should we only change the parameter default? or change the mod above to be plural organizations?
+            # Migration from v2.0 to v3.0 (read roles as stack set and step functions implementation)
+            "organization/organization-data/payer_id=": "organizations/organization-data/payer_id=",
         },
-        "cost-explorer-cost-anomaly": {  # Migration from v1.x to v2.0 (read roles as stack set and step functions implementation) (TBC if version is 1.? or 2.0)
+        "cost-explorer-cost-anomaly": {
+            # Migration from v2.0 to v3.0 (read roles as stack set and step functions implementation)
             "cost-explorer-cost-anomaly/cost-anomaly-data/payer_id=": "cost-anomaly/cost-anomaly-data/payer_id=",
         },
         "rds_usage_data": {
-            # Migration from v1.x to v2.0 (read roles as stack set and step functions implementation) (TBC if version is 1.? or 2.0)
-            "rds_usage_data/rds-usage-data/payer_id=": "rds-usage/rds-usage-data/payer_id=",  # There is a transformation from rds_metrics to rds-usage from v1.
-        },
-        "inventory": {
-            # Migration from v1.x to v2.0 (read roles as stack set and step functions implementation) (TBC if version is 1.? or 2.0)
-            "inventory/inventory([a-z\-]*?)data/payer_id=(\d{12})/year=(\d{4})/month=(\d{2})/inventory-(\d{12})-([0-9]{2})([0-9]{2})([0-9]{4})-([0-9]{2})([0-9]{2})([0-9]{2}).json": rf"inventory/inventory\1data/payer_id=\2/year=\3/month=\4/\5-\8\7\6-\9\10\11.json"  # TODO should we just add the prefix again to the file name in the inventory module template definition?
+            # Migration from v2.0 to v3.0 (read roles as stack set and step functions implementation)
+            "rds_usage_data/rds-usage-data/payer_id=": "rds-usage/rds-usage-data/payer_id=",
         },
     }
 
@@ -186,7 +183,7 @@ def migrate_v2(source_bucket, dest_bucket):
                 logger.info(
                     f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
                 )
-                # s3.delete_object(Bucket=source_bucket, Key=source_key) # TODO Do we want to delete as part of the migration or should we leave this to the user?
+                # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
             except Exception as e:
                 logger.warning(e)
 
@@ -239,7 +236,7 @@ if __name__ == "__main__":
 
     if source_bucket == dest_bucket:
         logger.info(f"Migrating files in source={source_bucket}")
-    #     migrate(source_bucket)
+        migrate(source_bucket)
     else:
         logger.info(
             f"Migrating from source={source_bucket} to destination={dest_bucket}"
