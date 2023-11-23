@@ -32,9 +32,6 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  DeprecatedLambdaAnalyticsARN:
-    Type: String
-    Description: Deprecated Arn of lambda for Analytics
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
@@ -313,12 +310,6 @@ Resources:
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref DeprecatedLambdaAnalyticsARN
-      Name: !Ref CFDataName
-
-  LambdaAnalyticsExecutorV3:
-    Type: Custom::LambdaAnalyticsExecutorV3
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName

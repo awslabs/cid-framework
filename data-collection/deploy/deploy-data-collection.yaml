@@ -455,16 +455,14 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: python3.9
-      FunctionName: !Sub ${ResourcePrefix}analytics-Lambda
-      Description: "Lambda function to collect general deployment metrics"
-      ReservedConcurrentExecutions: 0
+      FunctionName: !Sub ${ResourcePrefix}DataCollectionLab-Analytics
       Handler: index.lambda_handler
       MemorySize: 128
       Role: !GetAtt LambdaAnalyticsRole.Arn
       Timeout: 15
       Environment:
         Variables:
-          CID_ANALYTICS_ENDPOINT: https://cid.workshops.aws.dev/adoption-tracking
+          WA_ANALYTICS_ENDPOINT: https://okakvoavfg.execute-api.eu-west-1.amazonaws.com/
       Code:
         ZipFile: |
           import os
@@ -472,68 +470,20 @@ Resources:
           import uuid
           import urllib3
           import boto3
-
-          endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
+ 
+          endpoint = os.environ['WA_ANALYTICS_ENDPOINT']
           account_id = boto3.client("sts").get_caller_identity()["Account"]
-
-          def lambda_handler(event, context):
-              print(json.dumps(event))
-              res, reason = 'SUCCESS', 'success'
-              body = {
-                  'Status': res,
-                  'Reason': reason,
-                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
-                  'StackId': event.get('StackId'),
-                  'RequestId': event.get('RequestId'),
-                  'LogicalResourceId': event.get('LogicalResourceId'),
-                  'NoEcho': False,
-                  'Data':  {'Reason': reason},
-              }
-              json_body=json.dumps(body)
-              print(json_body)
-              url = event.get('ResponseURL')
-              if not url: return
-              try:
-                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  print(f"Status code: {response.status}")
-              except Exception as exc:
-                  print("Failed sending PUT to CFN: " + str(exc))
-
-  LambdaAnalyticsV3:
-    Type: AWS::Lambda::Function
-    Properties:
-      Runtime: python3.9
-      FunctionName: !Sub ${ResourcePrefix}analytics-Lambda-V3
-      Description: "Lambda function to collect general deployment metrics"
-      ReservedConcurrentExecutions: 0
-      Handler: index.lambda_handler
-      MemorySize: 128
-      Role: !GetAtt LambdaAnalyticsRole.Arn
-      Timeout: 15
-      Environment:
-        Variables:
-          CID_ANALYTICS_ENDPOINT: https://cid.workshops.aws.dev/adoption-tracking
-      Code:
-        ZipFile: |
-          import os
-          import json
-          import uuid
-          import urllib3
-          import boto3
-
-          endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
-          account_id = boto3.client("sts").get_caller_identity()["Account"]
-
+ 
           def lambda_handler(event, context):
               print(json.dumps(event))
               try:
-                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'DELETE']:
+                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'UPDATE']:
                       raise Exception(f"Unknown RequestType {event['RequestType']}")
                   action = event['RequestType'].upper()
                   name = event['ResourceProperties']['Name']
                   method = {'CREATE':'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(action)
                   via_key = {'CREATE':'created_via', 'UPDATE': 'updated_via', 'DELETE': 'deleted_via'}.get(action)
-                  payload = {'id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
+                  payload = {'dashboard_id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
                   r =  urllib3.PoolManager().request(method, endpoint, body=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
                   if r.status != 200:
                       raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored")
@@ -556,7 +506,7 @@ Resources:
               if not url: return
               try:
                   response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  print(f"Status code: {response.status}")
+                  print(f"Status code: {response}")
               except Exception as exc:
                   print("Failed sending PUT to CFN: " + str(exc))
 
@@ -778,8 +728,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -796,8 +745,7 @@ Resources:
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -814,8 +762,7 @@ Resources:
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -832,8 +779,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -855,8 +801,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -882,8 +827,7 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -900,8 +844,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -923,8 +866,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -947,8 +889,7 @@ Resources:
         Schedule: !Ref Schedule
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -965,8 +906,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -983,8 +923,7 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         ResourcePrefix: !Ref ResourcePrefix
-        DeprecatedLambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        LambdaAnalyticsARN: !GetAtt LambdaAnalyticsV3.Arn
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
