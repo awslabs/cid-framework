@@ -328,7 +328,6 @@ Resources:
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
       Runtime: python3.10
       Architectures: [x86_64]
-      ReservedConcurrentExecutions: 0
       Environment:
         Variables:
           REGIONS: !Ref RegionsInScope
