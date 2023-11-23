@@ -34,9 +34,6 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  DeprecatedLambdaAnalyticsARN:
-    Type: String
-    Description: Deprecated Arn of lambda for Analytics
   IncludeMemberAccounts:
     Type: String
     AllowedValues: ["yes", "no"]
@@ -457,15 +454,14 @@ Resources:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
 
-  CustomResourceFunctionFinalize:
+  CustomRessourceFunctionFinalize:
     Type: AWS::Lambda::Function
     Properties:
       Role: !GetAtt 'FinalizeLambdaExecutionRole.Arn'
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-FinalizeSetup-DoNotRun'
+      FunctionName: !Sub "${ResourcePrefix}Compute-Optimizer-FinalizeSetup-DoNotRun"
       Description: "Lambda to Finalize Setup (call trigger lambda) or Start teardown (Cleanup buckets)"
-      Runtime: python3.10
+      Runtime: python3.8
       Architectures: [ arm64 ]
-      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           import os
@@ -474,17 +470,13 @@ Resources:
           import boto3
           import botocore
           import urllib3
-          import logging
 
           REGIONS = os.environ['REGIONS'].replace(' ', '').split(',')
           BUCKET_PREFIX = os.environ['BUCKET_PREFIX']
           LAMBDA_ARN = os.environ['TRIGGER_LAMBDA']
 
-          logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-
           def lambda_handler(event, context):
-              logger.info(event)
+              print(event)
               type_ = event.get('RequestType', 'Undef')
               if type_ == 'Create': res = on_create()
               elif type_ == 'Delete': res = on_delete()
@@ -501,15 +493,15 @@ Resources:
               body['LogicalResourceId'] = event.get('LogicalResourceId')
               body['NoEcho'] = False
               body['Data'] = response_data
-              logger.info(body)
+              print(body)
               if not url: return
               json_body=json.dumps(body)
               try:
                   http = urllib3.PoolManager()
                   response = http.request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  logger.info(f"Status code: {response}" )
+                  print(f"Status code: {response}" )
               except Exception as exc:
-                  logger.info("send(..) failed executing requests.put(..): " + str(exc))
+                  print("send(..) failed executing requests.put(..): " + str(exc))
 
           def on_create():
               try:
@@ -540,7 +532,7 @@ Resources:
                           log.append(f'ERROR: {name} - {errcode}')
                   except Exception as exc:
                       log.append(f'ERROR: {name} Error: {exc}')
-              logger.info('\n'.join(log))
+              print('\n'.join(log))
               return (True, '\n'.join(log))
       Handler: 'index.lambda_handler'
       MemorySize: 2688
@@ -550,13 +542,6 @@ Resources:
           REGIONS: !Ref RegionsInScope
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
           TRIGGER_LAMBDA:  !GetAtt LambdaTriggerExport.Arn
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W89 # Lambda functions should be deployed inside a VPC
-            reason: "No need for VPC in this case"
-          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
-            reason: "No need for simultaneous execution"
 
   FinalizeLambdaExecutionRole:
     Type: AWS::IAM::Role
@@ -601,16 +586,10 @@ Resources:
       - FinalizeLambdaExecutionRole
     Type: Custom::CustomResource
     Properties:
-      ServiceToken: !GetAtt CustomResourceFunctionFinalize.Arn
+      ServiceToken: !GetAtt CustomRessourceFunctionFinalize.Arn
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref DeprecatedLambdaAnalyticsARN
-      Name: !Ref CFDataName
-
-  LambdaAnalyticsExecutorV3:
-    Type: Custom::LambdaAnalyticsExecutorV3
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
