@@ -119,7 +119,6 @@ Resources:
       Description: !Sub "Lambda Function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
-      ReservedConcurrentExecutions: 0
       Code:
         ZipFile: |
           """ Scan linked accounts and store instances info to s3 bucket
