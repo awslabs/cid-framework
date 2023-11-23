@@ -721,7 +721,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTAModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-trusted-advisor.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-trusted-advisor.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -738,7 +738,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-cost-explorer-rightsizing.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -755,7 +755,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-cost-anomaly.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -772,7 +772,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-inventory.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-inventory.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -794,7 +794,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployPricingModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-pricing.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-pricing.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -814,7 +814,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployComputeOptimizerModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-compute-optimizer.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-compute-optimizer.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -837,7 +837,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEcsChargebackModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-ecs-chargeback.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-ecs-chargeback.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -859,7 +859,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRDSUtilizationModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-rds-usage.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-rds-usage.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -881,7 +881,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployOrgDataModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-organization.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-organization.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -899,7 +899,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-budgets.yaml" 
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-budgets.yaml" 
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -916,7 +916,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTransitGatewayModule
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/module-transit-gateway.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-transit-gateway.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -938,7 +938,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployAccountCollector
     Properties:
-      TemplateURL: !Sub "https://cid-235211469566-test.s3.amazonaws.com/Cost/Labs_v2/300_Optimization_Data_Collection/Code/account-collector.yaml"
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/account-collector.yaml"
       Parameters:
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
