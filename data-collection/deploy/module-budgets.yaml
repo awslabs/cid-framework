@@ -99,89 +99,179 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          #Author Stephanie Gooch 2021
           import os
           import json
           import logging
-          import datetime
-          from json import JSONEncoder
+          from datetime import date, timedelta, datetime
 
           import boto3
 
-          BUCKET = os.environ["BUCKET_NAME"]
-          PREFIX = os.environ["PREFIX"]
-          ROLE_NAME = os.environ['ROLENAME']
-          TMP_FILE = "/tmp/data.json"
-
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          #logger.setLevel(logging.DEBUG)
 
-          # subclass JSONEncoder
-          class DateTimeEncoder(JSONEncoder):
-              # Override the default method
-              def default(self, obj):
-                  if isinstance(obj, (datetime.date, datetime.datetime)):
-                      return obj.isoformat()
+          # Helper classes and functions
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  excmsg = exc.message if exc and hasattr(exc, 'message') else ""
+                  message = f"({type(exc).__name__}) exception. {excmsg} {message}" if exc else message
+                  if type(self) == CidNonCriticalError.__class__:
+                      logger.warning(message)
+                  else:
+                      logger.error(message)
+                  super().__init__(message)
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
 
-          def assume_role(account_id, service):
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.client(
-                  service,
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken']
+          class Params():
+              def __init__(self, env):
+                  try:
+                      self.bucket = env["BUCKET_NAME"]
+                      self.role_name = env["ROLENAME"]
+                      self.module_name = env["PREFIX"]
+                      self.tmp_file = "/tmp/tmp.json"
+                      self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                      self.boto_config = None
+                  except (KeyError, AttributeError):
+                      raise CidCriticalError(f"Invalid environment params {env}")
+
+          class Account():
+              def __init__(self, account_json: dict):
+                  try:
+                      self.account_id = account_json["account_id"]
+                      self.account_name = account_json["account_name"]
+                      self.payer_id = account_json["payer_id"]
+                  except KeyError:
+                      raise CidCriticalError(f"Invalid account data passed {account_json}")
+
+          def to_json(obj):
+              return json.dumps(
+                  obj,
+                  default=lambda x:
+                      x.isoformat() if isinstance(x, (date, datetime)) else None
               )
 
+          # Core implementation
           def lambda_handler(event, context):
-              logger.info(f"Event data {json.dumps(event)}")
-              if 'account' not in event:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
-              collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              status_code = 500
               try:
-                  account = json.loads(event["account"])
-                  account_id = account["account_id"]
-                  account_name = account["account_name"]
-                  payer_id = account["payer_id"]
-                  logger.info(f"Collecting data for account: {account_id}")
-                  budgets_client = assume_role(account_id, "budgets")
-                  paginator = budgets_client.get_paginator("describe_budgets") #Paginator for a large list of accounts
-                  response_iterator = paginator.paginate(AccountId=account_id)
-                  count = 0
-                  with open(TMP_FILE, "w") as f:
-                      for budgets in response_iterator:
-                          if not 'Budgets' in budgets: continue
-                          for budget in budgets['Budgets']:
-                              count += 1
-                              budget['collection_time'] = collection_time
-                              logger.debug(budget)
-                              budget.update({'Account_ID': account_id, 'Account_Name': account_name})
-                              if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
-                                  budget.update({'CostFilters': {'Filter': ['None']}})
-                              dataJSONData = json.dumps(budget, cls=DateTimeEncoder)
-                              f.write(dataJSONData)
-                              f.write("\n")
-                  logger.info(f"Budgets collected: {count}")
-                  s3_upload(account_id, payer_id)
-              except Exception as e:
-                  logger.warning(f"Error: {type(e)} {e}")
+                  account = Account(json.loads(event["account"]))
+                  params = Params(os.environ)
+                  logger.debug(params)
+                  main(account, params)
+                  status_code = 200
 
-          def s3_upload(account_id, payer_id):
-              if os.path.getsize(TMP_FILE) == 0:
-                  logger.info(f"No data in file for {PREFIX}")
-                  return
-              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/budgets-{account_id}.json")
-              try:
-                  res = boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
-                  logger.info(f'res={res}')
-                  logger.info(f"Budget data for {account_id} stored at s3://{BUCKET}/{key}")
+              except KeyError as exc:
+                  raise CidCriticalError(f"Account is not defined the Lambda event. Please do not trigger this Lambda manually. Use the corresponding {os.environ['PREFIX']} state machine in Step Functions instead.")
+              except CidNonCriticalError as exc:
+                  status_code = 200
+              except CidCriticalError as exc:
+                  raise exc
               except Exception as exc:
-                  logger.warning(exc)
+                  raise CidCriticalError(f"(UnhandledExceptionError) in {os.environ['PREFIX']} module", exc)
+              finally:
+                  return {"statusCode": status_code}
+
+          def main(account, params):
+              logger.debug("Entering main")
+              data_uploaded = False
+              records = get_api_data(account, params)
+              if len(records) > 0:
+                  count = store_to_temp(records, params, account)
+                  if count > 0:
+                      upload_to_s3(account, params)
+                      data_uploaded = True
+              if not data_uploaded:
+                  logger.info("No file uploaded because no new records were found")
+
+          def get_api_data(account, params):
+              logger.debug("Entering get_api_data")
+              client = get_client_with_role(params.role_name, account.account_id, region="us-east-1", service="budgets", params)
+              results = []
+              paginator = client.get_paginator("describe_budgets")
+              page_iterator = paginator.paginate(AccountId=account.account_id)
+              for page in page_iterator:
+                  if not 'Budgets' in page: continue
+                  for record in page['Budgets']:
+                      output = parse_record(record, params, account)
+                      results.append(output)
+              logger.debug(results)
+              logger.info(f"API results total {len(results)}")
+              return results
+
+          def parse_record(record, params=None, account=None):
+              logger.debug(f"Entering parse_record for {record}")
+              result = record
+              try:
+                  result['collection_time'] = params.collection_time
+                  record.update({'Account_ID': account.account_id, 'Account_Name': account.account_name})
+                  if 'CostFilters' not in result or len(result['CostFilters']) == 0 or 'PlannedBudgetLimits' not in result:
+                      result.update({'CostFilters': {'Filter': ['None']}})
+                  logger.debug(f"Processing record complete")
+                  return result
+
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in parse_record", exc)
+
+          def store_to_temp(results, params, account):
+              logger.debug("Entering store_to_temp")
+              count = 0
+              try:
+                  with open(params.tmp_file, "w", encoding='utf-8') as f:
+                      for result in results:
+                          f.write(to_json(record))
+                          f.write("\n")
+                          count += 1
+
+              except CidCriticalError as exc:
+                  raise exc
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
+
+              logger.info(f"Stored records in temp for account {account.account_id}")
+              return count
+
+          def upload_to_s3(account, params):
+              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
+              try:
+                  key = datetime.now().strftime(f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/year=%Y/month=%m/day=%d/{params.module_name}-%Y-%m-%d.json")
+                  res = boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
+                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
+
+              except Exception as exc:
+                  raise CidFatalError(exc)
+
+          def get_client_with_role(role_name, account_id, service, region, params):
+              logger.debug(f"Entering get_client_with_role to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              try:
+                  credentials = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                      RoleSessionName="data_collection"
+                  )['Credentials']
+                  logger.debug("Successfully assumed role, now getting client")
+                  client = boto3.client(
+                      service,
+                      region_name = region,
+                      aws_access_key_id = credentials['AccessKeyId'],
+                      aws_secret_access_key = redentials['SecretAccessKey'],
+                      aws_session_token = credentials['SessionToken'],
+                      config = params.boto_config
+                  )
+                  logger.info(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  return client
+
+              except Exception as exc:
+                  raise ClientAccessError(exc, role_name, account_id, service, region)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
