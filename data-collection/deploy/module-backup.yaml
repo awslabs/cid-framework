@@ -614,16 +614,6 @@ Resources:
           Arn: !GetAtt ModuleStepFunction.Arn
           RoleArn: !Ref SchedulerExecutionRoleARN
 
-
-  FinalizeSetup:
-    DependsOn:
-      - LambdaFunction
-      - LambdaFunctionCopy
-      - LambdaFunctionRestore
-    Type: Custom::CustomResource
-    Properties:
-      ServiceToken: !GetAtt LambdaFunctionRestore.Arn
-
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
