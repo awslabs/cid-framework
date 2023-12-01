@@ -22,6 +22,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeBackupModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -49,6 +50,8 @@ Metadata:
         default: "Include AWS Trusted Advisor Data Collection Module"
       IncludeTransitGatewayModule:
         default: "Include AWS TransitGateway Collection Module"
+      IncludeBackupModule:
+        default: "Include AWS Backup Collection Module"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -121,7 +124,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-
+  IncludeBackupModule:
+    Type: String
+    Description: Collects TransitGateway from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 Conditions:
   EnableBudgetsModule: !Equals [!Ref IncludeBudgetsModule, "yes"]
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
@@ -133,6 +141,7 @@ Conditions:
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
   EnableTAModule: !Equals [!Ref IncludeTAModule, "yes"]
   EnableTransitGatewayModule: !Equals [!Ref IncludeTransitGatewayModule, "yes"]
+  EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   IsAnyModuleEnabled: !Or
     - Condition: EnableBudgetsModule
     - Condition: EnableComputeOptimizerModule
@@ -238,6 +247,27 @@ Resources:
           - Effect: "Allow"
             Action:
               - "ce:GetAnomalies"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  BackupPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableBackupModule
+    Properties:
+      PolicyName: BackupEventsPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "backup:DescribeBackupJob"
+              - "backup:DescribeCopyJob"
+              - "backup:DescribeRestoreJob"
             Resource: "*"
       Roles:
         - Ref: LambdaRole
