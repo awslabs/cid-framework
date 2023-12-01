@@ -156,7 +156,7 @@ Parameters:
       - "no"
   IncludeBackupModule:
     Type: String
-    Description: Collects TransitGateway from your accounts
+    Description: Collects AES Backup events from your accounts
     AllowedValues:
       - "yes"
       - "no"
@@ -233,6 +233,8 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
+        - ParameterKey: IncludeBackupModule
+          ParameterValue: !Ref IncludeBackupModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]
