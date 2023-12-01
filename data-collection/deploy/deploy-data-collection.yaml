@@ -310,7 +310,7 @@ Conditions:
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
-  DeployAccountCollector:
+  DeployAccountCollector: !Or
     - !Condition DeployTAModule
     - !Condition DeployRightsizingModule
     - !Condition DeployCostAnomalyModule
@@ -321,7 +321,6 @@ Conditions:
     - !Condition DeployOrgDataModule
     - !Condition DeployBudgetsModule
     - !Condition DeployTransitGatewayModule
-    - !Condition DeployBackupModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
