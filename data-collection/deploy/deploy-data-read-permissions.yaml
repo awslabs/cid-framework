@@ -26,6 +26,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeBackupModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -61,6 +62,8 @@ Metadata:
         default: "Include AWS Trusted Advisor Data Collection Module"
       IncludeTransitGatewayModule:
         default: "Include AWS TransitGateway Collection Module"
+      IncludeBackupModule:
+        default: "Include AWS Backup Collection Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -151,7 +154,13 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-
+  IncludeBackupModule:
+    Type: String
+    Description: Collects TransitGateway from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+      
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
 
@@ -174,6 +183,7 @@ Resources:
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeTAModule: !Ref IncludeTAModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeBackupModule: !Ref IncludeBackupModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -189,6 +199,7 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeBackupModule: !Ref BackupModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
