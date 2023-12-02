@@ -160,7 +160,7 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-      
+
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
 

@@ -29,7 +29,6 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeTransitGatewayModule
           - IncludeBackupModule
-          - IncludeAccountCollector 
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -71,8 +70,6 @@ Metadata:
         default: 'Include AWS TransitGateway Collection Module'
       IncludeBackupModule:
         default: 'Include AWS Backup Collection Module'
-      IncludeAccountCollector:
-        default: 'Include main account collection Module'
 
 Mappings:
   RegionMap:
@@ -287,11 +284,6 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeAccountCollector:
-    Type: String
-    Description: main account data collection
-    AllowedValues:
-      - "yes"
 
 Outputs:
   S3Bucket:
@@ -319,9 +311,20 @@ Conditions:
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
-  DeployAccountCollector: !Equals [!Ref IncludeAccountCollector, "yes"]
-
-  
+  DeployAccountCollector: !Or
+    - Fn::Or:
+      - !Condition DeployTAModule
+      - !Condition DeployRightsizingModule
+      - !Condition DeployCostAnomalyModule
+      - !Condition DeployInventoryCollectorModule
+      - !Condition DeployComputeOptimizerModule
+      - !Condition DeployEcsChargebackModule
+      - !Condition DeployRDSUtilizationModule
+      - !Condition DeployOrgDataModule
+      - !Condition DeployBudgetsModule
+    - Fn::Or:
+      - !Condition DeployBackupModule
+      - !Condition DeployTransitGatewayModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -803,7 +806,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        
+
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
