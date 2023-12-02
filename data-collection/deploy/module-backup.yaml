@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Retrieves AWS Backup details accross AWS organization
+Description: Retrieves AWS Backup details across AWS organization
 Parameters:
   DatabaseName:
     Type: String
@@ -97,10 +97,10 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  Backup:
+  LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}Lambda-Backup'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-Backup-Records'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -110,8 +110,11 @@ Resources:
           import json
           import logging
           from datetime import date, timedelta, datetime
+
           import boto3
           from boto3.s3.transfer import S3Transfer
+
+          logger = logging.getLogger()
 
           BUCKET = os.environ['BUCKET_NAME']
           ROLE = os.environ['ROLENAME']
@@ -127,46 +130,23 @@ Resources:
                   logging.warning(exc)
 
           def store_data_to_s3(flattened_data, path):
-              today = date.today()
-              year = today.year
-              month = today.strftime('%m')
-              day = today.day
               local_file = '/tmp/tmp.json'
               with open(local_file, 'w') as f:
                   f.write('\n'.join([json.dumps(result) for result in flattened_data]))
               if os.path.getsize(local_file) == 0:
-                  print(f"No data in file for {path}")
+                  logger.info(f"No data in file for {path}")
                   return
               s3client = boto3.client('s3')
-              key = today.strftime(f"{path}/year={year}/month={month}/day={day}/{year}-{month}-{day}.json")
-              print(f"Uploading file {local_file} to {BUCKET}/{key}")
+              key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%m/%Y-%m-%d.json")
+              logger.debug(f"Uploading file {local_file} to {BUCKET}/{key}")
               S3Transfer(s3client).upload_file(local_file, BUCKET, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              print('file upload successful')
+              logger.info(f'uploaded to s3://{BUCKET}/{key}')
 
-
-          def list_backup_jobs(backup, start_date, end_date):
-              results = []
-              next_token = None
-              while True:
-                  params = dict(
-                      ByCompleteAfter= str(start_date),
-                      ByCompleteBefore= str(end_date),
-                      ByAccountId= '*',
-                      MaxResults=100
-                  )
-                  if next_token:
-                      params['NextToken'] = next_token
-                  response = backup.list_backup_jobs(**params)
-                  results += response['BackupJobs']
-                  if 'NextToken' in response:
-                      next_token = response['NextToken']
-                  else:
-                      break
-              return results
+          def get_paginated_results(client, func, object, params=None):
+              return client.get_paginator(func).paginate(**(params or {})).build_full_result()[object]
 
           def flatten_results(results, parent_key='',sep='_'):
               flattened_results = {}
-
               for key,value in results.items():
                   new_key = parent_key + sep + key if parent_key else key
                   if isinstance(value, dict):
@@ -177,63 +157,55 @@ Resources:
                       flattened_results[new_key] = value
               return flattened_results
 
-          def flatten_response(data):
-              if isinstance(data, list):
-                  # Flatten each item in the list
-                  flattened_data = [flatten_results(item) for item in data]
-              else:
-                  # Flatten the single JSON object
-                  flattened_data = flatten_results(data)
-              return flattened_data
-
-          def calculate_dates(s3_path):
-              end_date = datetime.now().date()
+          def last_updated_date(s3_path):
               #Returns a list of existing backup jobs for an authenticated account for the last 30 days
               start_date = datetime.now().date() - timedelta(days=30)
-
               # Check the create time of objects in the S3 bucket
-              paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=BUCKET, Prefix=s3_path)], [])
+              contents = boto3.client('s3').get_paginator('list_objects_v2').paginate(Bucket=BUCKET, Prefix=s3_path).get('Contents', [])
               last_modified_date = get_last_modified_date(contents)
               if last_modified_date and last_modified_date >= start_date:
                   start_date = last_modified_date
-              return start_date, end_date
+              return start_date
 
           def get_last_modified_date(contents):
               last_modified_dates = [obj['LastModified'].date() for obj in contents]
               last_modified_dates_within_30_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=30)]
-              if last_modified_dates_within_30_days:
-                  return max(last_modified_dates_within_30_days)
-              return None
+              return max(last_modified_dates_within_30_days or [None])
+
 
           def lambda_handler(event, context):
-              logger = logging.getLogger()
-              sts = boto3.client('sts')
-              start_date, end_date = calculate_dates(s3_path=f'{PREFIX}/backup-jobs-data/')
-              print(f'start_date={start_date}, end_date={end_date}')
               total_count = 0
               for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE}"
                   try:
-                      creds = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="cross_acct_lambda")['Credentials']
-                      assumed_role_session = boto3.session.Session(
+                      creds = boto3.client('sts').assume_role(
+                          RoleArn=ROLE_ARN,
+                          RoleSessionName="cross_acct_lambda"
+                      )['Credentials']
+                      backup = boto3.client(
+                          "backup",
+                          "us-east-1",
                           aws_access_key_id=creds['AccessKeyId'],
                           aws_secret_access_key=creds['SecretAccessKey'],
-                          aws_session_token=creds['SessionToken']
+                          aws_session_token=creds['SessionToken'],
                       )
-                      backup = assumed_role_session.client("backup", "us-east-1")
-                      data = list_backup_jobs(backup, start_date, end_date)
-                      print (start_date)
-                      print (end_date)
-                      print (data)
-                      flattened_data = flatten_response(data)
-                      print (flattened_data)
-                      total_count += len(flattened_data)
-                      store_data_to_s3(flattened_data, f'{PREFIX}/backup-jobs-data/payer_id={payer_id}')
+                      for item in ['backup', 'copy', 'restore']:
+                          s3_prefix = f'{PREFIX}/backup-{item}-jobs-data/payer_id={payer_id}'
+                          start_date = last_updated_date(s3_prefix)
+                          end_date = datetime.now().date()
+                          data = get_paginated_results(
+                              client=backup,
+                              function=f'list_{item}_jobs'
+                              object=f'{item.capitalize()}Jobs'
+                              params={
+                                  ByCompleteAfter=str(start_date),
+                                  ByCompleteBefore=str(end_date),
+                                  ByAccountId='*',
+                              },
+                          )
+                          flattened_data = map(flatten_results, data)
+                          store_data_to_s3(flattened_data, f'{PREFIX}/backup-jobs-data/payer_id={payer_id}')
                   except Exception as exc:
-                      print(exc)
-              if total_count:
-                  start_crawler()
+                      print(payer_id, exc)
               return "Successful"
 
       Handler: "index.lambda_handler"
@@ -255,325 +227,8 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  Copy:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-Copy'
-      Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.10
-      Architectures: [x86_64]
-      Code:
-        ZipFile: |
-          import os
-          import json
-          import logging
-          from datetime import date, timedelta, datetime
 
-          import boto3
-          from boto3.s3.transfer import S3Transfer
-
-          BUCKET = os.environ['BUCKET_NAME']
-          ROLE = os.environ['ROLENAME']
-          PREFIX = os.environ['PREFIX']
-          CRAWLER_NAME = os.environ['CRAWLER_NAME']
-          MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-
-          def start_crawler():
-              glue = boto3.client('glue')
-              try:
-                  glue.start_crawler(Name=CRAWLER_NAME)
-              except Exception as exc:
-                  logging.warning(exc)
-
-          def store_data_to_s3(flattened_data, path):
-              today = date.today()
-              year = today.year
-              month = today.strftime('%m')
-              day = today.day
-              local_file = '/tmp/tmp.json'
-              with open(local_file, 'w') as f:
-                  f.write('\n'.join([json.dumps(result) for result in flattened_data]))
-              if os.path.getsize(local_file) == 0:
-                  print(f"No data in file for {path}")
-                  return
-              s3client = boto3.client('s3')
-              key = today.strftime(f"{path}/year={year}/month={month}/day={day}/{year}-{month}-{day}.json")
-              print(f"Uploading file {local_file} to {BUCKET}/{key}")
-              S3Transfer(s3client).upload_file(local_file, BUCKET, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              print('file upload successful')
-
-
-          def list_copy_jobs(copy, start_date, end_date):
-              results = []
-              next_token = None
-              while True:
-                  params = dict(
-                      ByCompleteAfter= str(start_date),
-                      ByCompleteBefore= str(end_date),
-                      ByAccountId= '*',
-                      MaxResults=100
-                  )
-                  if next_token:
-                      params['NextToken'] = next_token
-                  response = copy.list_copy_jobs(**params)
-                  results += response['CopyJobs']
-                  if 'NextToken' in response:
-                      next_token = response['NextToken']
-                  else:
-                      break
-              return results
-
-          def flatten_results(results, parent_key='',sep='_'):
-              flattened_results = {}
-
-              for key,value in results.items():
-                  new_key = parent_key + sep + key if parent_key else key
-                  if isinstance(value, dict):
-                      flattened_results.update(flatten_results(value, new_key, sep=sep))
-                  elif isinstance(value, datetime):
-                      flattened_results[new_key] = value.isoformat()
-                  else:
-                      flattened_results[new_key] = value
-              return flattened_results
-
-          def flatten_response(data):
-              if isinstance(data, list):
-                  # Flatten each item in the list
-                  flattened_data = [flatten_results(item) for item in data]
-              else:
-                  # Flatten the single JSON object
-                  flattened_data = flatten_results(data)
-              return flattened_data
-
-          def calculate_dates(s3_path):
-              end_date = datetime.now().date()
-              #Returns a list of existing copy jobs for an authenticated account for the last 30 days
-              start_date = datetime.now().date() - timedelta(days=30)
-
-              # Check the create time of objects in the S3 bucket
-              paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=BUCKET, Prefix=s3_path)], [])
-              last_modified_date = get_last_modified_date(contents)
-              if last_modified_date and last_modified_date >= start_date:
-                  start_date = last_modified_date
-              return start_date, end_date
-
-          def get_last_modified_date(contents):
-              last_modified_dates = [obj['LastModified'].date() for obj in contents]
-              last_modified_dates_within_30_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=30)]
-              if last_modified_dates_within_30_days:
-                  return max(last_modified_dates_within_30_days)
-              return None
-
-          def lambda_handler(event, context):
-              logger = logging.getLogger()
-              sts = boto3.client('sts')
-              start_date, end_date = calculate_dates(s3_path=f'{PREFIX}/copy-jobs-data/')
-              print(f'start_date={start_date}, end_date={end_date}')
-              total_count = 0
-              for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE}"
-                  try:
-                      creds = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="cross_acct_lambda")['Credentials']
-                      assumed_role_session = boto3.session.Session(
-                          aws_access_key_id=creds['AccessKeyId'],
-                          aws_secret_access_key=creds['SecretAccessKey'],
-                          aws_session_token=creds['SessionToken']
-                      )
-                      copy = assumed_role_session.client("backup", "us-east-1")
-                      data = list_copy_jobs(copy, start_date, end_date)
-                      print (start_date)
-                      print (end_date)
-                      print (data)
-                      flattened_data = flatten_response(data)
-                      print (flattened_data)
-                      total_count += len(flattened_data)
-                      store_data_to_s3(flattened_data, f'{PREFIX}/copy-jobs-data/payer_id={payer_id}')
-                  except Exception as exc:
-                      print(exc)
-              if total_count:
-                  start_crawler()
-              return "Successful"
-
-      Handler: "index.lambda_handler"
-      MemorySize: 2688
-      Timeout: 600
-      Role: !GetAtt LambdaRole.Arn
-      Environment:
-        Variables:
-          BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
-          CRAWLER_NAME: !Ref Crawler
-          MANAGEMENT_ACCOUNT_IDS: !Ref AWS::AccountId
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W89 # Lambda functions should be deployed inside a VPC
-            reason: "No need for VPC in this case"
-          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
-            reason: "No need for simultaneous execution"
-
-  Restore:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}Lambda-Restore'
-      Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.10
-      Architectures: [x86_64]
-      Code:
-        ZipFile: |
-          import os
-          import json
-          import logging
-          from datetime import date, timedelta, datetime
-
-          import boto3
-          from boto3.s3.transfer import S3Transfer
-
-          BUCKET = os.environ['BUCKET_NAME']
-          ROLE = os.environ['ROLENAME']
-          PREFIX = os.environ['PREFIX']
-          CRAWLER_NAME = os.environ['CRAWLER_NAME']
-          MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-
-          def start_crawler():
-              glue = boto3.client('glue')
-              try:
-                  glue.start_crawler(Name=CRAWLER_NAME)
-              except Exception as exc:
-                  logging.warning(exc)
-
-          def store_data_to_s3(flattened_data, path):
-              today = date.today()
-              year = today.year
-              month = today.strftime('%m')
-              day = today.day
-              local_file = '/tmp/tmp.json'
-              with open(local_file, 'w') as f:
-                  f.write('\n'.join([json.dumps(result) for result in flattened_data]))
-              if os.path.getsize(local_file) == 0:
-                  print(f"No data in file for {path}")
-                  return
-              s3client = boto3.client('s3')
-              key = today.strftime(f"{path}/year={year}/month={month}/day={day}/{year}-{month}-{day}.json")
-              print(f"Uploading file {local_file} to {BUCKET}/{key}")
-              S3Transfer(s3client).upload_file(local_file, BUCKET, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              print('file upload successful')
-
-
-          def list_restore_jobs(restore, start_date, end_date):
-              results = []
-              next_token = None
-              while True:
-                  params = dict(
-                      ByCompleteAfter= str(start_date),
-                      ByCompleteBefore= str(end_date),
-                      ByAccountId= '*',
-                      MaxResults=100
-                  )
-                  if next_token:
-                      params['NextToken'] = next_token
-                  response = restore.list_restore_jobs(**params)
-                  results += response['RestoreJobs']
-                  if 'NextToken' in response:
-                      next_token = response['NextToken']
-                  else:
-                      break
-              return results
-
-          def flatten_results(results, parent_key='',sep='_'):
-              flattened_results = {}
-
-              for key,value in results.items():
-                  new_key = parent_key + sep + key if parent_key else key
-                  if isinstance(value, dict):
-                      flattened_results.update(flatten_results(value, new_key, sep=sep))
-                  elif isinstance(value, datetime):
-                      flattened_results[new_key] = value.isoformat()
-                  else:
-                      flattened_results[new_key] = value
-              return flattened_results
-
-          def flatten_response(data):
-              if isinstance(data, list):
-                  # Flatten each item in the list
-                  flattened_data = [flatten_results(item) for item in data]
-              else:
-                  # Flatten the single JSON object
-                  flattened_data = flatten_results(data)
-              return flattened_data
-
-          def calculate_dates(s3_path):
-              end_date = datetime.now().date()
-              #Returns a list of existing restore jobs for an authenticated account for the last 30 days
-              start_date = datetime.now().date() - timedelta(days=30)
-
-              # Check the create time of objects in the S3 bucket
-              paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=BUCKET, Prefix=s3_path)], [])
-              last_modified_date = get_last_modified_date(contents)
-              if last_modified_date and last_modified_date >= start_date:
-                  start_date = last_modified_date
-              return start_date, end_date
-
-          def get_last_modified_date(contents):
-              last_modified_dates = [obj['LastModified'].date() for obj in contents]
-              last_modified_dates_within_30_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=30)]
-              if last_modified_dates_within_30_days:
-                  return max(last_modified_dates_within_30_days)
-              return None
-
-          def lambda_handler(event, context):
-              logger = logging.getLogger()
-              sts = boto3.client('sts')
-              start_date, end_date = calculate_dates(s3_path=f'{PREFIX}/restore-jobs-data/')
-              print(f'start_date={start_date}, end_date={end_date}')
-              total_count = 0
-              for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE}"
-                  try:
-                      creds = sts.assume_role(RoleArn=ROLE_ARN, RoleSessionName="cross_acct_lambda")['Credentials']
-                      assumed_role_session = boto3.session.Session(
-                          aws_access_key_id=creds['AccessKeyId'],
-                          aws_secret_access_key=creds['SecretAccessKey'],
-                          aws_session_token=creds['SessionToken']
-                      )
-                      restore = assumed_role_session.client("backup", "us-east-1")
-                      data = list_restore_jobs(restore, start_date, end_date)
-                      print (start_date)
-                      print (end_date)
-                      print (data)
-                      flattened_data = flatten_response(data)
-                      print (flattened_data)
-                      total_count += len(flattened_data)
-                      store_data_to_s3(flattened_data, f'{PREFIX}/restore-jobs-data/payer_id={payer_id}')
-                  except Exception as exc:
-                      print(exc)
-              if total_count:
-                  start_crawler()
-              return "Successful"
-
-      Handler: "index.lambda_handler"
-      MemorySize: 2688
-      Timeout: 600
-      Role: !GetAtt LambdaRole.Arn
-      Environment:
-        Variables:
-          BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
-          CRAWLER_NAME: !Ref Crawler
-          MANAGEMENT_ACCOUNT_IDS: !Ref AWS::AccountId
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W89 # Lambda functions should be deployed inside a VPC
-            reason: "No need for VPC in this case"
-          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
-            reason: "No need for simultaneous execution"
-
-  Crawler:
+  Crawler: #FIXME - need a crawler per path
     Type: AWS::Glue::Crawler
     Properties:
       Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
@@ -592,7 +247,7 @@ Resources:
       DefinitionString: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt Backup.Arn
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
         CollectionType: "Payers"
         Params: ''
@@ -611,8 +266,8 @@ Resources:
       FlexibleTimeWindow:
         Mode: 'OFF'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
