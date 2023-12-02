@@ -178,7 +178,8 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
-        ]
+            {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
+       ]
     )
 
     deploy_stack(
@@ -199,10 +200,11 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': "CID-DC-"},
         ]
     )
 
