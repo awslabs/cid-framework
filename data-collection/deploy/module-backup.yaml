@@ -44,11 +44,24 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  AwsObjects:
+    Type: CommaDelimitedList
+    Default: BackupBackupJobs, BackupRestoreJobs, BackupCopyJobs
+    Description: Objects for pulling backup data
 
 Outputs:
   StepFunctionARN:
     Description: ARN for the module's Step Function
     Value: !GetAtt ModuleStepFunction.Arn
+
+Mappings:
+  ServicesMap:
+    BackupBackupJobs:
+      path: backup-jobs
+    BackupRestoreJobs:
+      path: restore-jobs
+    BackupCopyJobs:
+      path: copy-jobs
 
 Resources:
   LambdaRole:
@@ -106,44 +119,33 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
+          import io
           import os
           import json
           import logging
+          import itertools
           from datetime import date, timedelta, datetime
 
           import boto3
-          from boto3.s3.transfer import S3Transfer
 
           logger = logging.getLogger()
 
-          BUCKET = os.environ['BUCKET_NAME']
-          ROLE = os.environ['ROLENAME']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          ROLENAME = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
-          CRAWLER_NAME = os.environ['CRAWLER_NAME']
-          MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
 
-          def start_crawler():
-              glue = boto3.client('glue')
-              try:
-                  glue.start_crawler(Name=CRAWLER_NAME)
-              except Exception as exc:
-                  logging.warning(exc)
-
-          def store_data_to_s3(flattened_data, path):
-              local_file = '/tmp/tmp.json'
-              with open(local_file, 'w') as f:
-                  f.write('\n'.join([json.dumps(result) for result in flattened_data]))
-              if os.path.getsize(local_file) == 0:
+          def store_data_to_s3(data, path):
+              content = '\n'.join([json.dumps(result) for result in data])
+              if not content:
                   logger.info(f"No data in file for {path}")
                   return
-              s3client = boto3.client('s3')
               key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%m/%Y-%m-%d.json")
-              logger.debug(f"Uploading file {local_file} to {BUCKET}/{key}")
-              S3Transfer(s3client).upload_file(local_file, BUCKET, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              logger.info(f'uploaded to s3://{BUCKET}/{key}')
+              boto3.client('s3').upload_fileobj(Fileobj=io.StringIO(content), Bucket=BUCKET_NAME, Key=key)
+              logger.info(f'uploaded to s3://{BUCKET_NAME}/{key}')
 
-          def get_paginated_results(client, func, object, params=None):
-              return client.get_paginator(func).paginate(**(params or {})).build_full_result()[object]
+          def iterate_paginated_results(client, function, search, params=None, transform=lambda x:x):
+              for obj in client.get_paginator(function).paginate(**(params or {})).search(search):
+                  yield transform(obj)
 
           def flatten_results(results, parent_key='',sep='_'):
               flattened_results = {}
@@ -157,55 +159,67 @@ Resources:
                       flattened_results[new_key] = value
               return flattened_results
 
-          def last_updated_date(s3_path):
-              #Returns a list of existing backup jobs for an authenticated account for the last 30 days
-              start_date = datetime.now().date() - timedelta(days=30)
-              # Check the create time of objects in the S3 bucket
-              contents = boto3.client('s3').get_paginator('list_objects_v2').paginate(Bucket=BUCKET, Prefix=s3_path).get('Contents', [])
-              last_modified_date = get_last_modified_date(contents)
-              if last_modified_date and last_modified_date >= start_date:
-                  start_date = last_modified_date
-              return start_date
-
-          def get_last_modified_date(contents):
-              last_modified_dates = [obj['LastModified'].date() for obj in contents]
-              last_modified_dates_within_30_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=30)]
-              return max(last_modified_dates_within_30_days or [None])
-
-
-          def lambda_handler(event, context):
-              total_count = 0
-              for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  try:
-                      creds = boto3.client('sts').assume_role(
-                          RoleArn=ROLE_ARN,
-                          RoleSessionName="cross_acct_lambda"
-                      )['Credentials']
-                      backup = boto3.client(
-                          "backup",
-                          "us-east-1",
-                          aws_access_key_id=creds['AccessKeyId'],
-                          aws_secret_access_key=creds['SecretAccessKey'],
-                          aws_session_token=creds['SessionToken'],
+          def last_updated_date(s3_path, max_days=30):
+              ''' Returns the latest time any object under the path has been modified or last x days '''
+              start_date = datetime.now().date() - timedelta(days=max_days)
+              return max(
+                  itertools.chain(
+                      [start_date],
+                      iterate_paginated_results(
+                          client=boto3.client('s3'),
+                          function='list_objects_v2',
+                          params=dict(Bucket=BUCKET_NAME, Prefix=s3_path), #pylint: disable=R1735
+                          search='Contents',
+                          transform=lambda obj: obj['LastModified'].date(),
                       )
-                      for item in ['backup', 'copy', 'restore']:
-                          s3_prefix = f'{PREFIX}/backup-{item}-jobs-data/payer_id={payer_id}'
-                          start_date = last_updated_date(s3_prefix)
-                          end_date = datetime.now().date()
-                          data = get_paginated_results(
-                              client=backup,
-                              function=f'list_{item}_jobs'
-                              object=f'{item.capitalize()}Jobs'
-                              params={
-                                  ByCompleteAfter=str(start_date),
-                                  ByCompleteBefore=str(end_date),
-                                  ByAccountId='*',
-                              },
-                          )
-                          flattened_data = map(flatten_results, data)
-                          store_data_to_s3(flattened_data, f'{PREFIX}/backup-jobs-data/payer_id={payer_id}')
-                  except Exception as exc:
-                      print(payer_id, exc)
+                  )
+              )
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ this lambda collects backup copy and restore jobs
+              and must be called from the corresponding Step Function to orchestrate
+              """
+              logger.info(f"Event data: {event}")
+              if 'account' not in event or 'params' not in event  :
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              params = [p for p in event.get('params', '').split() if p]
+              name = params[0]
+              account = json.loads(event["account"])
+              account_id = account["account_id"]
+              payer_id = account["payer_id"]
+
+              try:
+                  creds = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
+                      RoleSessionName="cross_acct_lambda"
+                  )['Credentials']
+                  backup = boto3.client(
+                      "backup",
+                      "us-east-1",     #FIXME: what about other regions?
+                      aws_access_key_id=creds['AccessKeyId'],
+                      aws_secret_access_key=creds['SecretAccessKey'],
+                      aws_session_token=creds['SessionToken'],
+                  )
+                  s3_prefix = f'{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}'
+                  start_date = last_updated_date(s3_prefix)
+                  end_date = datetime.now().date()
+                  data_iterator = iterate_paginated_results(
+                      client=backup,
+                      function='list_' + name.replace("-", "_"), # ex: copy-jobs -> list_copy_jobs
+                      search=name.title().replace("-", ""),      # ex: copy-jobs -> CopyJobs
+                      params=dict( #pylint: disable=R1735
+                          ByCompleteAfter=str(start_date),
+                          ByCompleteBefore=str(end_date),
+                          ByAccountId='*',
+                      ),
+                      transform=flatten_results,
+                  )
+                  store_data_to_s3(data_iterator, s3_prefix)
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  print(payer_id, exc)
               return "Successful"
 
       Handler: "index.lambda_handler"
@@ -217,8 +231,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref ManagementRoleName
-          CRAWLER_NAME: !Ref Crawler
-          MANAGEMENT_ACCOUNT_IDS: !Ref AWS::AccountId
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -228,46 +240,60 @@ Resources:
             reason: "No need for simultaneous execution"
 
 
-  Crawler: #FIXME - need a crawler per path
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-
-  ModuleStepFunction:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
-      DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
-        CollectionType: "Payers"
-        Params: ''
-        Module: !Ref CFDataName
-        DeployRegion: !Ref AWS::Region
-        Account: !Ref AWS::AccountId
-        Prefix: !Ref ResourcePrefix
-
-  ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
-    Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      FlexibleTimeWindow:
-        Mode: 'OFF'
-      Target:
-        Arn: !GetAtt ModuleStepFunction.Arn
-        RoleArn: !Ref SchedulerExecutionRoleARN
+  'Fn::ForEach::Object':
+    - AwsObject
+    - !Ref AwsObjects
+    - 'Crawler${AwsObject}':
+        Type: AWS::Glue::Crawler
+        Properties:
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler'
+          Role: !Ref GlueRoleARN
+          DatabaseName: !Ref DatabaseName
+          Targets:
+            S3Targets:
+              - Path:
+                  Fn::Sub:
+                    - "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-${path}-data/"
+                    - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
+          Configuration: |
+            {
+              "Version": 1.0,
+              "CrawlerOutput": {
+                "Partitions": {
+                  "AddOrUpdateBehavior": "InheritFromTable"
+                }
+              }
+            }
+      'StepFunction${AwsObject}':
+        Type: AWS::StepFunctions::StateMachine
+        Properties:
+          StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-StateMachine'
+          StateMachineType: STANDARD
+          RoleArn: !Ref StepFunctionExecutionRoleARN
+          DefinitionString: !Ref StepFunctionTemplate
+          DefinitionSubstitutions:
+            AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+            ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+            Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
+            CollectionType: "Payers" #TODO: use delegated account instead of management
+            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
+            Module: !Ref CFDataName
+            DeployRegion: !Ref AWS::Region
+            Account: !Ref AWS::AccountId
+            Prefix: !Ref ResourcePrefix
+      'RefreshSchedule${AwsObject}':
+        Type: AWS::Scheduler::Schedule
+        Properties:
+          Description: !Sub 'Scheduler for the ODC ${CFDataName} ${AwsObject} module'
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-RefreshSchedule'
+          ScheduleExpression: !Ref Schedule
+          State: ENABLED
+          FlexibleTimeWindow:
+            MaximumWindowInMinutes: 30
+            Mode: 'FLEXIBLE'
+          Target:
+            Arn: !GetAtt [!Sub 'StepFunction${AwsObject}', Arn]
+            RoleArn: !Ref SchedulerExecutionRoleARN
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
