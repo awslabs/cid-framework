@@ -200,6 +200,9 @@ Resources:
               - "backup:DescribeBackupJob"
               - "backup:DescribeCopyJob"
               - "backup:DescribeRestoreJob"
+              - "backup:ListBackupJobs"
+              - "backup:ListCopyJobs"
+              - "backup:ListRestoreJobs"
             Resource: "*"
       Roles:
         - Ref: LambdaRole

@@ -163,6 +163,7 @@ Resources:
                   params=dict(Bucket=BUCKET_NAME, Prefix=s3_path), #pylint: disable=R1735
                   search='Contents',
               )
+              s3_content_iterator = filter(lambda x: x is not None, s3_content_iterator)
               dates_iterator = map(lambda obj: obj['LastModified'].date(), s3_content_iterator)
               return max(itertools.chain([start_date], dates_iterator))
 
@@ -207,7 +208,13 @@ Resources:
                   ),
               )
               flatten_data_iterator = map(flatten_dict, data_iterator)
-              store_data_to_s3(flatten_data_iterator, s3_prefix)
+              try:
+                  store_data_to_s3(flatten_data_iterator, s3_prefix)
+              except backup.exceptions.ClientError as exc:
+                  if 'Insufficient privileges to perform this action.' in exc["errorMessage"]:
+                      raise Exception('You need to activate cross account jobs monitoring https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account') from exc
+                  raise
+
               return "Successful"
 
       Handler: "index.lambda_handler"
