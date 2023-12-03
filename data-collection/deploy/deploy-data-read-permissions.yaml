@@ -27,6 +27,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeBackupModule
+          - IncludeCostOptimizationHubModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -64,6 +65,8 @@ Metadata:
         default: "Include AWS TransitGateway Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
+      IncludeCostOptimizationHubModule:
+        default: "Include Cost Optimization Hub Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -160,6 +163,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeCostOptimizationHubModule:
+    Type: String
+    Description: Collects CostOptimizationHub Recommendations from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -184,6 +193,7 @@ Resources:
         IncludeTAModule: !Ref IncludeTAModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeBackupModule: !Ref IncludeBackupModule
+        IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -199,11 +209,10 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
-        IncludeBackupModule: !Ref IncludeBackupModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organisation accounts"
+      Description: "StackSet in charge of deploying read roles across organization accounts"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
@@ -233,8 +242,6 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
-        - ParameterKey: IncludeBackupModule
-          ParameterValue: !Ref IncludeBackupModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]

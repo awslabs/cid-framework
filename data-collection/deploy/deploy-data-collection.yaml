@@ -29,6 +29,7 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeTransitGatewayModule
           - IncludeBackupModule
+          - IncludeCostOptimizationHubModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -70,6 +71,8 @@ Metadata:
         default: 'Include AWS TransitGateway Collection Module'
       IncludeBackupModule:
         default: 'Include AWS Backup Collection Module'
+      IncludeCostOptimizationHubModule:
+        default: 'Include CostOptimizationHub Module'
 
 Mappings:
   RegionMap:
@@ -284,6 +287,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeCostOptimizationHubModule:
+    Type: String
+    Description: Collects CostOptimizationHub data
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Outputs:
   S3Bucket:
@@ -308,6 +317,7 @@ Conditions:
   DeployBudgetsModule: !Equals [ !Ref IncludeBudgetsModule, "yes"]
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
+  DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -325,6 +335,7 @@ Conditions:
     - Fn::Or:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
+      - !Condition DeployCostOptimizationHubModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -761,6 +772,23 @@ Resources:
     Condition: DeployRightsizingModule
     Properties:
       TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+  CostOptimizationHubModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployCostOptimizationHubModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-optimization-hub.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn

@@ -1,5 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Retrieves AWS Backup details across AWS organization
+Transform: 'AWS::LanguageExtensions'
 Parameters:
   DatabaseName:
     Type: String
@@ -18,7 +19,7 @@ Parameters:
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
-    Default: aws-backup
+    Default: backup
   GlueRoleARN:
     Type: String
     Description: Arn for the Glue Crawler role
@@ -108,7 +109,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-Backup-Records'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -164,7 +165,7 @@ Resources:
                   search='Contents',
               )
               dates_iterator = map(lambda obj: obj['LastModified'].date(), s3_content_iterator)
-              return max(itertools.chain( [start_date], dates_iterator))
+              return max(itertools.chain([start_date], dates_iterator))
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects backup copy and restore jobs
@@ -230,6 +231,31 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
+
+  'Fn::ForEach::Object':
+    - AwsObject
+    - !Ref AwsObjects
+    - 'Crawler${AwsObject}':
+        Type: AWS::Glue::Crawler
+        Properties:
+          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler'
+          Role: !Ref GlueRoleARN
+          DatabaseName: !Ref DatabaseName
+          Targets:
+            S3Targets:
+              - Path:
+                  Fn::Sub:
+                    - "s3://${DestinationBucket}/inventory/inventory-${path}-data/"
+                    - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
+          Configuration: |
+            {
+              "Version": 1.0,
+              "CrawlerOutput": {
+                "Partitions": {
+                  "AddOrUpdateBehavior": "InheritFromTable"
+                }
+              }
+            }
 
   'Fn::ForEach::Object':
     - AwsObject
