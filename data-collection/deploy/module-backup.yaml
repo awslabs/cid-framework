@@ -49,11 +49,6 @@ Parameters:
     Default: BackupBackupJobs, BackupRestoreJobs, BackupCopyJobs
     Description: Objects for pulling backup data
 
-Outputs:
-  StepFunctionARN:
-    Description: ARN for the module's Step Function
-    Value: !GetAtt ModuleStepFunction.Arn
-
 Mappings:
   ServicesMap:
     BackupBackupJobs:
@@ -143,37 +138,33 @@ Resources:
               boto3.client('s3').upload_fileobj(Fileobj=io.StringIO(content), Bucket=BUCKET_NAME, Key=key)
               logger.info(f'uploaded to s3://{BUCKET_NAME}/{key}')
 
-          def iterate_paginated_results(client, function, search, params=None, transform=lambda x:x):
+          def iterate_paginated_results(client, function, search, params=None):
               for obj in client.get_paginator(function).paginate(**(params or {})).search(search):
-                  yield transform(obj)
+                  yield obj
 
-          def flatten_results(results, parent_key='',sep='_'):
-              flattened_results = {}
-              for key,value in results.items():
+          def flatten_dict(data, parent_key='',sep='_'):
+              res = {}
+              for key,value in data.items():
                   new_key = parent_key + sep + key if parent_key else key
                   if isinstance(value, dict):
-                      flattened_results.update(flatten_results(value, new_key, sep=sep))
+                      res.update(flatten_dict(value, new_key, sep=sep))
                   elif isinstance(value, datetime):
-                      flattened_results[new_key] = value.isoformat()
+                      res[new_key] = value.isoformat()
                   else:
-                      flattened_results[new_key] = value
-              return flattened_results
+                      res[new_key] = value
+              return res
 
           def last_updated_date(s3_path, max_days=30):
               ''' Returns the latest time any object under the path has been modified or last x days '''
               start_date = datetime.now().date() - timedelta(days=max_days)
-              return max(
-                  itertools.chain(
-                      [start_date],
-                      iterate_paginated_results(
-                          client=boto3.client('s3'),
-                          function='list_objects_v2',
-                          params=dict(Bucket=BUCKET_NAME, Prefix=s3_path), #pylint: disable=R1735
-                          search='Contents',
-                          transform=lambda obj: obj['LastModified'].date(),
-                      )
-                  )
+              s3_content_iterator = iterate_paginated_results(
+                  client=boto3.client('s3'),
+                  function='list_objects_v2',
+                  params=dict(Bucket=BUCKET_NAME, Prefix=s3_path), #pylint: disable=R1735
+                  search='Contents',
               )
+              dates_iterator = map(lambda obj: obj['LastModified'].date(), s3_content_iterator)
+              return max(itertools.chain( [start_date], dates_iterator))
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects backup copy and restore jobs
@@ -215,9 +206,9 @@ Resources:
                           ByCompleteBefore=str(end_date),
                           ByAccountId='*',
                       ),
-                      transform=flatten_results,
                   )
-                  store_data_to_s3(data_iterator, s3_prefix)
+                  flatten_data_iterator = map(flatten_dict, data_iterator)
+                  store_data_to_s3(flatten_data_iterator, s3_prefix)
               except Exception as exc: #pylint: disable=broad-exception-caught
                   print(payer_id, exc)
               return "Successful"
