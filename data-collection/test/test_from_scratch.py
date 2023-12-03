@@ -146,5 +146,9 @@ def test_compute_optimizer_export_triggered(compute_optimizer, start_time):
     assert len(jobs_failed) == 0, f'Some jobs failed {jobs_failed}'
     # TODO: check how we can add better test, taking into account 15-30 mins delay of export in CO
 
+def test_cost_optimization_hub_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_data" LIMIT 10;')
+    assert len(data) > 0, 'cost_optimization_hub_data is empty'
+
 if __name__ == '__main__':
     pytest.main()
