@@ -12,16 +12,9 @@ Metadata:
       - Label:
           default: "Available modules"
         Parameters:
-          - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeECSChargebackModule
-          - IncludeInventoryCollectorModule
-          - IncludeOrgDataModule
-          - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
-          - IncludeTAModule
-          - IncludeTransitGatewayModule
           - IncludeBackupModule
           - IncludeCostOptimizationHubModule
     ParameterLabels:
@@ -31,26 +24,12 @@ Metadata:
         default: "Cost Account Id"
       ResourcePrefix:
         default: "Role Prefix"
-      IncludeBudgetsModule:
-        default: "Include AWS Budgets Collection Module"
       IncludeComputeOptimizerModule:
         default: "Include AWS Compute Optimizer Data Collection Module"
       IncludeCostAnomalyModule:
         default: "Include Cost Anomalies Data Collection Module"
-      IncludeECSChargebackModule:
-        default: "Include ECS Chargeback Data Collection Module"
-      IncludeInventoryCollectorModule:
-        default: "Include Inventory Collector Module"
-      IncludeOrgDataModule:
-        default: "Include AWS Organization Data Collection Module"
-      IncludeRDSUtilizationModule:
-        default: "Include RDS Utilization Data Collection Module"
       IncludeRightsizingModule:
         default: "Include Rightsizing Recommendations Data Collection Module"
-      IncludeTAModule:
-        default: "Include AWS Trusted Advisor Data Collection Module"
-      IncludeTransitGatewayModule:
-        default: "Include AWS TransitGateway Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
       IncludeCostOptimizationHubModule:
@@ -67,12 +46,6 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "CID-DC-"
-  IncludeBudgetsModule:
-    Type: String
-    Description: Collects budgets from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
   IncludeComputeOptimizerModule:
     Type: String
     Description: Collects AWS Compute Optimizer service recommendations
@@ -85,45 +58,9 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeECSChargebackModule:
-    Type: String
-    Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
-    AllowedValues:
-      - "yes"
-      - "no"
-  IncludeInventoryCollectorModule:
-    Type: String
-    Description: Collects data about AMIs, EBS volumes and snapshots
-    AllowedValues:
-      - "yes"
-      - "no"
-  IncludeOrgDataModule:
-    Type: String
-    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
-    AllowedValues:
-      - "yes"
-      - "no"
-  IncludeRDSUtilizationModule:
-    Type: String
-    Description: Collects RDS CloudWatch metrics from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
   IncludeRightsizingModule:
     Type: String
     Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
-    AllowedValues:
-      - "yes"
-      - "no"
-  IncludeTAModule:
-    Type: String
-    Description: Collects AWS Trusted Advisor recommendations data
-    AllowedValues:
-      - "yes"
-      - "no"
-  IncludeTransitGatewayModule:
-    Type: String
-    Description: Collects TransitGateway from your accounts
     AllowedValues:
       - "yes"
       - "no"
@@ -141,16 +78,9 @@ Parameters:
       - "no"
 
 Conditions:
-  EnableBudgetsModule: !Equals [!Ref IncludeBudgetsModule, "yes"]
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
   EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
-  EnableECSChargebackModule: !Equals [!Ref IncludeECSChargebackModule, "yes"]
-  EnableInventoryCollectorModule: !Equals [!Ref IncludeInventoryCollectorModule, "yes"]
-  EnableOrganizationModule: !Equals [!Ref IncludeOrgDataModule, "yes"]
-  EnableRDSUtilizationModule: !Equals [!Ref IncludeRDSUtilizationModule, "yes"]
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
-  EnableTAModule: !Equals [!Ref IncludeTAModule, "yes"]
-  EnableTransitGatewayModule: !Equals [!Ref IncludeTransitGatewayModule, "yes"]
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   EnableCostOptimizationHubModule: !Equals [!Ref IncludeCostOptimizationHubModule, "yes"]
 

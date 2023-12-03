@@ -21,7 +21,6 @@ Metadata:
           - IncludeCostAnomalyModule
           - IncludeECSChargebackModule
           - IncludeInventoryCollectorModule
-          - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
@@ -53,8 +52,6 @@ Metadata:
         default: "Include ECS Chargeback Data Collection Module"
       IncludeInventoryCollectorModule:
         default: "Include Inventory Collector Module"
-      IncludeOrgDataModule:
-        default: "Include AWS Organization Data Collection Module"
       IncludeRDSUtilizationModule:
         default: "Include RDS Utilization Data Collection Module"
       IncludeRightsizingModule:
@@ -127,12 +124,6 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeOrgDataModule:
-    Type: String
-    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
-    AllowedValues:
-      - "yes"
-      - "no"
   IncludeRDSUtilizationModule:
     Type: String
     Description: Collects RDS CloudWatch metrics from your accounts
@@ -182,16 +173,9 @@ Resources:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
         ResourcePrefix: !Ref ResourcePrefix
-        IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
-        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
-        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
-        IncludeOrgDataModule: !Ref IncludeOrgDataModule
-        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
-        IncludeTAModule: !Ref IncludeTAModule
-        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
   DataCollectorMgmtAccountModulesReadStack:

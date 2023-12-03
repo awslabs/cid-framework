@@ -38,7 +38,7 @@ for file in $yaml_files; do
         echo -e "checkov      ${GREEN}OK${NC}"  | awk '{ print "\t" $0 }'
     fi
 
-    if [ "$(basename $file)" == "${exclude_files[0]}" ] || [ "$(basename $file)" == "${exclude_files[1]}" ]; then
+    if [ "$(basename $file)" == "${exclude_files[0]}" ] || [ "$(basename $file)" == "${exclude_files[1]}" ] || [ "$(basename $file)" == "${exclude_files[2]}" ]; then
         echo -e "cfn-lint     ${YELLOW}SKIP${NC} For::Each breaks lint"  | awk '{ print "\t" $0 }'
         echo -e "cfn_nag_scan ${YELLOW}SKIP${NC} For::Each breaks lint"  | awk '{ print "\t" $0 }'
         continue

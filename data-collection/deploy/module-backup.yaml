@@ -227,32 +227,6 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-
-  'Fn::ForEach::Object':
-    - AwsObject
-    - !Ref AwsObjects
-    - 'Crawler${AwsObject}':
-        Type: AWS::Glue::Crawler
-        Properties:
-          Name: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler'
-          Role: !Ref GlueRoleARN
-          DatabaseName: !Ref DatabaseName
-          Targets:
-            S3Targets:
-              - Path:
-                  Fn::Sub:
-                    - "s3://${DestinationBucket}/inventory/inventory-${path}-data/"
-                    - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
-          Configuration: |
-            {
-              "Version": 1.0,
-              "CrawlerOutput": {
-                "Partitions": {
-                  "AddOrUpdateBehavior": "InheritFromTable"
-                }
-              }
-            }
-
   'Fn::ForEach::Object':
     - AwsObject
     - !Ref AwsObjects

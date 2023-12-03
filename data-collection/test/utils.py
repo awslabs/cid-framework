@@ -175,7 +175,6 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeOrgDataModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
