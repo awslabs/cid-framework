@@ -160,7 +160,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name='OptimizationDataReadPermissionsStack2',
+        stack_name=f'{PREFIX}OptimizationDataReadPermissionsStack',
         file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
@@ -187,7 +187,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name='OptimizationDataCollectionStack2',
+        stack_name=f'{PREFIX}OptimizationDataCollectionStack',
         file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
@@ -214,8 +214,8 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
 
     logger.info('Waiting for stacks')
     watch_stacks(cloudformation, [
-        "OptimizationDataReadPermissionsStack2",
-        "OptimizationDataCollectionStack2",
+        f'{PREFIX}OptimizationDataReadPermissionsStack',
+        f'{PREFIX}OptimizationDataCollectionStack',
     ])
 
 
@@ -361,8 +361,8 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
         logger.warning(f'Exception: {exc}')
 
     for stack_name in [
-        'OptimizationDataReadPermissionsStack2',
-        'OptimizationDataCollectionStack2',
+        f'{PREFIX}OptimizationDataReadPermissionsStack',
+        f'{PREFIX}OptimizationDataCollectionStack',
         ]:
         try:
             cloudformation.delete_stack(StackName=stack_name)
@@ -371,8 +371,8 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
             logger.error(f'{stack_name} {exc}')
 
     watch_stacks(cloudformation, [
-        'OptimizationDataReadPermissionsStack2',
-        'OptimizationDataCollectionStack2',
+        f'{PREFIX}OptimizationDataReadPermissionsStack',
+        f'{PREFIX}OptimizationDataCollectionStack',
     ])
     try:
         logger.info('Deleting all athena tables in optimization_data')
