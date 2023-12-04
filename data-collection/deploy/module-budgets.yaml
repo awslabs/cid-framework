@@ -26,7 +26,7 @@ Parameters:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
     Default: "rate(14 days)"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   LambdaAnalyticsARN:
@@ -54,7 +54,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -68,7 +68,7 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: "AssumeMultiAccountRole"
+        - PolicyName: !Sub "${CFDataName}-MultiAccount-LambdaRole"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -93,10 +93,10 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.8
-      Architectures: [arm64]
+      Runtime: python3.10
+      Architectures: [x86_64]
       Code:
         ZipFile: |
           #Author Stephanie Gooch 2021
@@ -113,7 +113,7 @@ Resources:
           ROLE_NAME = os.environ['ROLENAME']
           TMP_FILE = "/tmp/data.json"
 
-          logger = logging.getLogger()
+          logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           # subclass JSONEncoder
@@ -191,6 +191,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref MultiAccountRoleName
+
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -202,7 +203,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -212,29 +213,34 @@ Resources:
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${RolePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionString: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${RolePrefix}${CFDataName}-Crawler"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: 'LINKED'
         Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
 
   ModuleRefreshSchedule:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${RolePrefix}${CFDataName}-RefreshSchedule'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
-        Mode: 'OFF'
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${RolePrefix}${CFDataName}-Crawler"]}'
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor

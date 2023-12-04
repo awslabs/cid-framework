@@ -1,58 +1,108 @@
----
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Lambda to collect Org data and store in S3
 Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket that is created to hold org data
+    Description: Name of the S3 Bucket that exists or needs to be created to hold rightsizing information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
   ManagementRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
-  ManagementAccountID:
-    Type: String
-    AllowedPattern: ([a-z0-9\-, ]*?$)
-    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
-    Default: organization
-  DatabaseName:
+    Default: organizations
+  GlueRoleARN:
     Type: String
-    Description: Athena Database name where you table will be created
-    Default: optimization_data
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
   CURTable:
     Type: String
     Description: Athena Table with CUR
     Default: cid_cur.cur
-  GlueRoleARN:
-    Type: String
-  RolePrefix:
-    Type: String
-    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
-  Schedule:
-    Type: String
-    Description: Cron job to trigger the lambda using cloudwatch event
-    Default: "rate(14 days)"
-  LambdaAnalyticsARN:
-    Type: String
-    Description: Arn of lambda for Analytics
+
 Outputs:
-  LambdaFunctionName:
-    Value: !Ref LambdaFunction
-  LambdaFunctionARN:
-    Description: Lambda function ARN.
-    Value: !GetAtt LambdaFunction.Arn
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
 Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${RolePrefix}${CFDataName}-Lambda-Collect'
-      Description: Well Architected Lab - Collecting Accounts
-      Runtime: python3.8
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.10
+      Architectures: [x86_64]
       Code:
         ZipFile: |
-          #!/usr/bin/env python3
           """ Get Account info from AWS Organizations and store on s3 bucket
           """
           import os
@@ -65,29 +115,31 @@ Resources:
           from botocore.exceptions import ClientError
           from botocore.client import Config
 
-          BUCKET = os.environ["BUCKET_NAME"]
-          PREFIX = os.environ["PREFIX"]
-          CRAWLER = os.environ["CRAWLER"]
-          ROLE_NAME = os.environ['ROLE']
-          MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
+          BUCKET = os.environ['BUCKET_NAME']
+          ROLE = os.environ['ROLENAME']
+          PREFIX = os.environ['PREFIX']
 
           logger = logging.getLogger(__name__)
-          logger.setLevel(logging.INFO)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           def lambda_handler(event, context):
-              logger.debug(json.dumps(event))
-              for management_account_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                  try:
-                      process_management_acc(management_account_id)
-                  except Exception as exc:
-                      logging.warning(exc)
-              start_crawler(CRAWLER)
+              logger.info(f"Event data {json.dumps(event)}")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              account = json.loads(event["account"])
+              try:
+                  process_management_acc(account["account_id"])
+              except Exception as exc:
+                  logger.warning(exc)
 
           def process_management_acc(management_account_id):
               """Get info from management account and write to s3"""
-              logger.info(f'Assuming role {ROLE_NAME} in {management_account_id}')
+              logger.info(f'Assuming role {ROLE} in {management_account_id}')
               cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE_NAME}",
+                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
                   RoleSessionName="data_collection"
               )['Credentials']
               client = boto3.client(
@@ -109,19 +161,11 @@ Resources:
                   for line in data:
                       file_.write(json.dumps(line, default=json_converter) + '\n')
               try:
-                  prefix = f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/acc-org.json" # No time/date info. Each time we override data
+                  prefix = f"{PREFIX}/organization-data/payer_id={payer_id}/acc-org.json" # No time/date info. Each time we override data
                   boto3.client('s3').upload_file(tmp_file, BUCKET, prefix)
                   logger.info(f"Uploaded {len(data)} records in s3://{BUCKET}/{prefix}")
               except Exception as exc:
                   logger.error(exc)
-
-          def start_crawler(crawler):
-              """start crawler"""
-              try:
-                  boto3.client("glue").start_crawler(Name=crawler)
-                  logger.info(f"{crawler} has been started")
-              except Exception as exc:
-                  logging.warning(exc)
 
           def json_converter(obj):
               """ Help json encode date"""
@@ -204,8 +248,6 @@ Resources:
               )
               for account in OrgController(client).iterate_accounts():
                   print(json.dumps(account, default=json_converter))
-
-
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
@@ -213,10 +255,8 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          CRAWLER: !Ref OrgCrawler
-          ROLE: !Ref ManagementRoleName
-          MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           PREFIX: !Ref CFDataName
+          ROLENAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -224,101 +264,64 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
-  OrgCrawler:
+
+  Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${RolePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-  LambdaRole:
-    Type: AWS::IAM::Role
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/organization-data/" #Preserve legacy name in Athena
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
     Properties:
-      RoleName: !Sub "${RolePrefix}Lambda-Role-${CFDataName}"
-      AssumeRolePolicyDocument:
-        Statement:
-          - Action:
-              - sts:AssumeRole
-            Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-        Version: 2012-10-17
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Path: /
-      Policies:
-        - PolicyName: "Assume-Management-Organization-Data-Role"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
-        - PolicyName: "CloudWatch-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "logs:CreateLogGroup"
-                  - "logs:CreateLogStream"
-                  - "logs:PutLogEvents"
-                  - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/Lambda_Organization_Data_Collector*"
-              - Effect: "Allow"
-                Action:
-                  - "glue:StartCrawler"
-                Resource: !Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${OrgCrawler}"
-        - PolicyName: !Sub "${CFDataName}-S3-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "s3:PutObject"
-                Resource:
-                  - !Sub "arn:aws:s3:::${DestinationBucket}/*"
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
-            reason: "Need explicit name to identify role actions"
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
 
   AthenaQuery:
       Type: AWS::Athena::NamedQuery
       Properties:
         Database: !Ref DatabaseName
         Description: Provides a cur extended with organization info
-        Name: !Sub '${RolePrefix}view cur_with_org_data'
+        Name: !Sub '${ResourcePrefix}view cur_with_org_data'
         QueryString: !Sub |
           CREATE OR REPLACE VIEW cur_with_org_data AS
           SELECT *
-          FROM ("${CURTable}" cur
+          FROM (${CURTable} cur
           INNER JOIN "${DatabaseName}"."organization_data"
             ON ("cur"."line_item_usage_account_id" = "${DatabaseName}"."organization_data"."id"))
-  CloudWatchTrigger:
-    Type: AWS::Events::Rule
-    Properties:
-      Description: !Sub "Notification Event for ${RolePrefix}${CFDataName} data collection"
-      Name: !Sub "${RolePrefix}${CFDataName}-Scheduler"
-      ScheduleExpression: !Ref Schedule
-      State: ENABLED
-      Targets:
-        - Arn: !GetAtt LambdaFunction.Arn
-          Id: TriggerLambda
-  EventPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceAccount: !Ref 'AWS::AccountId'
-      SourceArn: !GetAtt CloudWatchTrigger.Arn
-  LambdaAnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
-    Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName

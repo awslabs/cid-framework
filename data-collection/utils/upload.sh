@@ -1,4 +1,5 @@
-#!/bin/zsh
+#!/bin/bash
+# shellcheck disable=SC2086
 # This script uploads CloudFormation files to S3 bucket. Can be used with any testing bucket or prod.
 # see also README.md
 

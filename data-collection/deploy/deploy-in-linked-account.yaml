@@ -8,7 +8,7 @@ Metadata:
       Parameters:
         - DataCollectionAccountID
         - MultiAccountRoleName
-        - RolePrefix
+        - ResourcePrefix
     - Label:
         default: 'Available modules'
       Parameters:
@@ -23,7 +23,7 @@ Metadata:
         default: 'Cost Account Id'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
-      RolePrefix:
+      ResourcePrefix:
         default: "Role Prefix"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
@@ -45,10 +45,10 @@ Parameters:
     Type: String
     Description: The name of the IAM role that will be deployed from the management account to linked accounts as a read only role. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
     Default: "Optimization-Data-Multi-Account-Role"
-  RolePrefix:
+  ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
-    Default: "WA-"
+    Default: "CID-DC-"
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -114,7 +114,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${RolePrefix}${MultiAccountRoleName}"
+      RoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -126,12 +126,12 @@ Resources:
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}budgets-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}ecs-chargeback-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}inventory-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}rds-usage-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}transit-gateway-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${RolePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}budgets-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}ecs-chargeback-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}inventory-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -187,8 +187,11 @@ Resources:
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeRegions"
+              - "ec2:DescribeInstances"
+              - "ec2:DescribeVpcs"
               - "rds:DescribeDBInstances"
               - "es:ListDomainNames"
+              - "es:DescribeDomain"
               - "es:DescribeElasticsearchDomains"
               - "elasticache:DescribeCacheClusters"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
