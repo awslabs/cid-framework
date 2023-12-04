@@ -123,6 +123,7 @@ Resources:
           ROLENAME = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
           TMP_FILE = "/tmp/data.json"
+          NEED_DETAILED = True # set it to False to fallback to collection of only summaries if any perf issue or timeout
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -132,6 +133,7 @@ Resources:
 
           def store_to_s3(records, path):
               """ Upload records to s3 """
+              count = 0
               with open(TMP_FILE, "w", encoding='utf-8') as json_file:
                   for count, record in enumerate(records, start=1):
                       json_file.write(to_json(record) + '\n')
@@ -185,11 +187,12 @@ Resources:
                       includeAllRecommendations=True,
                   ),
               )
-              detailed_rec_iterator = map(
-                  partial(get_detailed_recommendation, hub),
-                  data_iterator,
-              )
-              count = store_to_s3(detailed_rec_iterator, s3_prefix)
+              if NEED_DETAILED:
+                  data_iterator = map(
+                      partial(get_detailed_recommendation, hub),
+                      data_iterator,
+                  )
+              count = store_to_s3(data_iterator, s3_prefix)
 
               return f"Recorded {count}"
 
