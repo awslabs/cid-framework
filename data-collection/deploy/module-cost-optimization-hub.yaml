@@ -117,10 +117,12 @@ Resources:
           import boto3 #pylint: disable=wrong-import-position
 
           logger = logging.getLogger()
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           BUCKET_NAME = os.environ['BUCKET_NAME']
           ROLENAME = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
+          TMP_FILE = "/tmp/data.json"
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -128,18 +130,21 @@ Resources:
                   return obj.isoformat() if isinstance(obj, (date, datetime)) else None
               return json.dumps(obj, default=_date_transformer)
 
-          def store_data_to_s3(data, path):
-              content = '\n'.join([to_json(result) for result in data])
-              if not content:
-                  logger.info(f"No data in file for {path}")
-                  return
+          def store_to_s3(records, path):
+              """ Upload records to s3 """
+              with open(TMP_FILE, "w", encoding='utf-8') as json_file:
+                  for count, record in enumerate(records, start=1):
+                      json_file.write(to_json(record) + '\n')
+              if not count:
+                  logger.info(f"No records for {path}")
+                  return count
               key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%m/%Y-%m-%d.json")
-              boto3.client('s3').put_object(Body=content, Bucket=BUCKET_NAME, Key=key)
-              logger.info(f'uploaded to s3://{BUCKET_NAME}/{key}')
+              boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+              logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
+              return count
 
           def iterate_paginated_results(client, function, search, params=None):
-              for obj in client.get_paginator(function).paginate(**(params or {})).search(search):
-                  yield obj
+              yield from client.get_paginator(function).paginate(**(params or {})).search(search)
 
           def get_detailed_recommendation(hub, rec):
               res = hub.get_recommendation(recommendationId=rec['recommendationId'])
@@ -166,7 +171,7 @@ Resources:
               )['Credentials']
               hub = boto3.client(
                   'cost-optimization-hub',
-                  "us-east-1",     #can be only one region?
+                  "us-east-1",  #can be only us-east-1
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
@@ -181,12 +186,12 @@ Resources:
                   ),
               )
               detailed_rec_iterator = map(
-                  partial(get_detailed_recommendation, hub=hub),
+                  partial(get_detailed_recommendation, hub),
                   data_iterator,
               )
-              store_data_to_s3(detailed_rec_iterator, s3_prefix)
+              count = store_to_s3(detailed_rec_iterator, s3_prefix)
 
-              return "Successful"
+              return f"Recorded {count}"
 
       Handler: "index.lambda_handler"
       MemorySize: 2688
