@@ -372,11 +372,12 @@ Resources:
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
-        Mode: 'OFF'
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
       Target:
-          Arn: !GetAtt ModuleStepFunction.Arn
-          RoleArn: !Ref SchedulerExecutionRoleARN
-          Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${ResourcePrefix}${CFDataName}-Crawler"]}'
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+        Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${ResourcePrefix}${CFDataName}-Crawler"]}'
 
   LambdaAnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor

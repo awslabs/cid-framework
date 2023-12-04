@@ -38,7 +38,7 @@ Metadata:
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       Schedule:
-        default: "Schedule swap to cron(0 8 1 * ? *) for 1st day of the month"
+        default: "Schedule can be swapped to cron, for example: cron(0 8 1,15 * ? *) for 08:00 the 1st and 15th days of the month"
       RegionsInScope:
         default: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
       DatabaseName:
@@ -155,7 +155,8 @@ Mappings:
                 }
               },
               "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
-              "Next": "CrawlerStepFunctionStartExecution"
+              "Next": "CrawlerStepFunctionStartExecution",
+              "MaxConcurrency": 60
             },
             "CrawlerStepFunctionStartExecution": {
               "Type": "Task",
@@ -202,6 +203,7 @@ Parameters:
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
+    AllowedPattern: ([a-z0-9_]*?$)
     Default: optimization_data
   ResourcePrefix:
     Type: String
@@ -737,6 +739,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   RightsizeModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
