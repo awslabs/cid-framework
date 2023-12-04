@@ -265,9 +265,9 @@ Resources:
         Statement:
           - Effect: "Allow"
             Action:
-              - "backup:DescribeBackupJob"
-              - "backup:DescribeCopyJob"
-              - "backup:DescribeRestoreJob"
+              - "backup:ListCopyJobs"
+              - "backup:ListBackupJobs"
+              - "backup:ListRestoreJobs"
             Resource: "*"
       Roles:
         - Ref: LambdaRole
