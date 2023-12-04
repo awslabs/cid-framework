@@ -244,7 +244,7 @@ Resources:
                   - s3:GetObjectVersionTagging
                   Effect: 'Allow'
                   Resource: !Sub arn:aws:s3:::${DestinationBucket}/*
-              PolicyName: ReplicaPolicy
+              PolicyName: !Sub "ReplicaPolicy-${AWS::Region}"
               Roles: [!Ref 'ReplicaRole']
           S3Bucket:
             Type: AWS::S3::Bucket
@@ -335,6 +335,7 @@ Resources:
           INCLUDE_MEMBER_ACCOUNTS: !Ref IncludeMemberAccounts
           ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+          MODULE_NAME: !Ref CFDataName
       Code:
         ZipFile: |
           import os
