@@ -226,7 +226,7 @@ Resources:
           def get_s3_key(account, params, region): #pylint: disable=unused-argument
               """ Tailor this method to set the appropriate S3 prefix and object name """
               return datetime.now().strftime(
-                  f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  f"{params.module_name}/{params.module_name}-{params.resource_type}-data/payer_id={account.payer_id}/"
                   f"year=%Y/month=%m/{account.account_id}-%Y%m%d-%H%M%S.json")
 
           def paginated_scan(service, account, function_name, region, params, api_params=None, obj_name=None):

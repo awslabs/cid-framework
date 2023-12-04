@@ -396,7 +396,7 @@ Resources:
           BASE_URL = '/'.join(OFFERS_URL.split('/')[:3])
           CODE_BUCKET = os.environ['CODE_BUCKET']
           BUCKET_NAME = os.environ["BUCKET_NAME"]
-          MODULE_NAME = os.environ["DEST_PREFIX"]
+          MODULE_NAME = os.environ["MODULE_NAME"]
           REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
           TMP_FILE = "/tmp/data.json"
           RDS_GRAVITON_PATH = os.environ["RDS_GRAVITON_PATH"]
@@ -531,7 +531,7 @@ Resources:
           LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
           CODE_BUCKET: !Ref CodeBucket
-          DEST_MODULE_NAME: !Ref CFDataName
+          MODULE_NAME: !Ref CFDataName
           REGIONS: !Ref RegionsInScope
           RDS_GRAVITON_PATH: !Ref RdsGravitonPath
     Metadata:
