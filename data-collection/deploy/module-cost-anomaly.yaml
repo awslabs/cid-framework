@@ -109,102 +109,42 @@ Resources:
           import os
           import json
           import logging
-          from datetime import date, timedelta, datetime
+          from datetime import date, datetime, timedelta
 
           import boto3
+          import botocore
 
-          logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-          #logger.setLevel(logging.DEBUG)
+          class ParamsBase():
+              def __init__(self, env, additional_params):
+                  logger.setLevel(getattr(logging, env.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+                  logger.debug("Loading parameters")
+                  self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  self.tmp_file = "/tmp/tmp.json"
+                  self.bucket = env["BUCKET_NAME"]
+                  self.role_name = env["ROLE_NAME"]
+                  self.module_name = env["MODULE_NAME"]
+                  self.regions = [r.strip() for r in env.get("REGIONS","us-east-1").split(',') if r]
+                  self.boto_config = None
+                  self.additional_params = additional_params
 
-          # Helper classes and functions
-          class CidError(Exception):
-              def __init__(self, message="", exc=None):
-                  message = f"({type(exc).__name__}) exception. {message}" if exc else message
-                  if type(self) == CidNonCriticalError.__class__:
-                      logger.warning(message)
-                  else:
-                      logger.error(message)
-                  super().__init__(message)
-          class CidNonCriticalError(CidError):
-              def __init__(self, message="", exc=None):
-                  super().__init__(message, exc)
-          class CidCriticalError(CidError):
-              def __init__(self, message="", exc=None):
-                  super().__init__(message, exc)
-          class ClientAccessError(Exception):
-              def __init__(self, exc, role_name, account_id, service, region):
-                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
-                  logger.warning(message)
-                  super().__init__(message)
-
-          class Params():
-              def __init__(self, env):
+          """
+          Custom implementation:
+          These functions are specific to this module.
+          """
+          class Params(ParamsBase):
+              """ Tailor this class to add any unique configuration """
+              def __init__(self, env, additional_params):
                   try:
-                      self.bucket = env["BUCKET_NAME"]
-                      self.role_name = env["ROLENAME"]
-                      self.module_name = env["PREFIX"]
-                      self.tmp_file = "/tmp/tmp.json"
-                      self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                      self.boto_config = None
-                  except (KeyError, AttributeError):
-                      raise CidCriticalError(f"Invalid environment params {env}")
+                      super().__init__(env, additional_params)
+                  except (KeyError, AttributeError) as exc:
+                      raise CidCriticalError(f"Invalid parameters supplied", exc)
 
-          class Account():
-              def __init__(self, account_json: dict):
-                  try:
-                      self.account_id = account_json["account_id"]
-                      self.account_name = account_json["account_name"]
-                      self.payer_id = account_json["payer_id"]
-                  except KeyError:
-                      raise CidCriticalError(f"Invalid account data passed {account_json}")
-
-          def to_json(obj):
-              return json.dumps(
-                  obj,
-                  default=lambda x:
-                      x.isoformat() if isinstance(x, (date, datetime)) else None
-              )
-
-          # Core implementation
-          def lambda_handler(event, context):
-              logger.info(f"Incoming event: {json.dumps(event)}")
-              status_code = 500
-              try:
-                  account = Account(json.loads(event["account"]))
-                  params = Params(os.environ)
-                  logger.debug(params)
-                  main(account, params)
-                  status_code = 200
-
-              except KeyError as exc:
-                  raise CidCriticalError(f"Account is not defined the Lambda event. Please do not trigger this Lambda manually. Use the corresponding {os.environ['PREFIX']} state machine in Step Functions instead.")
-              except CidNonCriticalError as exc:
-                  status_code = 200
-              except CidCriticalError as exc:
-                  raise exc
-              except Exception as exc:
-                  raise CidCriticalError(f"(UnhandledExceptionError) in {os.environ['PREFIX']} module", exc)
-              finally:
-                  return {"statusCode": status_code}
-
-          def main(account, params):
-              logger.debug("Entering main")
-              data_uploaded = False
-              records = get_api_data(account, params)
-              if len(records) > 0:
-                  count = store_to_temp(records, params, account)
-                  if count > 0:
-                      upload_to_s3(account, params)
-                      data_uploaded = True
-              if not data_uploaded:
-                  logger.info("No file uploaded because no new records were found")
-
-          def get_api_data(account, params):
-              logger.debug("Entering get_api_data")
-              api_params = get_api_params(params=params)
-              client = get_client_with_role(params.role_name, account.account_id, region="us-east-1", service="ce", params)
+          def get_api_data(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to call the necessary APIs and process the data """
+              logger.debug(f"Entering get_api_data for region '{region}'")
+              client = get_client_with_role(params.role_name, account.account_id, region=region, service="ce", params=params)
               results = []
+              api_params = get_api_params(params=params)
               while True:
                   response = client.get_anomalies(**api_params)
                   for record in response['Anomalies']:
@@ -217,13 +157,20 @@ Resources:
               logger.info(f"API results total {len(results)}")
               return results
 
-          def get_api_params(account = None, params = None):
+          def get_s3_key(account, params, region): #pylint: disable=unused-argument #using current live
+              """ Tailor this method to set the appropriate S3 prefix and object name """
+              return datetime.now().strftime(
+                  f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  f"year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+
+          def get_api_params(account=None, params=None):
+              """ Helper to add date bounding parameters """
               logger.debug("Entering get_api_params")
-              start_date, end_date = calculate_dates(params.bucket, s3_path=f'{params.module_name}/cost-anomaly-data/')
+              start_date, end_date = calculate_dates(params.bucket, s3_path=f'{params.module_name}/{params.module_name}-data/')
               api_params = dict(
                   DateInterval={
-                    'StartDate': str(start_date),
-                    'EndDate': str(end_date)
+                  'StartDate': str(start_date),
+                  'EndDate': str(end_date)
                   },
                   MaxResults=100,
               )
@@ -231,6 +178,7 @@ Resources:
               return api_params
 
           def parse_record(record):
+              """ Creates a resulting record to store based on data from teh API call """
               logger.debug(f"Entering parse_record for {record}")
               try:
                   result = {
@@ -256,35 +204,28 @@ Resources:
               except Exception as exc:
                   raise CidCriticalError(f"Unhandled exception in parse_record", exc)
 
-          def store_to_temp(results, params, account):
-              logger.debug("Entering store_to_temp")
-              count = 0
-              try:
-                  with open(params.tmp_file, "w", encoding='utf-8') as f:
-                      for result in results:
-                          f.write(to_json(record))
-                          f.write("\n")
-                          count += 1
+          def calculate_dates(bucket, s3_path):
+              """ Timeboxes the range of anomalies by seeking the most recent data collection date from the last 90 days """
+              end_date = datetime.now().date()
+              start_date = datetime.now().date() - timedelta(days=90) #Cost anomalies are available for last 90days
+              # Check the create time of objects in the S3 bucket
+              paginator = boto3.client('s3').get_paginator('list_objects_v2')
+              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=bucket, Prefix=s3_path)], [])
+              last_modified_date = get_last_modified_date(contents)
+              if last_modified_date and last_modified_date >= start_date:
+                  start_date = last_modified_date
+              return start_date, end_date
 
-              except CidCriticalError as exc:
-                  raise exc
-              except Exception as exc:
-                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
-
-              logger.info(f"Stored records in temp for account {account.account_id}")
-              return count
-
-          def upload_to_s3(account, params):
-              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
-              try:
-                  key = datetime.now().strftime(f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/year=%Y/month=%m/day=%d/{params.module_name}-%Y-%m-%d.json")
-                  res = boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
-                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
-
-              except Exception as exc:
-                  raise CidFatalError(exc)
+          def get_last_modified_date(contents):
+              """ Helper for calculate_dates """
+              last_modified_dates = [obj['LastModified'].date() for obj in contents]
+              last_modified_dates_within_90_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=90)]
+              if last_modified_dates_within_90_days:
+                  return max(last_modified_dates_within_90_days)
+              return None
 
           def get_value_by_path(data, path, default=None):
+              """ Helper to traverse a json blob for a multi-level search and safely return a default value if the path is not found """
               keys = path.split("/")
               current = data
               for key in keys:
@@ -303,7 +244,92 @@ Resources:
                       return default
               return current
 
+          """
+          Common implementation:
+          These functions and classes are structured for common usage
+          patterns across different modules
+          """
+          logger = logging.getLogger()
+          for h in logger.handlers:
+              h.setFormatter(logging.Formatter("[%(levelname)s] %(message)s (%(aws_request_id)s)"))
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ Common structured entry for Lambda invocation. Core processing done in main()."""
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              status_code = 500
+              try:
+                  main(json.loads(event["account"]), event.get('params', ''))
+                  status_code = 200
+              except KeyError as exc:
+                  raise CidCriticalError(f"Account is not defined in the incoming event data. Please do not trigger this function manually. Use the corresponding {os.environ['MODULE_NAME']} state machine in Step Functions instead.")
+              except CidNonCriticalError as exc:
+                  status_code = 200
+              except CidCriticalError as exc:
+                  raise exc
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError) in this module", exc)
+              finally:
+                  return {"statusCode": status_code}
+
+          def main(account_json, additional_params=None):
+              """ Method to orchestrate the retrieval and storage of API data """
+              logger.debug(f"Entering main")
+              try:
+                  account = Account(account_json)
+                  logger.info(f"Entering main for account: {account.account_id}")
+                  params = Params(os.environ, additional_params)
+                  for region in params.regions:
+                      logger.info(f"Processing for region '{region}'")
+                      records = get_api_data(account, params, region)
+                      if len(records) > 0:
+                          store_to_temp(records, params)
+                          upload_to_s3(account, params, region)
+                      else:
+                          logger.info(f"No file uploaded for region '{region}'")
+                  logger.info(f"Exiting main without error")
+              except CidError as exc:
+                  raise exc
+              except (botocore.exceptions.ClientError, ClientAccessError) as exc:
+                  raise CidCriticalError(f"Possible role misconfiguration for {params.role_name}", exc)
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError)", exc)
+
+          def store_to_temp(records, params):
+              """ Takes the list of processed records and moves them to a temp file """
+              logger.debug("Entering store_to_temp")
+              count = 0
+              try:
+                  with open(params.tmp_file, "w", encoding='utf-8') as f:
+                      for record in records:
+                          f.write(json.dumps(
+                              record,
+                              default=lambda x: x.isoformat() if isinstance(x, (date, datetime)) else None)
+                              + "\n"
+                          )
+                          count += 1
+
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
+
+              logger.info(f"Stored {count} record(s) in temp file")
+              return count
+
+          def upload_to_s3(account, params, region=None):
+              """ Moves the processed API data from the temp file to the designated S3 bucket """
+              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
+              try:
+                  key = get_s3_key(account, params, region)
+                  boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
+                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
+                  return True
+
+              except Exception as exc:
+                  raise CidCriticalError("Exception in upload_to_s3", exc)
+
           def get_client_with_role(role_name, account_id, service, region, params):
+              """ Assumes the designated data gathering read-only role and instantiates a boto3 client with it """
               logger.debug(f"Entering get_client_with_role to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
               try:
                   credentials = boto3.client('sts').assume_role(
@@ -315,7 +341,7 @@ Resources:
                       service,
                       region_name = region,
                       aws_access_key_id = credentials['AccessKeyId'],
-                      aws_secret_access_key = redentials['SecretAccessKey'],
+                      aws_secret_access_key = credentials['SecretAccessKey'],
                       aws_session_token = credentials['SessionToken'],
                       config = params.boto_config
                   )
@@ -325,32 +351,48 @@ Resources:
               except Exception as exc:
                   raise ClientAccessError(exc, role_name, account_id, service, region)
 
-          def calculate_dates(bucket, s3_path):
-              end_date = datetime.now().date()
-              start_date = datetime.now().date() - timedelta(days=90) #Cost anomalies are available for last 90days
-              # Check the create time of objects in the S3 bucket
-              paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=bucket, Prefix=s3_path)], [])
-              last_modified_date = get_last_modified_date(contents)
-              if last_modified_date and last_modified_date >= start_date:
-                  start_date = last_modified_date
-              return start_date, end_date
+          # Helper classes
+          class Account():
+              def __init__(self, account_json: dict):
+                  try:
+                      self.account_id = account_json["account_id"]
+                      self.account_name = account_json["account_name"]
+                      self.payer_id = account_json["payer_id"]
+                  except KeyError:
+                      raise CidCriticalError(f"Invalid account data passed {account_json}")
 
-          def get_last_modified_date(contents):
-              last_modified_dates = [obj['LastModified'].date() for obj in contents]
-              last_modified_dates_within_90_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=90)]
-              if last_modified_dates_within_90_days:
-                  return max(last_modified_dates_within_90_days)
-              return None
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  try:
+                      message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                      if type(self) == CidNonCriticalError.__class__:
+                          logger.warning(message)
+                      else:
+                          logger.error(message)
+                      super().__init__(message)
+                  except Exception as exc:
+                      pass
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 600
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
+          MODULE_NAME: !Ref CFDataName
+          ROLE_NAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:

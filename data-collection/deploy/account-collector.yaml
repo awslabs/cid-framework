@@ -77,7 +77,7 @@ Resources:
             from botocore.exceptions import BotoCoreError
             from botocore.exceptions import ClientError
 
-            ROLE_NAME = os.environ['ROLENAME']
+            ROLE_NAME = os.environ['ROLE_NAME']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
             MODULE_NAME = "account-collector"
 
@@ -105,7 +105,7 @@ Resources:
                     logger.warning(message)
                     super().__init__(message)
 
-            def lambda_handler(event, context):
+            def lambda_handler(event, context): #pylint: disable=unused-argument
                 logger.info(f"Incoming event: {event}")
                 key = "Type"
                 try:
@@ -191,7 +191,7 @@ Resources:
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          ROLENAME: !Ref ManagementRoleName
+          ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
     Metadata:
       cfn_nag:

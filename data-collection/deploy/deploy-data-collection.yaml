@@ -133,7 +133,7 @@ Mappings:
                     "Parameters": {
                       "Payload": {
                         "account.$": "$.account",
-                        "params": "${Params}"
+                        "params": {${Params}}
                       },
                       "FunctionName": "${ModuleLambdaARN}"
                     },
@@ -478,7 +478,7 @@ Resources:
           endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
           account_id = boto3.client("sts").get_caller_identity()["Account"]
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               print(json.dumps(event))
               try:
                   if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'UPDATE']:

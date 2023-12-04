@@ -116,13 +116,13 @@ Resources:
           from botocore.client import Config
 
           BUCKET = os.environ['BUCKET_NAME']
-          ROLE = os.environ['ROLENAME']
-          PREFIX = os.environ['PREFIX']
+          ROLE = os.environ['ROLE_NAME']
+          MODULE_NAME = os.environ['MODULE_NAME']
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(f"Event data {json.dumps(event)}")
               if 'account' not in event:
                   raise ValueError(
@@ -161,7 +161,7 @@ Resources:
                   for line in data:
                       file_.write(json.dumps(line, default=json_converter) + '\n')
               try:
-                  prefix = f"{PREFIX}/organization-data/payer_id={payer_id}/acc-org.json" # No time/date info. Each time we override data
+                  prefix = f"{MODULE_NAME}/organization-data/payer_id={payer_id}/acc-org.json" # No time/date info. Each time we override data
                   boto3.client('s3').upload_file(tmp_file, BUCKET, prefix)
                   logger.info(f"Uploaded {len(data)} records in s3://{BUCKET}/{prefix}")
               except Exception as exc:
@@ -254,9 +254,10 @@ Resources:
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
+          MODULE_NAME: !Ref CFDataName
+          ROLE_NAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:

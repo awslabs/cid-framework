@@ -110,100 +110,75 @@ Resources:
           import os
           import json
           import logging
-          from datetime import date, timedelta, datetime
+          from datetime import date, datetime, timedelta
 
           import boto3
-          from botocore.client import Config
-          from botocore.exceptions import ClientError
+          import botocore
 
-          bucket = os.environ["BUCKET_NAME"]
-          prefix = os.environ["PREFIX"]
-          role_name = os.environ['ROLENAME']
-          local_file = "/tmp/data.json"
-          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
+          class ParamsBase():
+              def __init__(self, env, additional_params):
+                  logger.setLevel(getattr(logging, env.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+                  logger.debug("Loading parameters")
+                  self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  self.tmp_file = "/tmp/tmp.json"
+                  self.bucket = env["BUCKET_NAME"]
+                  self.role_name = env["ROLE_NAME"]
+                  self.module_name = env["MODULE_NAME"]
+                  self.regions = [r.strip() for r in env.get("REGIONS","us-east-1").split(',') if r]
+                  self.boto_config = None
+                  self.additional_params = additional_params
 
-          logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          """
+          Custom implementation:
+          These functions are specific to this module.
+          """
+          class Params(ParamsBase):
+              """ Tailor this class to add any unique configuration """
+              def __init__(self, env, additional_params):
+                  try:
+                      super().__init__(env, additional_params)
+                      last_day_of_prev_month = date.today().replace(day=1) - timedelta(days=1)
+                      self.last_day_of_prev_month = last_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ")
+                      self.start_day_of_prev_month = (date.today().replace(day=1) - timedelta(days=last_day_of_prev_month.day)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                  except (KeyError, AttributeError) as exc:
+                      raise CidCriticalError(f"Invalid parameters supplied", exc)
 
-          last_day_of_prev_month = date.today().replace(day=1) - timedelta(days=1)
-          start_day_of_prev_month = date.today().replace(day=1) - timedelta(days=last_day_of_prev_month.day)
+          def get_api_data(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to call the necessary APIs and process the data """
+              logger.debug(f"Entering get_api_data for region '{region}'")
+              cw_client = get_client_with_role(params.role_name, account.account_id, region=region, service="cloudwatch", params=params)
+              ec2_client = get_client_with_role(params.role_name, account.account_id, region=region, service="ec2", params=params)
+              results = []
+              list_tgw_attachments = ec2_client.describe_transit_gateway_attachments()
+              for attachment in list_tgw_attachments['TransitGatewayAttachments']:
+                  record = {}
+                  metrics = query_metrics(cw_client, 'BytesIn', attachment, params)
+                  for metric in metrics['MetricDataResults']:
+                      record = {
+                          'TGW': attachment['TransitGatewayId'],
+                          'NetworkingAccount': attachment['TransitGatewayOwnerId'],
+                          'CustomerAccount': attachment['ResourceOwnerId'],
+                          'TGW-Attachment': attachment['TransitGatewayAttachmentId'],
+                          'BytesIn': metric['Values'],
+                          'Region': region
+                      }
+                  metrics = query_metrics(cw_client, 'BytesOut', attachment, params)
+                  for metric in metrics['MetricDataResults']:
+                      record['BytesOut'] = metric['Values']
+                      results.append(record)
+              logger.info(f"API results total {len(results)}")
+              return results
 
-          s3_client = boto3.client('s3')
-          today = date.today()
-          year = today.year
-          month = today.month
+          def get_s3_key(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to set the appropriate S3 prefix and object name """
+              return datetime.now().strftime(
+                  f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  f"year=%Y/month=%m/{params.module_name}-{region}-%Y-%m-%d.json")
+                  #f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  #f"year=%Y/month=%m/tgw-{item['TransitGatewayAttachmentId']}-{region}.json"
 
-          def lambda_handler(event, context):
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              if 'account' not in event:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
-
-              try:
-                  account = json.loads(event["account"])
-                  account_id = account["account_id"]
-                  account_name = account["account_name"]
-                  payer_id = account["payer_id"]
-                  logger.info(f"Collecting data for account: {account_id}")
-
-                  session = assume_session(account_id)
-                  if len(REGIONS) > 0:
-                      ec2_regions = REGIONS
-                      logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-                  else:
-                      ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
-                  svc_regions = boto3.Session().get_available_regions('ec2')
-                  regions = list(set(ec2_regions).intersection(svc_regions))
-
-                  for region in regions:
-                      try:
-                          cw_client = assume_role('cloudwatch', account_id, region)
-                          ec2_client = assume_role('ec2', account_id, region)
-                          tgw_attachment_results = []
-                          final_result = []
-                          list_tgw_attachments = ec2_client.describe_transit_gateway_attachments()
-                          for item in list_tgw_attachments['TransitGatewayAttachments']:
-                              tgw_attachment_results.append(item)
-
-                          cw_result = []
-                          for item in tgw_attachment_results:
-                              response_in = metrics(cw_client, 'BytesIn', item)
-
-                              with open(local_file, "w") as f:
-                                  for cwitem in response_in['MetricDataResults']:
-                                      cw_results = {
-                                          'TGW': item['TransitGatewayId'],
-                                          'NetworkingAccount': item['TransitGatewayOwnerId'],
-                                          'CustomerAccount': item['ResourceOwnerId'],
-                                          'TGW-Attachment': item['TransitGatewayAttachmentId'],
-                                          'BytesIn': cwitem['Values'],
-                                          'Region': region
-                                      }
-
-                                  response_out = metrics(cw_client, 'BytesOut', item)
-
-                                  for cwitemout in response_out['MetricDataResults']:
-                                      cw_results['BytesOut'] = cwitemout['Values']
-                                      logger.info (cw_results)
-                                      jsondata = json.dumps(cw_results)
-                                      f.write(jsondata)
-                                      f.write('\n')
-                              #FIXME: check file size
-                              boto3.client("s3").upload_file(
-                                  "/tmp/data.json",
-                                  bucket,
-                                  f"{os.environ['PREFIX']}/{os.environ['PREFIX']}-data/payer_id={payer_id}/year={year}/month={month}/tgw-{item['TransitGatewayAttachmentId']}-{region}.json"
-                              )
-
-                      except Exception as e:
-                          logger.warning("%s" % e)
-                  logger.info("Done")
-              except Exception as e:
-                  logger.warning(e)
-
-          def metrics(cw_client, byte, item):
+          def query_metrics(cw_client, byte, item, params):
+              """ Helper to get the bytes in or out total from CW """
               cw_data = cw_client.get_metric_data(
                   MetricDataQueries=[
                       {
@@ -228,34 +203,161 @@ Resources:
                           },
                           'ReturnData': True},
                   ],
-                  StartTime=start_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                  EndTime=last_day_of_prev_month.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  StartTime=params.start_day_of_prev_month,
+                  EndTime=params.last_day_of_prev_month,
                   ScanBy='TimestampDescending'
               )
               return cw_data
 
-          def assume_role(service, account_id, region_name):
-              return assume_session(account_id).client(service, region_name=region_name)
+          """
+          Common implementation:
+          These functions and classes are structured for common usage
+          patterns across different modules
+          """
+          logger = logging.getLogger()
+          for h in logger.handlers:
+              h.setFormatter(logging.Formatter("[%(levelname)s] %(message)s (%(aws_request_id)s)"))
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.INFO)
 
-          def assume_session(account_id):
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.Session(
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken']
-              )
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ Common structured entry for Lambda invocation. Core processing done in main()."""
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              status_code = 500
+              try:
+                  main(json.loads(event["account"]), event.get('params', ''))
+                  status_code = 200
+              except KeyError as exc:
+                  raise CidCriticalError(f"Account is not defined in the incoming event data. Please do not trigger this function manually. Use the corresponding {os.environ['MODULE_NAME']} state machine in Step Functions instead.")
+              except CidNonCriticalError as exc:
+                  status_code = 200
+              except CidCriticalError as exc:
+                  raise exc
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError) in this module", exc)
+              finally:
+                  return {"statusCode": status_code}
+
+          def main(account_json, additional_params=None):
+              """ Method to orchestrate the retrieval and storage of API data """
+              logger.debug(f"Entering main")
+              try:
+                  account = Account(account_json)
+                  logger.info(f"Entering main for account: {account.account_id}")
+                  params = Params(os.environ, additional_params)
+                  for region in params.regions:
+                      logger.info(f"Processing for region '{region}'")
+                      records = get_api_data(account, params, region)
+                      if len(records) > 0:
+                          store_to_temp(records, params)
+                          upload_to_s3(account, params, region)
+                      else:
+                          logger.info(f"No file uploaded for region '{region}'")
+                  logger.info(f"Exiting main without error")
+              except CidError as exc:
+                  raise exc
+              except (botocore.exceptions.ClientError, ClientAccessError) as exc:
+                  raise CidCriticalError(f"Possible role misconfiguration for {params.role_name}", exc)
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError)", exc)
+
+          def store_to_temp(records, params):
+              """ Takes the list of processed records and moves them to a temp file """
+              logger.debug("Entering store_to_temp")
+              count = 0
+              try:
+                  with open(params.tmp_file, "w", encoding='utf-8') as f:
+                      for record in records:
+                          f.write(json.dumps(
+                              record,
+                              default=lambda x: x.isoformat() if isinstance(x, (date, datetime)) else None)
+                              + "\n"
+                          )
+                          count += 1
+
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
+
+              logger.info(f"Stored {count} record(s) in temp file")
+              return count
+
+          def upload_to_s3(account, params, region=None):
+              """ Moves the processed API data from the temp file to the designated S3 bucket """
+              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
+              try:
+                  key = get_s3_key(account, params, region)
+                  boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
+                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
+                  return True
+
+              except Exception as exc:
+                  raise CidCriticalError("Exception in upload_to_s3", exc)
+
+          def get_client_with_role(role_name, account_id, service, region, params):
+              """ Assumes the designated data gathering read-only role and instantiates a boto3 client with it """
+              logger.debug(f"Entering get_client_with_role to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              try:
+                  credentials = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                      RoleSessionName="data_collection"
+                  )['Credentials']
+                  logger.debug("Successfully assumed role, now getting client")
+                  client = boto3.client(
+                      service,
+                      region_name = region,
+                      aws_access_key_id = credentials['AccessKeyId'],
+                      aws_secret_access_key = credentials['SecretAccessKey'],
+                      aws_session_token = credentials['SessionToken'],
+                      config = params.boto_config
+                  )
+                  logger.info(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  return client
+
+              except Exception as exc:
+                  raise ClientAccessError(exc, role_name, account_id, service, region)
+
+          # Helper classes
+          class Account():
+              def __init__(self, account_json: dict):
+                  try:
+                      self.account_id = account_json["account_id"]
+                      self.account_name = account_json["account_name"]
+                      self.payer_id = account_json["payer_id"]
+                  except KeyError:
+                      raise CidCriticalError(f"Invalid account data passed {account_json}")
+
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  try:
+                      message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                      if type(self) == CidNonCriticalError.__class__:
+                          logger.warning(message)
+                      else:
+                          logger.error(message)
+                      super().__init__(message)
+                  except Exception as exc:
+                      pass
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref MultiAccountRoleName
+          MODULE_NAME: !Ref CFDataName
+          ROLE_NAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
     Metadata:
       cfn_nag:

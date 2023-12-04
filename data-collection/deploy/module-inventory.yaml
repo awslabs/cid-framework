@@ -121,132 +121,51 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          """ Scan linked accounts and store instances info to s3 bucket
+          """
+          Scan linked accounts and store instances info to s3 bucket
           Supported types: ebs, snapshots, ami, rds instances
           """
           import os
           import json
           import logging
-          from functools import partial, lru_cache
-          from datetime import datetime, date
+          from datetime import date, datetime
+          from functools import partial
 
           import boto3
-          from botocore.client import Config
+          import botocore
 
-          TMP_FILE = "/tmp/data.json"
-          PREFIX = os.environ['PREFIX']
-          BUCKET = os.environ["BUCKET_NAME"]
-          ROLENAME = os.environ['ROLENAME']
-          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
-          TRACKING_TAGS = os.environ.get("TRACKING_TAGS")
-          TAG_LIST = TRACKING_TAGS.split(",") if TRACKING_TAGS else []
+          class ParamsBase():
+              def __init__(self, env, additional_params):
+                  logger.setLevel(getattr(logging, env.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+                  logger.debug("Loading parameters")
+                  self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  self.tmp_file = "/tmp/tmp.json"
+                  self.bucket = env["BUCKET_NAME"]
+                  self.role_name = env["ROLE_NAME"]
+                  self.module_name = env["MODULE_NAME"]
+                  self.regions = [r.strip() for r in env.get("REGIONS","us-east-1").split(',') if r]
+                  self.boto_config = None
+                  self.additional_params = additional_params
 
-
-          logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-
-          def to_json(obj):
-              """json helper for date time data"""
-              return json.dumps(
-                  obj,
-                  default=lambda x:
-                      x.isoformat() if isinstance(x, (date, datetime)) else None
-              )
-
-          @lru_cache(maxsize=10000)
-          def assume_session(account_id):
-              """assume role in account"""
-              credentials = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}" ,
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.session.Session(
-                  aws_access_key_id=credentials['AccessKeyId'],
-                  aws_secret_access_key=credentials['SecretAccessKey'],
-                  aws_session_token=credentials['SessionToken']
-              )
-
-          @lru_cache(maxsize=10000)
-          def enabled_regions(session):
-              """list enabled regions"""
-              if len(REGIONS) > 0:
-                  return set(REGIONS)
-                  logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-              else:
-                  return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
-
-          def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
-              """ paginated scan """
-              session = assume_session(account_id)
-              regions = REGIONS #set(session.get_available_regions(service)) & enabled_regions(session)
-              obj_name = obj_name or function_name.split('_')[-1].capitalize()
-              obj_name_keys = obj_name.split(".")
-              logger.info(f"obj_name is {'simple' if len(obj_name_keys) == 1 else 'compound'}")
-              logger.info(f"Regions in scope {regions}")
-              for region in regions:
-                  logger.info(f"Collecting in {region}")
-                  client = session.client(service, region_name=region)
-                  logger.info(f"Working with result key {obj_name}")
+          """
+          Custom implementation:
+          These functions are specific to this module.
+          """
+          class Params(ParamsBase):
+              """ Tailor this class to add any unique configuration """
+              def __init__(self, env, additional_params):
                   try:
-                      paginator = client.get_paginator(function_name)
-                      for page in paginator.paginate(**(params or {})):
-                          objs = page
-                          for traversed_key in obj_name_keys:
-                              logger.debug(f"traversed_key = {traversed_key} for type {type(objs).__name__} with length {len(objs)}")
-                              if type(objs) == dict:
-                                  objs = objs[traversed_key]
-                                  logger.debug(f"Processed as dict, result type is {type(objs).__name__}")
-                              elif type(objs) == list and len(objs) > 0:
-                                  logger.debug(f"Processing as list, first pop is type {type(objs[0]).__name__}")
-                                  objs = objs[0][traversed_key]
-                                  logger.debug(f"Processed as list, applied key and result is type {type(objs).__name__}")
-                              if len(objs) == 0:
-                                  break
-                          logger.debug(f"Done traversing and resulting count is {len(objs)}")
-                          for obj in objs:
-                              obj['region'] = region
-                              yield obj
-                  except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'Error in scan {function_name}/{account_id}: {exc}')
+                      super().__init__(env, additional_params)
+                      self.tag_list = [t for t in env.get("TRACKING_TAGS", "").split() if t]
+                      self.use_tags = len(self.tag_list) > 0
+                      self.resource_type = additional_params["ResourceType"]
+                  except (KeyError, AttributeError) as exc:
+                      raise CidCriticalError(f"Invalid parameters supplied", exc)
 
-          def opensearch_domains_scan(account_id):
-              """ special treatment for opensearch_scan """
-              service = 'opensearch'
-              session = assume_session(account_id)
-              regions = set(session.get_available_regions(service)) & enabled_regions(session)
-
-              for region in regions:
-                  logger.info(f"Collecting in {region}")
-                  client = session.client(service, region_name=region)
-                  try:
-                      domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
-                      for domain_name in domain_names:
-                          domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
-                          yield {
-                              'region': region,
-                              'DomainName': domain['DomainName'],
-                              'DomainId': domain['DomainId'],
-                              'EngineVersion': domain['EngineVersion'],
-                              'InstanceType': domain['ClusterConfig']['InstanceType'],
-                              'InstanceCount': domain['ClusterConfig']['InstanceCount'],
-                          }
-                  except Exception as exc:  #pylint: disable=broad-exception-caught
-                              logger.info(f'scan {service}/{account_id}/{region}: {exc}')
-
-          def lambda_handler(event, context): #pylint: disable=unused-argument
-              """ this lambda collects ami, snapshots and volumes from linked accounts
-              and must be called from the corresponding Step Function to orchestrate
-              """
-              logger.info(f"Event data: {event}")
-              if 'account' not in event or 'params' not in event  :
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
-              params = [p for p in event.get('params', '').split() if p]
-              name = params[0]
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
+          def get_api_data(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to call the necessary APIs and process the data """
+              logger.debug(f"Entering get_api_data for region '{region}'")
+              results = []
               sub_modules = {
                   'opensearch-domains': opensearch_domains_scan, # special function for opensearch
                   'elasticache-clusters': partial(
@@ -254,7 +173,6 @@ Resources:
                       service='elasticache',
                       function_name='describe_cache_clusters',
                       obj_name='CacheClusters'
-                      # fields=['CacheClusterId', 'CacheNodeType', 'EngineVersion', 'Engine', 'NumCacheNodes', 'PreferredAvailabilityZone', 'CacheClusterCreateTime'],
                   ),
                   'rds-db-instances': partial(
                       paginated_scan,
@@ -271,19 +189,19 @@ Resources:
                       paginated_scan,
                       service='ec2',
                       function_name='describe_images',
-                      params={'Owners': ['self']}
+                      api_params={'Owners': ['self']}
                   ),
                   'snapshot': partial(
                       paginated_scan,
                       service='ec2',
                       function_name='describe_snapshots',
-                      params={'OwnerIds': ['self']}
+                      api_params={'OwnerIds': ['self']}
                   ),
                   'ec2-instances': partial(
                       paginated_scan,
                       service='ec2',
                       function_name='describe_instances',
-                      obj_name='Reservations.Instances'
+                      obj_name='Reservations/Instances'
                   ),
                   'vpc': partial(
                       paginated_scan,
@@ -292,56 +210,224 @@ Resources:
                       obj_name='Vpcs'
                   )
               }
+              func = sub_modules[params.resource_type]
+              for counter, obj in enumerate(func(account=account, region=region, params=params), start=1):
+                  obj['accountid'] = account.account_id
+                  if params.use_tags and "Tags" in obj:
+                      logger.debug(f"Tags enabled and found tags {obj['Tags']}")
+                      for tag in obj["Tags"]:
+                          if tag["Key"] in params.tag_list:
+                              obj[f"tag_{tag['Key']}"] = tag["Value"]
+                  obj['collection_date'] = params.collection_time
+                  results.append(obj)
+              logger.info(f"API results total {len(results)}")
+              return results
 
-              account = json.loads(event["account"])
-              account_id = account["account_id"]
-              payer_id = account["payer_id"]
-              func = sub_modules[name]
-              counter = 0
-              logger.info(f"Collecting {name} for account {account_id}")
-              collection_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+          def get_s3_key(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to set the appropriate S3 prefix and object name """
+              return datetime.now().strftime(
+                  f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  f"year=%Y/month=%m/{account.account_id}-%Y%m%d-%H%M%S.json")
+
+          def paginated_scan(service, account, function_name, region, params, api_params=None, obj_name=None):
+              """ paginated scan """
+              logger.debug(f"Entering paginated_scan with service='{service}' function_name='{function_name}' api_params='{api_params}'")
+              obj_name = obj_name or function_name.split('_')[-1].capitalize()
+              client = get_client_with_role(params.role_name, account.account_id, region=region, service=service, params=params)
+              paginator = client.get_paginator(function_name)
+              for page in paginator.paginate(**(api_params or {})):
+                  objs = get_value_by_path(page, obj_name)
+                  for obj in objs or []:
+                      obj['region'] = region
+                      yield obj
+              logger.info(f"Completed paginated_scan with service='{service}' function_name='{function_name}' api_params='{api_params}'")
+
+          def opensearch_domains_scan(account, region, params, service="opensearch"):
+              """ special treatment for opensearch_scan """
+              logger.debug(f"Entering opensearch_domains_scan with service='{service}'")
+              client = get_client_with_role(params.role_name, account.account_id, region=region, service=service, params=params)
+              domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
+              for domain_name in domain_names:
+                  logger.debug(f"Processing domain '{domain_name}'")
+                  client = get_client_with_role(params.role_name, account.account_id, region=region, service=service, params=params)
+                  domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
+                  yield {
+                      'region': region,
+                      'DomainName': domain['DomainName'],
+                      'DomainId': domain['DomainId'],
+                      'EngineVersion': domain['EngineVersion'],
+                      'InstanceType': domain['ClusterConfig']['InstanceType'],
+                      'InstanceCount': domain['ClusterConfig']['InstanceCount'],
+                  }
+              logger.info(f"Completed opensearch_domains_scan")
+
+          def get_value_by_path(data, path):
+              keys = path.split("/")
+              current = data
+              for key in keys:
+                  while True:
+                      if isinstance(current, dict) and key in current:
+                          current = current[key]
+                          break
+                      elif isinstance(current, list):
+                          try:
+                              index = int(key) if isinstance(key, int) else 0
+                              current = current[index]
+                          except (ValueError, IndexError):
+                              return None
+                      else:
+                          return None
+              return current
+
+          """
+          Common implementation:
+          These functions and classes are structured for common usage
+          patterns across different modules
+          """
+          logger = logging.getLogger()
+          for h in logger.handlers:
+              h.setFormatter(logging.Formatter("[%(levelname)s] %(message)s (%(aws_request_id)s)"))
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ Common structured entry for Lambda invocation. Core processing done in main()."""
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              status_code = 500
               try:
-                  with open(TMP_FILE, "w", encoding='utf-8') as file_:
-                      for counter, obj in enumerate(func(account_id=account_id), start=1):
-                          obj['accountid'] = account_id
-                          if len(TAG_LIST) > 0 and "Tags" in obj:
-                              logger.debug(f"Tags enabled and found tags {obj['Tags']}")
-                              for tag in obj["Tags"]:
-                                  if tag["Key"] in TAG_LIST:
-                                      obj[f"tag_{tag['Key']}"] = tag["Value"]
-                          obj['collection_date'] = collection_date
-                          file_.write(to_json(obj) + "\n")
-                  logger.info(f"Collected {counter} total {name} instances")
-                  upload_to_s3(name, account_id, payer_id)
-              except Exception as exc:   #pylint: disable=broad-exception-caught
-                  logger.info(f"{name}: {type(exc)} - {exc}" )
+                  main(json.loads(event["account"]), event.get('params', ''))
+                  status_code = 200
+              except KeyError as exc:
+                  raise CidCriticalError(f"Account is not defined in the incoming event data. Please do not trigger this function manually. Use the corresponding {os.environ['MODULE_NAME']} state machine in Step Functions instead.")
+              except CidNonCriticalError as exc:
+                  status_code = 200
+              except CidCriticalError as exc:
+                  raise exc
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError) in this module", exc)
+              finally:
+                  return {"statusCode": status_code}
 
-          def upload_to_s3(name, account_id, payer_id):
-              """upload"""
-              if os.path.getsize(TMP_FILE) == 0:
-                  logger.info(f"No data in file for {name}")
-                  return
-              key =  datetime.now().strftime(
-                  f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
-                  f"/year=%Y/month=%m/{account_id}-%Y%m%d-%H%M%S.json"
-              )
-              s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
+          def main(account_json, additional_params=None):
+              """ Method to orchestrate the retrieval and storage of API data """
+              logger.debug(f"Entering main")
               try:
-                  s3client.upload_file(TMP_FILE, BUCKET, key)
-                  logger.info(f"Data {account_id} in s3 - {BUCKET}/{key}")
-              except Exception as exc:  #pylint: disable=broad-exception-caught
-                  logger.info(exc)
+                  account = Account(account_json)
+                  logger.info(f"Entering main for account: {account.account_id}")
+                  params = Params(os.environ, additional_params)
+                  for region in params.regions:
+                      logger.info(f"Processing for region '{region}'")
+                      records = get_api_data(account, params, region)
+                      if len(records) > 0:
+                          store_to_temp(records, params)
+                          upload_to_s3(account, params, region)
+                      else:
+                          logger.info(f"No file uploaded for region '{region}'")
+                  logger.info(f"Exiting main without error")
+              except CidError as exc:
+                  raise exc
+              except (botocore.exceptions.ClientError, ClientAccessError) as exc:
+                  raise CidCriticalError(f"Possible role misconfiguration for {params.role_name}", exc)
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError)", exc)
 
+          def store_to_temp(records, params):
+              """ Takes the list of processed records and moves them to a temp file """
+              logger.debug("Entering store_to_temp")
+              count = 0
+              try:
+                  with open(params.tmp_file, "w", encoding='utf-8') as f:
+                      for record in records:
+                          f.write(json.dumps(
+                              record,
+                              default=lambda x: x.isoformat() if isinstance(x, (date, datetime)) else None)
+                              + "\n"
+                          )
+                          count += 1
 
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
+
+              logger.info(f"Stored {count} record(s) in temp file")
+              return count
+
+          def upload_to_s3(account, params, region=None):
+              """ Moves the processed API data from the temp file to the designated S3 bucket """
+              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
+              try:
+                  key = get_s3_key(account, params, region)
+                  boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
+                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
+                  return True
+
+              except Exception as exc:
+                  raise CidCriticalError("Exception in upload_to_s3", exc)
+
+          def get_client_with_role(role_name, account_id, service, region, params):
+              """ Assumes the designated data gathering read-only role and instantiates a boto3 client with it """
+              logger.debug(f"Entering get_client_with_role to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              try:
+                  credentials = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                      RoleSessionName="data_collection"
+                  )['Credentials']
+                  logger.debug("Successfully assumed role, now getting client")
+                  client = boto3.client(
+                      service,
+                      region_name = region,
+                      aws_access_key_id = credentials['AccessKeyId'],
+                      aws_secret_access_key = credentials['SecretAccessKey'],
+                      aws_session_token = credentials['SessionToken'],
+                      config = params.boto_config
+                  )
+                  logger.info(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  return client
+
+              except Exception as exc:
+                  raise ClientAccessError(exc, role_name, account_id, service, region)
+
+          # Helper classes
+          class Account():
+              def __init__(self, account_json: dict):
+                  try:
+                      self.account_id = account_json["account_id"]
+                      self.account_name = account_json["account_name"]
+                      self.payer_id = account_json["payer_id"]
+                  except KeyError:
+                      raise CidCriticalError(f"Invalid account data passed {account_json}")
+
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  try:
+                      message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                      if type(self) == CidNonCriticalError.__class__:
+                          logger.warning(message)
+                      else:
+                          logger.error(message)
+                      super().__init__(message)
+                  except Exception as exc:
+                      pass
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref MultiAccountRoleName
+          MODULE_NAME: !Ref CFDataName
+          ROLE_NAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
 
   'Fn::ForEach::Object':
@@ -380,7 +466,9 @@ Resources:
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
             Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
             CollectionType: "LINKED"
-            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
+            Params: !Sub
+              - '"ResourceType":"${ResourceType}"'
+              - ResourceType: !FindInMap [ServicesMap, !Ref AwsObject, path]
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId

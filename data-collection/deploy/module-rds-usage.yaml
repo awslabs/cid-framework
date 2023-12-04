@@ -109,222 +109,227 @@ Resources:
           import os
           import json
           import logging
-          from re import sub
-          from datetime import datetime, timedelta, date
+          from datetime import date, datetime, timedelta
 
           import boto3
-          from botocore.exceptions import ClientError
-          from boto3.s3.transfer import S3Transfer
+          import botocore
 
-          #Environment Variables
-          bucket = os.environ["BUCKET_NAME"]
-          prefix = os.environ["PREFIX"]
-          role_name = os.environ['ROLENAME']
-          REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
+          class ParamsBase():
+              def __init__(self, env, additional_params):
+                  logger.setLevel(getattr(logging, env.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+                  logger.debug("Loading parameters")
+                  self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  self.tmp_file = "/tmp/tmp.json"
+                  self.bucket = env["BUCKET_NAME"]
+                  self.role_name = env["ROLE_NAME"]
+                  self.module_name = env["MODULE_NAME"]
+                  self.regions = [r.strip() for r in env.get("REGIONS","us-east-1").split(',') if r]
+                  self.boto_config = None
+                  self.additional_params = additional_params
 
-          logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          """
+          Custom implementation:
+          These functions are specific to this module.
+          """
+          class Params(ParamsBase):
+              """ Tailor this class to add any unique configuration """
+              def __init__(self, env, additional_params):
+                  try:
+                      super().__init__(env, additional_params)
+                      self.days = int(env["DAYS"])
+                      self.past = datetime.utcnow() - timedelta(days=self.days)
+                      self.future = datetime.utcnow() # + timedelta(minutes=10)
+                      self.period = 3600
+                      self.metrics = [
+                          'FreeableMemory',
+                          'CPUUtilization',
+                          'NetworkReceiveThroughput',
+                          'NetworkTransmitThroughput',
+                          'ReadIOPS',
+                          'WriteIOPS',
+                          'FreeStorageSpace'
+                      ]
+                  except (KeyError, AttributeError) as exc:
+                      raise CidCriticalError(f"Invalid parameters supplied", exc)
 
-          functions = {
-              'rds': {
-                  'regional' : 1,
-                  'api' : 'rds',
-                  'functions' : [
-                      {
-                          'name' : 'get_rds_stats',
-                          'output_path' : 'rds-usage-data',
-                          'output_file_name' : 'rds_stats.json'
-                      }
-                  ]
-              }
-          }
-
-          METRICS_FOR_VOLUMES = [
-              'FreeableMemory',
-              'CPUUtilization',
-              'NetworkReceiveThroughput',
-              'NetworkTransmitThroughput',
-              'ReadIOPS',
-              'WriteIOPS',
-              'FreeStorageSpace'
-          ]
-
-          TAGS_TO_RETRIEVE = [
-              'Environment',
-              'Schedule',
-              'Application',
-              'Project',
-          ]
-
-          now = datetime.utcnow()
-          DAYS = int(os.environ['DAYS'])
-          past = now - timedelta(days=DAYS)
-          today = datetime.today().strftime('%Y-%m-%d')
-          tod = date.today()
-          year = tod.year
-          month = tod.strftime('%m')
-          future = now# + timedelta(minutes=10)
-          period = 3600
-
-          def format_rds(rds):
-              if len(rds["Attachments"]) == 0:
-                  instance_id = "unattached"
-                  device = ""
-              else:
-                  instance_id = rds["Attachments"][0]["InstanceId"] if rds["Attachments"][0]["InstanceId"] else ""
-                  device = rds["Attachments"][0]["Device"] if rds["Attachments"][0]["Device"] else ""
-
-              output = {
-                  "az": rds["AvailabilityZone"],
-                  "instanceId": instance_id,
-                  "rdsId": rds["VolumeId"],
-                  "device": device,
-                  "rdsType": rds["VolumeType"],
-                  "sizeGB": rds["Size"],
-                  "IOPS": rds["Iops"],
-                  "rdsCreateTime": rds["CreateTime"]
-              }
-
-              tags = {}
-              filtered_tags = {}
-              for tag in rds.get("Tags", []):
-                  tags[sub('[^a-zA-Z0-9-_ *.]', '', tag["Key"].replace(",", " "))] = sub('[^a-zA-Z0-9-_ *.]', '', tag["Value"].replace(",", " "))
-              for tags_required in TAGS_TO_RETRIEVE:
-                  filtered_tags[tags_required] = tags[tags_required] if tags_required in tags else ''
-              output["tags"] = filtered_tags
-              return output
-
-          def get_rds_ids(rds_client):
-              rds_inventory = []
-              rds_information = rds_client.describe_rds(Filters=[{'Name': 'status','Values':['in-use','available']}])
-              if not rds_information or not rds_information['Volumes']:
-                  rds_information = []
-              else:
-                  rds_information = rds_information['Volumes']
-              for rds in rds_information:
-                  rds_inventory.append(format_rds(rds))
-              return rds_inventory
-
-          def store_data_to_s3(data, region, service, path, resource_type, resource_value, filename, accountID, payer_id):
-              local_file = f"/tmp/{region}-{filename}"
-              with open(local_file, 'w') as f:
-                  json.dump(data, f, default=str)
-                  f.write('\n')
-              if os.path.getsize(local_file) == 0:
-                  logger.info(f"No data in file for {path}")
-                  return
-              key = f"{prefix}/{path}/payer_id={payer_id}/accountid={accountID}/region={region}/{resource_type}={resource_value}/year={year}/month={month}/{today}-{filename}"
-              s3client = boto3.client('s3')
-              logger.info("Uploading file %s to %s/%s" %(local_file, bucket, key))
-              S3Transfer(s3client).upload_file(local_file, bucket, key, extra_args={'ACL': 'bucket-owner-full-control'})
-              logger.info('file upload successful')
-
-          def get_rds_stats(cwclient, client, s3client, region, service, path, filename, accountID, payer_id):
+          def get_api_data(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to call the necessary APIs and process the data """
+              logger.debug(f"Entering get_api_data for region '{region}'")
+              cw_client = get_client_with_role(params.role_name, account.account_id, region=region, service="cloudwatch", params=params)
+              client = get_client_with_role(params.role_name, account.account_id, region=region, service="rds", params=params)
+              results = []
               datapoints = {}
-              data = {}
               rds_inventory = client.describe_db_instances()
               for rds in rds_inventory['DBInstances']:
-                  for metric in METRICS_FOR_VOLUMES:
-                      results = cwclient.get_metric_statistics(StartTime=past, EndTime=future, MetricName=metric,
-                      Namespace='AWS/RDS',Statistics=['Average','Maximum','Minimum'],Period=period,
-                      Dimensions=[{"Name": "DBInstanceIdentifier", "Value": rds["DBInstanceIdentifier"]}])
-                      datapoints.update({metric:results['Datapoints']})
+                  for metric in params.metrics:
+                      metric_data = cw_client.get_metric_statistics(StartTime=params.past, EndTime=params.future, MetricName=metric,
+                          Namespace='AWS/RDS',Statistics=['Average','Maximum','Minimum'],Period=params.period,
+                          Dimensions=[{"Name": "DBInstanceIdentifier", "Value": rds["DBInstanceIdentifier"]}])
+                      datapoints.update({metric:metric_data['Datapoints']})
                   rds["Datapoints"] = datapoints
-                  store_data_to_s3(rds, region, service, path, 'rds_id', rds['DBInstanceIdentifier'], filename, accountID, payer_id)
+                  results.append(rds)
 
-          def assume_role(account_id, service, region):
-              role_name = os.environ['ROLENAME']
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=role_arn,
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.client(
-                  service,
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken'],
-                  region_name = region
-              )
+              logger.info(f"API results total {len(results)}")
+              return results
 
-          def get_supported_regions(ec2):
-              return [region['RegionName'] for region in ec2.describe_regions()['Regions']]
+          def get_s3_key(account, params, region): #pylint: disable=unused-argument
+              """ Tailor this method to set the appropriate S3 prefix and object name """
+              return datetime.now().strftime(
+                  f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  f"year=%Y/month=%m/{params.module_name}-{region}-%Y-%m-%d.json")
+                  #f"{params.module_name}/{params.module_name}-data/payer_id={account.payer_id}/"
+                  #f"accountid={params.account_id}/region={region}/rds_id={resource_value}/"
+                  #f"year=%Y/month=%m/%Y-%m-%d-rds_stats.json"
 
-          def lambda_handler(event, context):
-              logger.info(f"Event: {event}")
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              if 'account' not in event:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually. "
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
+          """
+          Common implementation:
+          These functions and classes are structured for common usage
+          patterns across different modules
+          """
+          logger = logging.getLogger()
+          for h in logger.handlers:
+              h.setFormatter(logging.Formatter("[%(levelname)s] %(message)s (%(aws_request_id)s)"))
+          logger = logging.getLogger(__name__)
+          logger.setLevel(logging.INFO)
 
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ Common structured entry for Lambda invocation. Core processing done in main()."""
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              status_code = 500
               try:
-                  account = json.loads(event["account"])
-                  account_id = account["account_id"]
-                  account_name = account["account_name"]
-                  payer_id = account["payer_id"]
-                  logger.info(f"Collecting data for account: {account_id}")
-                  s3client = boto3.client('s3')
-                  if len(REGIONS) > 0:
-                      regions = REGIONS
-                      logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-                  else:
-                      regions = get_supported_regions(account_id, 'rds')
+                  main(json.loads(event["account"]), event.get('params', ''))
+                  status_code = 200
+              except KeyError as exc:
+                  raise CidCriticalError(f"Account is not defined in the incoming event data. Please do not trigger this function manually. Use the corresponding {os.environ['MODULE_NAME']} state machine in Step Functions instead.")
+              except CidNonCriticalError as exc:
+                  status_code = 200
+              except CidCriticalError as exc:
+                  raise exc
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError) in this module", exc)
+              finally:
+                  return {"statusCode": status_code}
 
-                  for service in functions.keys():
-                      if functions[service]['regional']:
-                          for region in regions:
-                              logger.info(f"region {region}")
-                              client = assume_role(account_id, functions[service]['api'], region)
-                              for f in functions[service]['functions']:
-                                  cw_client = assume_role(account_id, 'cloudwatch', region)
-                                  try:
-                                      data = globals()[f['name']](cw_client, client, s3client, region, service, f['output_path'], f['output_file_name'], account_id, payer_id)
-                                  except Exception as e:
-                                      # Send some context about this error to Lambda Logs
-                                      logger.warning(e)
+          def main(account_json, additional_params=None):
+              """ Method to orchestrate the retrieval and storage of API data """
+              logger.debug(f"Entering main")
+              try:
+                  account = Account(account_json)
+                  logger.info(f"Entering main for account: {account.account_id}")
+                  params = Params(os.environ, additional_params)
+                  for region in params.regions:
+                      logger.info(f"Processing for region '{region}'")
+                      records = get_api_data(account, params, region)
+                      if len(records) > 0:
+                          store_to_temp(records, params)
+                          upload_to_s3(account, params, region)
                       else:
-                          client=boto3.client(service)
-                          for f in functions[service]['functions']:
-                              cw_client = boto3.client('cloudwatch', region_name = 'us-east-1')
-                              try:
-                                  data = globals()[f['name']](cw_client, client, s3client, 'us-east-1', service, f['output_path'], f['output_file_name'], account_id)
-                              except Exception as e:
-                                  # Send some context about this error to Lambda Logs
-                                  logger.warning(e)
-                  return "Successful"
-              except Exception as e:
-                  # Send some context about this error to Lambda Logs
-                  logger.warning(e)
+                          logger.info(f"No file uploaded for region '{region}'")
+                  logger.info(f"Exiting main without error")
+              except CidError as exc:
+                  raise exc
+              except (botocore.exceptions.ClientError, ClientAccessError) as exc:
+                  raise CidCriticalError(f"Possible role misconfiguration for {params.role_name}", exc)
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError)", exc)
 
+          def store_to_temp(records, params):
+              """ Takes the list of processed records and moves them to a temp file """
+              logger.debug("Entering store_to_temp")
+              count = 0
+              try:
+                  with open(params.tmp_file, "w", encoding='utf-8') as f:
+                      for record in records:
+                          f.write(json.dumps(
+                              record,
+                              default=lambda x: x.isoformat() if isinstance(x, (date, datetime)) else None)
+                              + "\n"
+                          )
+                          count += 1
 
-          def get_supported_regions(account_id, service):
-              session = assume_session(account_id)
-              ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
-              service_regions = boto3.Session().get_available_regions(service)
-              regions = list(set(ec2_regions).intersection(service_regions))
-              return regions
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
 
-          def assume_session(account_id):
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.Session(
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken']
-              )
+              logger.info(f"Stored {count} record(s) in temp file")
+              return count
+
+          def upload_to_s3(account, params, region=None):
+              """ Moves the processed API data from the temp file to the designated S3 bucket """
+              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
+              try:
+                  key = get_s3_key(account, params, region)
+                  boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
+                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
+                  return True
+
+              except Exception as exc:
+                  raise CidCriticalError("Exception in upload_to_s3", exc)
+
+          def get_client_with_role(role_name, account_id, service, region, params):
+              """ Assumes the designated data gathering read-only role and instantiates a boto3 client with it """
+              logger.debug(f"Entering get_client_with_role to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              try:
+                  credentials = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                      RoleSessionName="data_collection"
+                  )['Credentials']
+                  logger.debug("Successfully assumed role, now getting client")
+                  client = boto3.client(
+                      service,
+                      region_name = region,
+                      aws_access_key_id = credentials['AccessKeyId'],
+                      aws_secret_access_key = credentials['SecretAccessKey'],
+                      aws_session_token = credentials['SessionToken'],
+                      config = params.boto_config
+                  )
+                  logger.info(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  return client
+
+              except Exception as exc:
+                  raise ClientAccessError(exc, role_name, account_id, service, region)
+
+          # Helper classes
+          class Account():
+              def __init__(self, account_json: dict):
+                  try:
+                      self.account_id = account_json["account_id"]
+                      self.account_name = account_json["account_name"]
+                      self.payer_id = account_json["payer_id"]
+                  except KeyError:
+                      raise CidCriticalError(f"Invalid account data passed {account_json}")
+
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  try:
+                      message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                      if type(self) == CidNonCriticalError.__class__:
+                          logger.warning(message)
+                      else:
+                          logger.error(message)
+                      super().__init__(message)
+                  except Exception as exc:
+                      pass
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref MultiAccountRoleName
+          MODULE_NAME: !Ref CFDataName
+          ROLE_NAME: !Ref MultiAccountRoleName
           DAYS: !Ref DAYS
           REGIONS: !Ref RegionsInScope
     Metadata:

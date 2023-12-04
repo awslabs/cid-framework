@@ -331,7 +331,7 @@ Resources:
       Environment:
         Variables:
           REGIONS: !Ref RegionsInScope
-          BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
+          BUCKET_NAME: !Sub "${BucketPrefix}${AWS::AccountId}"
           INCLUDE_MEMBER_ACCOUNTS: !Ref IncludeMemberAccounts
           ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
@@ -339,76 +339,212 @@ Resources:
         ZipFile: |
           import os
           import json
-          import boto3
           import logging
-          from datetime import date
+          from datetime import date, datetime
 
-          BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
-          INCLUDE_MEMBER_ACCOUNTS = os.environ.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
-          REGIONS = os.environ["REGIONS"]
-          ROLE_NAME = os.environ['ROLE_NAME']
+          import boto3
+          import botocore
 
+          class ParamsBase():
+              def __init__(self, env, additional_params):
+                  logger.setLevel(getattr(logging, env.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+                  logger.debug("Loading parameters")
+                  self.collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  self.tmp_file = "/tmp/tmp.json"
+                  self.bucket = env["BUCKET_NAME"]
+                  self.role_name = env["ROLE_NAME"]
+                  self.module_name = env["MODULE_NAME"]
+                  self.regions = [r.strip() for r in env.get("REGIONS","us-east-1").split(',') if r]
+                  self.boto_config = None
+                  self.additional_params = additional_params
+
+          """
+          Custom implementation:
+          These functions are specific to this module.
+          """
+          class Params(ParamsBase):
+              """ Tailor this class to add any unique configuration """
+              def __init__(self, env, additional_params):
+                  try:
+                      super().__init__(env, additional_params)
+                      self.include_member_accounts = env.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
+                  except (KeyError, AttributeError) as exc:
+                      raise CidCriticalError(f"Invalid parameters supplied", exc)
+
+          def get_api_data(account, params, region):
+              """ Method to call the necessary APIs and process the data """
+              logger.debug(f"Entering get_api_data for region '{region}'")
+              client = get_client_with_role(params.role_name, account.account_id, region=region, service="compute-optimizer", params=params)
+              results = []
+
+              export_funcs = {
+                  'ec2_instance': client.export_ec2_instance_recommendations,
+                  'auto_scale':   client.export_auto_scaling_group_recommendations,
+                  'lambda':       client.export_lambda_function_recommendations,
+                  'ebs_volume':   client.export_ebs_volume_recommendations,
+                  'ecs_service':  client.export_ecs_service_recommendations,
+              }
+              bkt = f"{params.bucket}-{region}"
+              logger.debug(f"Target bucket is {bkt}")
+              for name, func in export_funcs.items():
+                  try:
+                      res = func(
+                          includeMemberAccounts=params.include_member_accounts,
+                          s3DestinationConfig={'bucket': bkt, 'keyPrefix': get_s3_key(account, params, name)}
+                      )
+                      logger.info(f"{region} {name} export queued. JobId: {res['jobId']}")
+                  except Exception as exc:
+                      if 'LimitExceededException' in str(exc):
+                          logger.info(f"{region} {name} export is already in progress.")
+                      else:
+                          CidNonCriticalError(f"(NonCriticalError) in get_api_data with {region} {name}", exc) #no need to raise
+
+              logger.info(f"API calls completed. NOTE: No files will be uploaded to the main bucket by this function. Compute Optimizer manages them.")
+              return results
+
+          def get_s3_key(account, params, name): #pylint: disable=unused-argument
+              return datetime.now().strftime(
+                  f"compute_optimizer/compute_optimizer_{name}/payer_id={account.payer_id}/year=%Y/month=%m")
+
+          """
+          Common implementation:
+          These functions and classes are structured for common usage
+          patterns across different modules
+          """
+          logger = logging.getLogger()
+          for h in logger.handlers:
+              h.setFormatter(logging.Formatter("[%(levelname)s] %(message)s (%(aws_request_id)s)"))
           logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          logger.setLevel(logging.INFO)
 
-          def lambda_handler(event, context):
-              logger.info(f"Event data {json.dumps(event)}")
-              if 'account' not in event:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
-              today = date.today()
-              year = today.year
-              month = today.month
-
-              account = json.loads(event["account"])
-              payer_id = account["account_id"]
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ Common structured entry for Lambda invocation. Core processing done in main()."""
+              logger.info(f"Incoming event: {json.dumps(event)}")
+              status_code = 500
               try:
-                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE_NAME}"
-                  sts_connection = boto3.client('sts')
-                  acct_b = sts_connection.assume_role(RoleArn=ROLE_ARN, RoleSessionName="data_collection")
+                  main(json.loads(event["account"]), event.get('params', ''))
+                  status_code = 200
+              except KeyError as exc:
+                  raise CidCriticalError(f"Account is not defined in the incoming event data. Please do not trigger this function manually. Use the corresponding {os.environ['MODULE_NAME']} state machine in Step Functions instead.")
+              except CidNonCriticalError as exc:
+                  status_code = 200
+              except CidCriticalError as exc:
+                  raise exc
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError) in this module", exc)
+              finally:
+                  return {"statusCode": status_code}
 
-                  account_b_creds = {
-                    "aws_access_key_id":     acct_b['Credentials']['AccessKeyId'],
-                    "aws_secret_access_key": acct_b['Credentials']['SecretAccessKey'],
-                    "aws_session_token":     acct_b['Credentials']['SessionToken'],
-                  }
+          def main(account_json, additional_params=None):
+              """ Method to orchestrate the retrieval and storage of API data """
+              logger.debug(f"Entering main")
+              try:
+                  account = Account(account_json)
+                  logger.info(f"Entering main for account: {account.account_id}")
+                  params = Params(os.environ, additional_params)
+                  for region in params.regions:
+                      logger.info(f"Processing for region '{region}'")
+                      records = get_api_data(account, params, region)
+                      if len(records) > 0:
+                          store_to_temp(records, params)
+                          upload_to_s3(account, params, region)
+                      else:
+                          logger.info(f"No file uploaded for region '{region}'")
+                  logger.info(f"Exiting main without error")
+              except CidError as exc:
+                  raise exc
+              except (botocore.exceptions.ClientError, ClientAccessError) as exc:
+                  raise CidCriticalError(f"Possible role misconfiguration for {params.role_name}", exc)
+              except Exception as exc:
+                  raise CidCriticalError(f"(UnhandledExceptionError)", exc)
 
-                  acc = boto3.client("sts", **account_b_creds).get_caller_identity()["Account"]
+          def store_to_temp(records, params):
+              """ Takes the list of processed records and moves them to a temp file """
+              logger.debug("Entering store_to_temp")
+              count = 0
+              try:
+                  with open(params.tmp_file, "w", encoding='utf-8') as f:
+                      for record in records:
+                          f.write(json.dumps(
+                              record,
+                              default=lambda x: x.isoformat() if isinstance(x, (date, datetime)) else None)
+                              + "\n"
+                          )
+                          count += 1
 
-                  result_messages = []
-                  error_messages = []
-                  for region in [r.strip() for r in REGIONS.split(',')]:
-                      # create service client using the assumed role credentials
-                      co = boto3.client("compute-optimizer", region_name=region, **account_b_creds)
-                      export_funcs = {
-                          'ec2_instance': co.export_ec2_instance_recommendations,
-                          'auto_scale':   co.export_auto_scaling_group_recommendations,
-                          'lambda':       co.export_lambda_function_recommendations,
-                          'ebs_volume':   co.export_ebs_volume_recommendations,
-                          'ecs_service':  co.export_ecs_service_recommendations,
-                      }
-                      bkt = BUCKET_PREFIX + '-' + region
-                      logger.info(f"INFO: bucket={bkt}")
-                      for name, func in export_funcs.items():
-                          try:
-                              res = func(
-                                  includeMemberAccounts=INCLUDE_MEMBER_ACCOUNTS,
-                                  s3DestinationConfig={'bucket': bkt, 'keyPrefix': f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year={year}/month={month}'}
-                              )
-                              result_messages.append(f"{region} {name} export queued. JobId: {res['jobId']}")
-                          except Exception as exc:
-                              if 'LimitExceededException' in str(exc):
-                                  result_messages.append(f"{region} {name} export is already in progress.")
-                              else:
-                                  error_messages.append(f"ERROR: {region} {name} - {exc}")
-                  if result_messages:
-                      logger.info("Success:\n"+"\n".join(result_messages))
-                  if error_messages:
-                      raise Exception(f"There were {len(error_messages)} errors, out of {len(result_messages) + len(error_messages)} exports: \n" + "\n".join(error_messages))
-              except Exception as e:
-                  logger.error(f"Error {type(e).__name__} with message {e}")
+              except Exception as exc:
+                  raise CidCriticalError(f"Unhandled exception in store_to_temp", exc)
+
+              logger.info(f"Stored {count} record(s) in temp file")
+              return count
+
+          def upload_to_s3(account, params, region=None):
+              """ Moves the processed API data from the temp file to the designated S3 bucket """
+              logger.debug(f"Entering upload_to_s3 for bucket {params.bucket}")
+              try:
+                  key = get_s3_key(account, params, region)
+                  boto3.client('s3').upload_file(params.tmp_file, params.bucket, key)
+                  logger.info(f"Data stored to s3://{params.bucket}/{key}")
+                  return True
+
+              except Exception as exc:
+                  raise CidCriticalError("Exception in upload_to_s3", exc)
+
+          def get_client_with_role(role_name, account_id, service, region, params):
+              """ Assumes the designated data gathering read-only role and instantiates a boto3 client with it """
+              logger.debug(f"Entering get_client_with_role to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              try:
+                  credentials = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                      RoleSessionName="data_collection"
+                  )['Credentials']
+                  logger.debug("Successfully assumed role, now getting client")
+                  client = boto3.client(
+                      service,
+                      region_name = region,
+                      aws_access_key_id = credentials['AccessKeyId'],
+                      aws_secret_access_key = credentials['SecretAccessKey'],
+                      aws_session_token = credentials['SessionToken'],
+                      config = params.boto_config
+                  )
+                  logger.info(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  return client
+
+              except Exception as exc:
+                  raise ClientAccessError(exc, role_name, account_id, service, region)
+
+          # Helper classes
+          class Account():
+              def __init__(self, account_json: dict):
+                  try:
+                      self.account_id = account_json["account_id"]
+                      self.account_name = account_json["account_name"]
+                      self.payer_id = account_json["payer_id"]
+                  except KeyError:
+                      raise CidCriticalError(f"Invalid account data passed {account_json}")
+
+          class CidError(Exception):
+              def __init__(self, message="", exc=None):
+                  try:
+                      message = f"({type(exc).__name__}) exception. {message}" if exc else message
+                      if type(self) == CidNonCriticalError.__class__:
+                          logger.warning(message)
+                      else:
+                          logger.error(message)
+                      super().__init__(message)
+                  except Exception as exc:
+                      pass
+          class CidNonCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class CidCriticalError(CidError):
+              def __init__(self, message="", exc=None):
+                  super().__init__(message, exc)
+          class ClientAccessError(Exception):
+              def __init__(self, exc, role_name, account_id, service, region):
+                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
+                  logger.warning(message)
+                  super().__init__(message)
       Handler: index.lambda_handler
       MemorySize: 2688
       Timeout: 300
@@ -477,7 +613,7 @@ Resources:
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(event)
               type_ = event.get('RequestType', 'Undef')
               if type_ == 'Create': res = on_create()

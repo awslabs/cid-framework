@@ -384,7 +384,7 @@ Resources:
           BASE_URL = '/'.join(OFFERS_URL.split('/')[:3])
           CODE_BUCKET = os.environ['CODE_BUCKET']
           BUCKET_NAME = os.environ["BUCKET_NAME"]
-          PREFIX = os.environ["DEST_PREFIX"]
+          MODULE_NAME = os.environ["DEST_PREFIX"]
           REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
           TMP_FILE = "/tmp/data.json"
 
@@ -478,7 +478,7 @@ Resources:
                   'statusCode': 200
               }
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(f"Incoming event: {event}")
               try:
                   service = event['service']
@@ -515,9 +515,10 @@ Resources:
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
+          LOG_LEVEL: 'INFO'
           BUCKET_NAME: !Ref DestinationBucket
           CODE_BUCKET: !Ref CodeBucket
-          DEST_PREFIX: !Ref CFDataName
+          DEST_MODULE_NAME: !Ref CFDataName
           REGIONS: !Ref RegionsInScope
     Metadata:
       cfn_nag:
