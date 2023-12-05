@@ -18,7 +18,8 @@ failure_count=0
 # CKV_AWS_195 - Ensure Glue component has a security configuration associated - AWS managed encryption is used for s3.
 # CKV_SECRET_6 - Base64 High Entropy String - Remove false positives
 # CKV_AWS_115 - Ensure that AWS Lambda function is configured for function-level concurrent execution limit - No need for concurency reservation
-checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_195,CKV_SECRET_6,CKV_AWS_115
+# CKV_AWS_158 - Ensure that CloudWatch Log Group is encrypted by KMS - No need as there no sesible information in the logs
+checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_195,CKV_SECRET_6,CKV_AWS_115,CKV_AWS_158
 
 export exclude_files=("module-inventory.yaml" "module-pricing.yaml" "module-backup.yaml") # For::Each breaks lint :'(
 

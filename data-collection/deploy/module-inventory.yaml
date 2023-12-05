@@ -344,6 +344,12 @@ Resources:
           ROLENAME: !Ref MultiAccountRoleName
           REGIONS: !Ref RegionsInScope
 
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+
   'Fn::ForEach::Object':
     - AwsObject
     - !Ref AwsObjects

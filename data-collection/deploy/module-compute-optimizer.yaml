@@ -291,7 +291,7 @@ Resources:
         - Key: IgnoreMeIamOnlyWorkaround
           Value: !GetAtt StackSetExecutionRole.Arn
 
-  LambdaTriggerExportRole:
+  LambdaFunctionRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
@@ -321,7 +321,7 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  LambdaTriggerExport:
+  LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
@@ -412,7 +412,7 @@ Resources:
       Handler: index.lambda_handler
       MemorySize: 2688
       Timeout: 300
-      Role: !GetAtt LambdaTriggerExportRole.Arn
+      Role: !GetAtt LambdaFunctionRole.Arn
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -420,6 +420,12 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -430,7 +436,7 @@ Resources:
       DefinitionString: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt LambdaTriggerExport.Arn
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: '[]'
         CollectionType: "Payers"
         Params: ''
@@ -544,7 +550,7 @@ Resources:
         Variables:
           REGIONS: !Ref RegionsInScope
           BUCKET_PREFIX: !Sub "${BucketPrefix}${AWS::AccountId}"
-          TRIGGER_LAMBDA:  !GetAtt LambdaTriggerExport.Arn
+          TRIGGER_LAMBDA:  !GetAtt LambdaFunction.Arn
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -575,7 +581,7 @@ Resources:
                 Action:
                   - lambda:InvokeAsync
                   - lambda:InvokeFunction
-                Resource: !GetAtt LambdaTriggerExport.Arn
+                Resource: !GetAtt LambdaFunction.Arn
               - Effect: Allow
                 Action:
                   - s3:DeleteObject
@@ -591,7 +597,7 @@ Resources:
 
   FinalizeSetup:
     DependsOn:
-      - LambdaTriggerExport
+      - LambdaFunction
       - ReplicationBucketsStackSet
       - FinalizeLambdaExecutionRole
     Type: Custom::CustomResource
