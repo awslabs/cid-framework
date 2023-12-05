@@ -82,13 +82,13 @@ Resources:
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-            def lambda_handler(event, context):
+            def lambda_handler(event, context): #pylint: disable=unused-argument
                 logger.info(f"Incoming event: {event}")
-                if "Type" not in event:
-                    raise Exception(f"Lambda event missing "Type" parameter")
+                if "Type" not in event or event["Type"].upper() not in ('LINKED', 'PAYER'):
+                    raise Exception("Lambda event must have 'Type' parameter (LINKED|PAYER)") #pylint: disable=broad-exception-raised
                 accounts = list(iterate_accounts(account_type=event["Type"]))
                 if not accounts:
-                    raise Exception('No accounts found. Check the log.')
+                    raise Exception('No accounts found. Check the log.') #pylint: disable=broad-exception-raised
                 return {
                     'statusCode': 200,
                     'accountList': accounts,
@@ -114,15 +114,15 @@ Resources:
                                     'payer_id': payer_id,
                                 })
                             }
-                    except Exception exc:
-                        logger.error(f'{payer_id}: {exc}‘)
+                    except Exception as exc: #pylint: disable=broad-exception-caught
+                        logger.error(f'{payer_id}: {exc}')
 
             def get_client_with_role(account_id, service, region):
                 credentials = boto3.client('sts').assume_role(
                     RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
                     RoleSessionName="data_collection"
                 )['Credentials']
-                return = boto3.client(
+                return boto3.client(
                     service,
                     region_name = region,
                     aws_access_key_id=credentials['AccessKeyId'],
