@@ -1,6 +1,7 @@
 import os
 import sys
 import git
+import json
 
 repo = git.Repo('.')
 
@@ -8,10 +9,10 @@ print(repo.git.execute('git checkout main'.split()))
 print(repo.git.execute('git pull'.split()))
 
 
-with open("data-collection/utils/_version.py") as f:
-    old_ver = f.read().split('v')[-1].replace("'", '')
+old_ver = json.load(open("data-collection/utils/version.json"))['version']
 
-
+print (old_ver)
+exit()
 bump='patch'
 if len(sys.argv)>1:
 	bump = sys.argv[1]
@@ -30,7 +31,7 @@ print(repo.git.execute(f"git checkout -b 'release/{new_ver}'".split()))
 
 tx = open('data-collection/utils/_version.py').read()
 with open('data-collection/utils/_version.py', "w") as f:
-	f.write(tx.replace({old_ver},{new_ver}))
+	f.write(tx.replace(old_ver,new_ver))
 
 
 filenames = [
