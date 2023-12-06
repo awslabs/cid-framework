@@ -140,7 +140,7 @@ Resources:
               if not count:
                   logger.info(f"No records for {path}")
                   return count
-              key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%m/%Y-%m-%d.json")
+              key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
               boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
               logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
               return count
