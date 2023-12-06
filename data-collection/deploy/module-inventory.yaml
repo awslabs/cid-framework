@@ -50,7 +50,7 @@ Parameters:
     Description: Common role for module Scheduler execution
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots
     Description: Services for pulling price data
 
 Mappings:
@@ -264,7 +264,7 @@ Resources:
                       function_name='describe_db_instances',
                       obj_name='DBInstances'
                   ),
-                  'rds-snapshots': partial(
+                  'rds-db-snapshots': partial(
                       paginated_scan,
                       service='rds',
                       function_name='describe_db_snapshots',
