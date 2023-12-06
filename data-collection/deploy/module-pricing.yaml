@@ -222,7 +222,7 @@ Mappings:
           - { Type: string, Name: startingrange }
           - { Type: string, Name: endingrange }
           - { Type: string, Name: unit }
-          - { Type: string, Name: priceperunit }
+          - { Type: double, Name: priceperunit }
           - { Type: string, Name: currency }
           - { Type: string, Name: leasecontractlength }
           - { Type: string, Name: purchaseoption }
