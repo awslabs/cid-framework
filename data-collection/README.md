@@ -26,7 +26,7 @@ List of modules and objects collected:
 | `trusted-advisor`            | AWS Trusted Advisor   | Linked Account      | Requires Enterpriso or OnRamp Support Level |
 | `cost-explorer-cost-anomaly` | AWS Anomalies         | Management Account  |          |
 | `cost-explorer-rightsizing`  | AWS Cost Explorer     | Management Account  | DEPRECATED. Please use `cost-optimization-hub` |
-| `inventory`                  | Various services      | Linked Account      | Collects `Amazon OpenSearch Domains`, `Amazon Elasticache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EC2 Instances`, `EBS Snapshot`, `RDS Snapshot` |
+| `inventory`                  | Various services      | Linked Account      | Collects `Amazon OpenSearch Domains`, `Amazon ElastiCache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EC2 Instances`, `EBS Snapshot`, `RDS Snapshot` |
 | `pricing`                    | Various services      | N/A                 | Collects pricing for `Amazon RDS`, `Amazon EC2`, `Amazon ElastiCache`, `Amazon OpenSearch`, `AWS Compute Savings Plan` |
 | `rds-usage`                  |  Amazon RDS           | Linked Account      | Collects CloudWatch metrics for chargeback |
 | `transit-gateway`            |  AWS Transit Gateway  | Linked Account      | Collects CloudWatch metrics for chargeback |
