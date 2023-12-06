@@ -114,6 +114,7 @@ Resources:
           ROLE_NAME = os.environ['ROLENAME']
           COSTONLY = os.environ.get('COSTONLY', 'no').lower() == 'yes'
           TMP_FILE = "/tmp/data.json"
+          REGIONS = ["us-east-1"]
 
           #config to avoid ThrottlingException
           config = Config(
@@ -160,7 +161,7 @@ Resources:
                   print(f"{type(e)}: {e}")
 
           def assume_role(account_id, service, region, role):
-              assumed = boto3.client('sts').assume_role(
+              assumed = boto3.client('sts', region_name=region).assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{role}",
                   RoleSessionName='data_collection'
               )
@@ -178,7 +179,7 @@ Resources:
 
           def read_ta(account_id, account_name):
               f = open(TMP_FILE, "w")
-              support = assume_role(account_id, "support", "us-east-1", ROLE_NAME)
+              support = assume_role(account_id, "support", REGIONS[0], ROLE_NAME)
               checks = support.describe_trusted_advisor_checks(language="en")["checks"]
               for check in checks:
                   #print(json.dumps(check))

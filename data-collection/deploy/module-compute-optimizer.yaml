@@ -345,7 +345,7 @@ Resources:
 
           BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
           INCLUDE_MEMBER_ACCOUNTS = os.environ.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
-          REGIONS = os.environ["REGIONS"]
+          REGIONS = [r.strip() for r in os.environ.get("REGIONS").split(',') if r]
           ROLE_NAME = os.environ['ROLE_NAME']
 
           logger = logging.getLogger(__name__)
@@ -365,21 +365,19 @@ Resources:
               account = json.loads(event["account"])
               payer_id = account["account_id"]
               try:
-                  ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE_NAME}"
-                  sts_connection = boto3.client('sts')
-                  acct_b = sts_connection.assume_role(RoleArn=ROLE_ARN, RoleSessionName="data_collection")
-
-                  account_b_creds = {
-                    "aws_access_key_id":     acct_b['Credentials']['AccessKeyId'],
-                    "aws_secret_access_key": acct_b['Credentials']['SecretAccessKey'],
-                    "aws_session_token":     acct_b['Credentials']['SessionToken'],
-                  }
-
-                  acc = boto3.client("sts", **account_b_creds).get_caller_identity()["Account"]
-
                   result_messages = []
                   error_messages = []
-                  for region in [r.strip() for r in REGIONS.split(',')]:
+                  for region in REGIONS:
+                      ROLE_ARN = f"arn:aws:iam::{payer_id}:role/{ROLE_NAME}"
+                      sts_connection = boto3.client('sts', region_name=region)
+                      acct_b = sts_connection.assume_role(RoleArn=ROLE_ARN, RoleSessionName="data_collection")
+
+                      account_b_creds = {
+                        "aws_access_key_id":     acct_b['Credentials']['AccessKeyId'],
+                        "aws_secret_access_key": acct_b['Credentials']['SecretAccessKey'],
+                        "aws_session_token":     acct_b['Credentials']['SessionToken'],
+                      }
+
                       # create service client using the assumed role credentials
                       co = boto3.client("compute-optimizer", region_name=region, **account_b_creds)
                       export_funcs = {
