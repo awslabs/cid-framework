@@ -20,7 +20,7 @@ failure_count=0
 # CKV_AWS_115 - Ensure that AWS Lambda function is configured for function-level concurrent execution limit - No need for concurency reservation
 checkov_skip=CKV_AWS_18,CKV_AWS_117,CKV_AWS_116,CKV_AWS_173,CKV_AWS_195,CKV_SECRET_6,CKV_AWS_115
 
-export exclude_files=("module-inventory.yaml" "module-pricing.yaml") # For::Each breaks lint :'(
+export exclude_files=("module-inventory.yaml" "module-pricing.yaml" "module-backup.yaml") # For::Each breaks lint :'(
 
 yaml_files=$(find "$folder" -type f -name "*.yaml" -exec ls -1t "{}" +;) # ordered by date
 
@@ -38,7 +38,7 @@ for file in $yaml_files; do
         echo -e "checkov      ${GREEN}OK${NC}"  | awk '{ print "\t" $0 }'
     fi
 
-    if [ "$(basename $file)" == "${exclude_files[0]}" ] || [ "$(basename $file)" == "${exclude_files[1]}" ]; then
+    if [ "$(basename $file)" == "${exclude_files[0]}" ] || [ "$(basename $file)" == "${exclude_files[1]}" ] || [ "$(basename $file)" == "${exclude_files[2]}" ]; then
         echo -e "cfn-lint     ${YELLOW}SKIP${NC} For::Each breaks lint"  | awk '{ print "\t" $0 }'
         echo -e "cfn_nag_scan ${YELLOW}SKIP${NC} For::Each breaks lint"  | awk '{ print "\t" $0 }'
         continue

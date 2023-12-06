@@ -22,15 +22,17 @@ List of modules and objects collected:
 | ---                          |  ---                  | ---                 | ---      |
 | `organization`               | AWS Organizations     | Management Account  |          |
 | `budgets`                    | AWS Budgest           | Linked Account      |          |
-| `compute-optimizer`          | AWS Compute Optimizer | Management Account  |          |
-| `trusted-advisor`            | AWS Trusted Advisor   | Linked Account      |          |
+| `compute-optimizer`          | AWS Compute Optimizer | Management Account  | Requires [Enablement of Compute Optimizer](https://aws.amazon.com/compute-optimizer/getting-started/#:~:text=Opt%20in%20for%20Compute%20Optimizer,created%20automatically%20in%20your%20account.) |
+| `trusted-advisor`            | AWS Trusted Advisor   | Linked Account      | Requires Enterpriso or OnRamp Support Level |
 | `cost-explorer-cost-anomaly` | AWS Anomalies         | Management Account  |          |
-| `cost-explorer-rightsizing`  | AWS Cost Explorer     | Management Account  |          |
-| `inventory`                  | Various services      | Linked Account      | `Opensearch Domains`, `Elasticache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EBS Snapshot` |
-| `pricing`                    | Various services      | N/A                 | `Amazon RDS`, `Amazon EC2`, `Amazon ElastiCache`, `Amazon Opensearch`, `AWS Compute Savings Plan` |
-| `rds-usage`                  |  Amazon RDS           | Linked Account      | Collects CloudWatch metrics |
+| `cost-explorer-rightsizing`  | AWS Cost Explorer     | Management Account  | DEPRECATED. Please use `cost-optimization-hub` |
+| `inventory`                  | Various services      | Linked Account      | Collects `Opensearch Domains`, `Elasticache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EBS Snapshot` |
+| `pricing`                    | Various services      | N/A                 | Collects pricing for `Amazon RDS`, `Amazon EC2`, `Amazon ElastiCache`, `Amazon Opensearch`, `AWS Compute Savings Plan` |
+| `rds-usage`                  |  Amazon RDS           | Linked Account      | Collects CloudWatch metrics for chargeback |
 | `transit-gateway`            |  AWS Transit Gateway  | Linked Account      | Collects CloudWatch metrics for chargeback |
 | `ecs-chargeback`             |  Amazon ECS           | Linked Account      |  |
+| `backup`                     |  AWS Backup           | Management Account  | Collects Backup Restore and Copy Jobs. Requires [activation of cross-account](https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account) |
+| `cost-optimization-hub`      |  AWS Cost Optimization Hub | Management Account  | Collects Detailed Reccomendations. Requires [activation](https://aws.amazon.com/aws-cost-management/cost-optimization-hub/faqs/#:~:text=You%20can%20enable%20Cost%20Optimization%20Hub%20by%20going%20to%20the,navigation%20bar%2C%20and%20click%20Enable.)  |
 
 
 
@@ -44,7 +46,7 @@ Before creating the Management Account stack, please make sure [trusted access w
 
 The Management Account Stack creates a read role in the Management Account and also a StackSet that will deploy another read role in each linked Account. Permissions depend on the set of modules you activate via parameters of the stack:
 
-   *  <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards-us-east-1.s3.amazonaws.com/cfn/data-collection/deploy-data-read-permissions.yaml&stackName=CidDataCollectionDataReadPermissionsStack&param_DataCollectionAccountID=REPLACE%20WITH%20DATA%20COLLECTION%20ACCOUNT%20ID&param_AllowModuleReadInMgmt=yes&param_OrganizationalUnitID=REPLACE%20WITH%20ORGANIZATIONAL%20UNIT%20ID&param_IncludeBudgetsModule=no&param_IncludeComputeOptimizerModule=no&param_IncludeCostAnomalyModule=no&param_IncludeECSChargebackModule=no&param_IncludeInventoryCollectorModule=no&param_IncludeOrgDataModule=no&param_IncludeRDSUtilizationModule=no&param_IncludeRightsizingModule=no&param_IncludeTAModule=no&param_IncludeTransitGatewayModule=no) <br> </kbd>
+   *  <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards-us-east-1.s3.amazonaws.com/cfn/data-collection/deploy-data-read-permissions.yaml&stackName=CidDataCollectionDataReadPermissionsStack&param_DataCollectionAccountID=REPLACE%20WITH%20DATA%20COLLECTION%20ACCOUNT%20ID&param_AllowModuleReadInMgmt=yes&param_OrganizationalUnitID=REPLACE%20WITH%20ORGANIZATIONAL%20UNIT%20ID&param_IncludeBudgetsModule=no&param_IncludeComputeOptimizerModule=no&param_IncludeCostAnomalyModule=no&param_IncludeECSChargebackModule=no&param_IncludeInventoryCollectorModule=no&param_IncludeRDSUtilizationModule=no&param_IncludeRightsizingModule=no&param_IncludeTAModule=no&param_IncludeTransitGatewayModule=no) <br> </kbd>
 
 
 #### 2. In Data Collection Account
