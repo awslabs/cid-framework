@@ -9,8 +9,7 @@ print(repo.git.execute('git pull'.split()))
 
 
 with open("data-collection/utils/_version.py") as f:
-    exec(f.read())
-old_ver = __version__
+    old_ver = f.read().split('v')[-1].replace("'", '')
 
 
 bump='patch'
