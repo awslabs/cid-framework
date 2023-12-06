@@ -22,6 +22,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeHealthModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -49,6 +50,8 @@ Metadata:
         default: "Include AWS Trusted Advisor Data Collection Module"
       IncludeTransitGatewayModule:
         default: "Include AWS TransitGateway Collection Module"
+      IncludeHealthModule:
+        default: "Include AWS Health Collection Module"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -121,29 +124,25 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthModule:
+    Type: String
+    Description: Collects Health from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
-  EnableBudgetsModule: !Equals [!Ref IncludeBudgetsModule, "yes"]
+  #EnableBudgetsModule: !Equals [!Ref IncludeBudgetsModule, "yes"]
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
   EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
-  EnableECSChargebackModule: !Equals [!Ref IncludeECSChargebackModule, "yes"]
-  EnableInventoryCollectorModule: !Equals [!Ref IncludeInventoryCollectorModule, "yes"]
-  EnableOrganizationModule: !Equals [!Ref IncludeOrgDataModule, "yes"]
-  EnableRDSUtilizationModule: !Equals [!Ref IncludeRDSUtilizationModule, "yes"]
+  #EnableECSChargebackModule: !Equals [!Ref IncludeECSChargebackModule, "yes"]
+  #EnableInventoryCollectorModule: !Equals [!Ref IncludeInventoryCollectorModule, "yes"]
+  #EnableOrganizationModule: !Equals [!Ref IncludeOrgDataModule, "yes"]
+  #EnableRDSUtilizationModule: !Equals [!Ref IncludeRDSUtilizationModule, "yes"]
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
-  EnableTAModule: !Equals [!Ref IncludeTAModule, "yes"]
-  EnableTransitGatewayModule: !Equals [!Ref IncludeTransitGatewayModule, "yes"]
-  IsAnyModuleEnabled: !Or
-    - Condition: EnableBudgetsModule
-    - Condition: EnableComputeOptimizerModule
-    - Condition: EnableCostAnomaliesModule
-    - Condition: EnableECSChargebackModule
-    - Condition: EnableInventoryCollectorModule
-    - Condition: EnableOrganizationModule
-    - Condition: EnableRDSUtilizationModule
-    - Condition: EnableRightsizingModule
-    - Condition: EnableTAModule
-    - Condition: EnableTransitGatewayModule
+  #EnableTAModule: !Equals [!Ref IncludeTAModule, "yes"]
+  #EnableTransitGatewayModule: !Equals [!Ref IncludeTransitGatewayModule, "yes"]
+  IncludeHealthModule: !Equals [!Ref IncludeHealthModule, "yes"]
 
 Outputs:
   LambdaRole:
@@ -171,6 +170,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}compute-optimizer-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-anomaly-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-explorer-rightsizing-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -181,7 +181,6 @@ Resources:
             reason: "Role is intended to describe a range of resources"
   AWSOrganizationPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: IsAnyModuleEnabled
     Properties:
       PolicyName: Management-Account-permissions
       PolicyDocument:
@@ -354,3 +353,40 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
+
+  # DataCollectionRuleManagementRole:
+  #   Condition: IncludeHealthModule
+  #   Type: AWS::IAM::Role
+  #   Properties:
+  #     AssumeRolePolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             Service: events.amazonaws.com
+  #           Action: sts:AssumeRole
+  #     Path: "/"
+  #     Policies:
+  #       - PolicyName: PutToDataCollectionBusPolicy
+  #         PolicyDocument:
+  #           Version: "2012-10-17"
+  #           Statement:
+  #             - Effect: Allow
+  #               Action: "events:PutEvents"
+  #               Resource:
+  #                 - !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
+
+  # DefaultBusRuleHealth:
+  #   Condition: IncludeHealthModule
+  #   Type: "AWS::Events::Rule"
+  #   Properties:
+  #     Description: "EventBridge default rule for aws.health events"
+  #     EventBusName: "default"
+  #     EventPattern:
+  #       source:
+  #         - "aws.health"
+  #         - "awshealthtest"
+  #     Targets:
+  #       - Id: DataCollectionRuleOnDefaultBus
+  #         Arn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
+  #         RoleArn: !GetAtt  DataCollectionRuleManagementRole.Arn

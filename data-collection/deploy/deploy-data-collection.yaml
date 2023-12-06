@@ -8,6 +8,7 @@ Metadata:
         Parameters:
           - DestinationBucket
           - ManagementAccountRole
+          - AWSOrganizationID
           - ManagementAccountID
           - MultiAccountRoleName
           - Schedule
@@ -28,6 +29,8 @@ Metadata:
           - IncludeOrgDataModule
           - IncludeBudgetsModule
           - IncludeTransitGatewayModule
+          - IncludeHealthModule
+          - IncludeCasesModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -35,6 +38,9 @@ Metadata:
         default: 'Management account role'
       ManagementAccountID:
         default: 'Comma Delimited list of Account IDs for all Management Account IDs'
+      AWSOrganizationID:
+        Type: String
+        Description: Required for Health Module. 'Comma Delimited list of AWS Organization IDs for all Payer Account'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       Schedule:
@@ -67,6 +73,10 @@ Metadata:
         default: 'Include AWS Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include AWS TransitGateway Collection Module'
+      IncludeHealthModule:
+        default: Collects AWS Health Events from your accounts
+      IncludeCasesModule:
+        default: Collects AWS Support Cases from your accounts
 
 Mappings:
   RegionMap:
@@ -181,6 +191,9 @@ Parameters:
     Description: Name of the S3 Bucket that needs to be created to hold information
     AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
     Default: costoptimizationdata
+  AWSOrganizationID:
+    Type: String
+    Description: Required for Health Module. 'Comma Delimited list of AWS Organization IDs for all Payer Account'
   ManagementAccountRole:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -275,6 +288,19 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthModule:
+    Type: String
+    Description: Collects AWS Health Events from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeCasesModule:
+    Type: String
+    Description: Collects AWS Support Cases from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+
 Outputs:
   S3Bucket:
     Description: Name of S3 Bucket which will store the AWS Cost Explorer Rightsizing recommendations
@@ -297,6 +323,8 @@ Conditions:
   DeployOrgDataModule: !Equals [ !Ref IncludeOrgDataModule, "yes"]
   DeployBudgetsModule: !Equals [ !Ref IncludeBudgetsModule, "yes"]
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
+  DeployHeathModule: !Equals [ !Ref IncludeHealthModule, "yes"]
+  DeployCasesModule: !Equals [ !Ref IncludeCasesModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -315,6 +343,9 @@ Conditions:
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
   ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
+  DeployEventDrivenDataCollector: !Or
+    - !Condition DeployHeathModule
+    - !Condition DeployCasesModule
 
 Resources:
   S3Bucket:
@@ -951,3 +982,22 @@ Resources:
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
         ResourcePrefix: !Ref ResourcePrefix
+
+  EventDrivenDataCollector:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployEventDrivenDataCollector
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/event-driven-datacollection-account.yaml"
+      Parameters:
+        AWSOrganizationID: !Ref AWSOrganizationID
+        DestinationBucket: !Ref S3Bucket
+
+  EventDrivenHealthModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployHeathModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health.yaml"
+      Parameters:
+        DataCollectionBusArn: !GetAtt  EventDrivenDataCollector.Outputs.DataCollectionBusArn
+        ResourcePrefix: !Ref ResourcePrefix
+        MultiAccountRoleName: !Ref MultiAccountRoleName

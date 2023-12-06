@@ -26,6 +26,8 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeHealthModule
+        # - IncludeCasesModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -151,6 +153,18 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeCasesModule:
+    Type: String
+    Description: Collects AWS Support Cases from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeHealthModule:
+    Type: String
+    Description: Collects AWS Health Events from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -174,6 +188,7 @@ Resources:
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeTAModule: !Ref IncludeTAModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeHealthModule: !Ref IncludeHealthModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -189,11 +204,17 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeHealthModule: !Ref IncludeHealthModule
+        #IncludeCasesModule: !Ref IncludeCasesModule
+        #DataCollectionBusArn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organisation accounts"
+      Description: "StackSet in charge of deploying read roles across organization accounts"
       PermissionModel: SERVICE_MANAGED
+      OperationPreferences:
+        MaxConcurrentPercentage: 100
+        FailureTolerancePercentage: 100
       AutoDeployment:
         Enabled: true
         RetainStacksOnAccountRemoval: false
@@ -222,6 +243,10 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
+        #- ParameterKey: IncludeCasesModule
+        #  ParameterValue: !Ref IncludeCasesModule
+        - ParameterKey: IncludeHealthModule
+          ParameterValue: !Ref IncludeHealthModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]

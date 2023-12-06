@@ -9,6 +9,7 @@ Metadata:
         - DataCollectionAccountID
         - MultiAccountRoleName
         - ResourcePrefix
+       # - DataCollectionBusArn
     - Label:
         default: 'Available modules'
       Parameters:
@@ -18,9 +19,11 @@ Metadata:
         - IncludeRDSUtilizationModule
         - IncludeBudgetsModule
         - IncludeTransitGatewayModule
+        - IncludeHealthModule
+        # - IncludeCasesModule
     ParameterLabels:
       DataCollectionAccountID:
-        default: 'Cost Account Id'
+        default: 'Data Collection Account ID'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       ResourcePrefix:
@@ -37,6 +40,10 @@ Metadata:
         default: 'Include Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include Transit Gateway Module'
+      IncludeHealthModule:
+        default: 'Include Health Module'
+      # IncludeCasesModule:
+      #   default: 'Include Health Module'
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -49,6 +56,13 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "CID-DC-"
+  #DataCollectionBusArn:
+  #  Type: String
+  #  Description: 'Centerlized DataCollection EventBus Arn in data collection account'
+  CFNTemplateSourceBucket:
+    Type: String
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
+    Default: "aws-managed-cost-intelligence-dashboards"
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -85,6 +99,18 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthModule:
+    Type: String
+    Description: Collects AWS Health from your accounts. DO NOT enable if DataCollection is deployed in delegated health account.
+    AllowedValues:
+      - "yes"
+      - "no"
+  # IncludeCasesModule:
+  #   Type: String
+  #   Description: Collects AWS Support Cases from your accounts
+  #   AllowedValues:
+  #     - "yes"
+  #     - "no"
 
 Conditions:
   IncludeTAModulePolicy: !Equals
@@ -105,6 +131,12 @@ Conditions:
   IncludeTransitGatewayModulePolicy: !Equals
     - !Ref IncludeTransitGatewayModule
     - "yes"
+  IncludeHealthModule: !Equals
+    - !Ref IncludeHealthModule 
+    - "yes"
+  # IncludeCasesModule: !Equals 
+  #   - !Ref IncludeCasesModule 
+  #   - "yes"
 
 Outputs:
   LambdaRole:
@@ -132,6 +164,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -270,3 +303,65 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
+  HealthBackfillPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeHealthModule
+    Properties:
+      PolicyName: Healthapiaccess
+      PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - health:DescribeEvents
+                - health:DescribeEventDetails
+                - health:DescribeAffectedEntities
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - "events:PutEvents"
+              Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+
+  DataCollectionRuleRole:
+    Condition: IncludeHealthModule
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: PutToDataCollectionBusPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "events:PutEvents"
+                Resource:
+                  - !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
+
+  DefaultBusRuleHealth:
+    Type: "AWS::Events::Rule"
+    Properties:
+      Description: "EventBridge default rule for aws.health events"
+      EventBusName: "default"
+      EventPattern:
+        source:
+          - "aws.health"
+          - "awshealthtest"
+      Targets:
+        - Id: DataCollectionRuleOnDefaultBus
+          Arn: !Sub "arn:aws:events:${AWS::Region}:${DataCollectionAccountID}:event-bus/${ResourcePrefix}DataCollectionBus"
+          RoleArn: !GetAtt  DataCollectionRuleRole.Arn
+

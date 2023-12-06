@@ -1,0 +1,203 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Event Driven Data Collection Stack
+
+Parameters:
+  AWSOrganizationID:
+    Type: String
+    Description: The AWS Organizations ID for the organization that should be allowed to put events on the event bus.
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold data information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+    Default: "CID-DC-"
+  DestinationBucketKmsArn:
+    Type: String
+    Default: "N"
+    Description: Enter KMS Arn if supplied Destination bucket is encrypted with KMS(Type N for SSE encryption)
+
+
+Conditions:
+  DestinationBucketKmsArn: !Not [!Equals [!Ref DestinationBucketKmsArn, "N"]]
+
+Resources:
+  # Define an IAM Role for the Kinesis Firehose delivery stream
+  DataCollectionKinesisFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: cloudwatch-logs-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/*"
+        - PolicyName: AllowS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: AllowS3Access
+                Effect: Allow
+                Action:
+                  - "s3:AbortMultipartUpload"
+                  - "s3:GetBucketLocation"
+                  - "s3:GetObject"
+                  - "s3:ListBucket"
+                  - "s3:ListBucketMultipartUploads"
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
+        # Policy allowing KMS access
+        - !If
+          - DestinationBucketKmsArn
+          - PolicyName: AllowkmsAccess
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: AllowKMSAccess
+                  Effect: Allow
+                  Action:
+                    - "kms:Encrypt"
+                    - "kms:Decrypt"
+                    - "kms:ReEncrypt*"
+                    - "kms:GenerateDataKey*"
+                  Resource:
+                    - !Ref DestinationBucketKmsArn
+          - !Ref AWS::NoValue
+
+  DataCollectionRuleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: "PutToKinesisFirehose"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "firehose:PutRecord"
+                  - "firehose:PutRecordBatch"
+                Resource:
+                  - !GetAtt DataCollectionKinesisFirehose.Arn
+        - PolicyName: !Sub "DataCollectionRuleDefault-${AWS::AccountId}-${AWS::Region}-Policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "events:PutEvents"
+                Resource:
+                  - !GetAtt DataCollectionBus.Arn
+
+  # Define an AWS Events Event Bus for DataCollection
+  DataCollectionBus:
+    Type: "AWS::Events::EventBus"
+    Properties:
+      Name: !Sub ${ResourcePrefix}DataCollectionBus
+
+  # Define the policy for the event bus to allow all accounts from the specified organization to put events
+  DataCollectionBusPolicy:
+    Type: AWS::Events::EventBusPolicy
+    Properties:
+      EventBusName: !Ref DataCollectionBus
+      StatementId: AllowAllAccountsInOrganizationToPutEvents
+      Statement:
+        Effect: "Allow"
+        Principal: "*"
+        Action: "events:PutEvents"
+        Resource: !GetAtt DataCollectionBus.Arn
+        Condition:
+          StringEquals:
+            aws:PrincipalOrgID: !Split [",", !Ref AWSOrganizationID]
+
+  # Define an AWS Kinesis Firehose Delivery Stream for data ingestion
+  DataCollectionKinesisFirehose:
+    Type: "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+      DeliveryStreamName: !Sub "${ResourcePrefix}DataCollection-${AWS::AccountId}-${AWS::Region}"
+      DeliveryStreamType: "DirectPut"
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+        RoleARN: !GetAtt DataCollectionKinesisFirehoseRole.Arn
+        Prefix: "DataCollection-data/!{partitionKeyFromQuery:source}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
+        CompressionFormat: "UNCOMPRESSED"
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 64
+        ErrorOutputPrefix: "DataCollection-error/"
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: "DataCollectionFirehoseLogs"
+          LogStreamName: "DataCollectionFirehoseStream"
+        DynamicPartitioningConfiguration:
+          Enabled: true
+          RetryOptions:
+            DurationInSeconds: 300
+        ProcessingConfiguration:
+          Enabled: true
+          Processors:
+            - Type: AppendDelimiterToRecord
+            - Type: MetadataExtraction
+              Parameters:
+                - ParameterName: MetadataExtractionQuery
+                  ParameterValue: "{source:.source}"
+                - ParameterName: JsonParsingEngine
+                  ParameterValue: JQ-1.6
+
+  DataCollectionRuleOnCustomBus:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: DataCollectionRuleForHealth
+      EventBusName: !Ref DataCollectionBus
+      EventPattern:
+        source:
+          - prefix: aws
+      Targets:
+        - Id: DataCollectionRuleOnDataCollectionBus
+          Arn: !GetAtt DataCollectionKinesisFirehose.Arn
+          RoleArn: !GetAtt  DataCollectionRuleRole.Arn
+
+Outputs:
+  DataCollectionBusName:
+    Value: !GetAtt DataCollectionBus.Name
+    Export:
+      Name: DataCollectionBusName
+  DataCollectionBusArn:
+    Value: !GetAtt DataCollectionBus.Arn
+    Export:
+      Name: DataCollectionBusArn
+  DataCollectionRuleRoleArn:
+    Value: !GetAtt DataCollectionRuleRole.Arn
+    Export:
+      Name: DataCollectionRuleRoleArn
+  DataCollectionKinesisFirehoseArn:
+    Value: !GetAtt DataCollectionKinesisFirehose.Arn
+    Export:
+      Name: DataCollectionKinesisFirehoseArn
