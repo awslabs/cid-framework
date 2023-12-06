@@ -82,7 +82,7 @@ def test_inventory_vpc_data(athena):
     assert len(data) > 0, 'inventory_vpc_data is empty'
 
 def test_inventory_rds_snaphot_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_db_snapshots_data" LIMIT 10;')
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_rds_db_snapshots_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_vpc_data is empty'
 
 def test_rds_usage_data(athena):
