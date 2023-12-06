@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Main CloudFormation template that builds shared resources and modules stacks
+Description: CID Data Collection Stack v3.0.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
