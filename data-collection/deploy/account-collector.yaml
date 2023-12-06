@@ -82,7 +82,7 @@ Resources:
             MODULE_NAME = "account-collector"
             REGIONS = ["us-east-1"]
 
-            logger = logging.getLogger(__name__)acc
+            logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
             # Helper Exception classes
