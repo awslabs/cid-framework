@@ -190,6 +190,7 @@ Resources:
               - "ec2:DescribeInstances"
               - "ec2:DescribeVpcs"
               - "rds:DescribeDBInstances"
+              - "rds:DescribeDBSnapshots"
               - "es:ListDomainNames"
               - "es:DescribeDomain"
               - "es:DescribeElasticsearchDomains"

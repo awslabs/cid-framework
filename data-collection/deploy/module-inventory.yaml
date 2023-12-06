@@ -61,6 +61,8 @@ Mappings:
       path: elasticache-clusters
     RdsDbInstances:
       path: rds-db-instances
+    RdsDbSnapshots:
+      path: rds-db-snapshots
     EBS:
       path: ebs
     AMI:
@@ -262,6 +264,12 @@ Resources:
                       function_name='describe_db_instances',
                       obj_name='DBInstances'
                   ),
+                  'rds-snapshots': partial(
+                      paginated_scan,
+                      service='rds',
+                      function_name='describe_db_snapshots',
+                      obj_name='DBSnapshots'
+                  ),
                   'ebs': partial(
                       paginated_scan,
                       service='ec2',
@@ -323,7 +331,7 @@ Resources:
                   return
               key =  datetime.now().strftime(
                   f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
-                  f"/year=%Y/month=%m/{account_id}-%Y%m%d-%H%M%S.json"
+                  f"/year=%Y/month=%m/day=%d/{account_id}-%Y-%m-%d.json"
               )
               s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
               try:
