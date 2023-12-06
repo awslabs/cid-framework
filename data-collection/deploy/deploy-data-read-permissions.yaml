@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Stack that will deployed across all accounts in an org so we can assume to read data using a lambda
+Description: CID Data Collection - All-in-One for Management Account v3.0.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
