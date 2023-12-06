@@ -378,8 +378,6 @@ Resources:
                         "aws_session_token":     acct_b['Credentials']['SessionToken'],
                       }
 
-                      acc = boto3.client("sts", region_name=region, **account_b_creds).get_caller_identity()["Account"]
-
                       # create service client using the assumed role credentials
                       co = boto3.client("compute-optimizer", region_name=region, **account_b_creds)
                       export_funcs = {
