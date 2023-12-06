@@ -154,9 +154,9 @@ Resources:
               )
 
           @lru_cache(maxsize=10000)
-          def assume_session(account_id):
+          def assume_session(account_id, region):
               """assume role in account"""
-              credentials = boto3.client('sts').assume_role(
+              credentials = boto3.client('sts', region_name=region).assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}" ,
                   RoleSessionName="data_collection"
               )['Credentials']
@@ -166,25 +166,13 @@ Resources:
                   aws_session_token=credentials['SessionToken']
               )
 
-          @lru_cache(maxsize=10000)
-          def enabled_regions(session):
-              """list enabled regions"""
-              if len(REGIONS) > 0:
-                  return set(REGIONS)
-                  logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-              else:
-                  return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
-
           def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
               """ paginated scan """
-              session = assume_session(account_id)
-              regions = REGIONS #set(session.get_available_regions(service)) & enabled_regions(session)
               obj_name = obj_name or function_name.split('_')[-1].capitalize()
               obj_name_keys = obj_name.split(".")
-              logger.info(f"obj_name is {'simple' if len(obj_name_keys) == 1 else 'compound'}")
-              logger.info(f"Regions in scope {regions}")
-              for region in regions:
+              for region in REGIONS:
                   logger.info(f"Collecting in {region}")
+                  session = assume_session(account_id, region)
                   client = session.client(service, region_name=region)
                   logger.info(f"Working with result key {obj_name}")
                   try:
@@ -212,11 +200,9 @@ Resources:
           def opensearch_domains_scan(account_id):
               """ special treatment for opensearch_scan """
               service = 'opensearch'
-              session = assume_session(account_id)
-              regions = set(session.get_available_regions(service)) & enabled_regions(session)
-
-              for region in regions:
+              for region in REGIONS:
                   logger.info(f"Collecting in {region}")
+                  session = assume_session(account_id, region)
                   client = session.client(service, region_name=region)
                   try:
                       domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]

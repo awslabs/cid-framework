@@ -235,7 +235,7 @@ Resources:
           def assume_role(account_id, service, region):
               role_name = os.environ['ROLENAME']
               role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-              cred = boto3.client('sts').assume_role(
+              cred = boto3.client('sts', region_name = region).assume_role(
                   RoleArn=role_arn,
                   RoleSessionName="data_collection"
               )['Credentials']
@@ -246,9 +246,6 @@ Resources:
                   aws_session_token=cred['SessionToken'],
                   region_name = region
               )
-
-          def get_supported_regions(ec2):
-              return [region['RegionName'] for region in ec2.describe_regions()['Regions']]
 
           def lambda_handler(event, context):
               logger.info(f"Event: {event}")
@@ -266,15 +263,9 @@ Resources:
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account: {account_id}")
                   s3client = boto3.client('s3')
-                  if len(REGIONS) > 0:
-                      regions = REGIONS
-                      logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-                  else:
-                      regions = get_supported_regions(account_id, 'rds')
-
                   for service in functions.keys():
                       if functions[service]['regional']:
-                          for region in regions:
+                          for region in REGIONS:
                               logger.info(f"region {region}")
                               client = assume_role(account_id, functions[service]['api'], region)
                               for f in functions[service]['functions']:
@@ -298,24 +289,6 @@ Resources:
                   # Send some context about this error to Lambda Logs
                   logger.warning(e)
 
-
-          def get_supported_regions(account_id, service):
-              session = assume_session(account_id)
-              ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
-              service_regions = boto3.Session().get_available_regions(service)
-              regions = list(set(ec2_regions).intersection(service_regions))
-              return regions
-
-          def assume_session(account_id):
-              cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
-                  RoleSessionName="data_collection"
-              )['Credentials']
-              return boto3.Session(
-                  aws_access_key_id=cred['AccessKeyId'],
-                  aws_secret_access_key=cred['SecretAccessKey'],
-                  aws_session_token=cred['SessionToken']
-              )
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300

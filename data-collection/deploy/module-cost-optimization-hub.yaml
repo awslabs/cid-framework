@@ -1,0 +1,270 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Retrieves AWS Cost Optimization Hub Data across AWS organization
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket that exists or needs to be created to hold information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold information
+  ManagementRoleName:
+    Type: String
+    Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: cost-optimization-hub
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management accounts
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:PutObjectAcl"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "${DestinationBucketARN}"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.10
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import logging
+          from functools import partial
+          from datetime import date, datetime
+
+          # update boto3 version
+          import sys
+          from pip._internal import main
+          main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
+          sys.path.insert(0,'/tmp/')
+
+          import boto3 #pylint: disable=wrong-import-position
+
+          logger = logging.getLogger()
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          ROLENAME = os.environ['ROLENAME']
+          PREFIX = os.environ['PREFIX']
+          TMP_FILE = "/tmp/data.json"
+          NEED_DETAILED = True # set it to False to fallback to collection of only summaries if any perf issue or timeout
+
+          def to_json(obj):
+              """json helper for date, time and data"""
+              def _date_transformer(obj):
+                  return obj.isoformat() if isinstance(obj, (date, datetime)) else None
+              return json.dumps(obj, default=_date_transformer)
+
+          def store_to_s3(records, path):
+              """ Upload records to s3 """
+              count = 0
+              with open(TMP_FILE, "w", encoding='utf-8') as json_file:
+                  for count, record in enumerate(records, start=1):
+                      json_file.write(to_json(record) + '\n')
+              if not count:
+                  logger.info(f"No records for {path}")
+                  return count
+              key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+              logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
+              return count
+
+          def iterate_paginated_results(client, function, search, params=None):
+              yield from client.get_paginator(function).paginate(**(params or {})).search(search)
+
+          def get_detailed_recommendation(hub, rec):
+              res = hub.get_recommendation(recommendationId=rec['recommendationId'])
+              res.pop('ResponseMetadata', None)
+              return res
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ this lambda collects CostOptimizationHub data
+              and must be called from the corresponding Step Function to orchestrate
+              """
+              logger.info(f"Event data: {event}")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              account = json.loads(event["account"])
+              account_id = account["account_id"]
+              payer_id = account["payer_id"]
+
+              creds = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
+                  RoleSessionName="cross_acct_lambda"
+              )['Credentials']
+              hub = boto3.client(
+                  'cost-optimization-hub',
+                  "us-east-1",  #can be only us-east-1
+                  aws_access_key_id=creds['AccessKeyId'],
+                  aws_secret_access_key=creds['SecretAccessKey'],
+                  aws_session_token=creds['SessionToken'],
+              )
+              s3_prefix = f'{PREFIX}/{PREFIX}-data/payer_id={payer_id}'
+              data_iterator = iterate_paginated_results(
+                  client=hub,
+                  function='list_recommendations',
+                  search='items',
+                  params=dict( #pylint: disable=R1735
+                      includeAllRecommendations=True,
+                  ),
+              )
+              if NEED_DETAILED:
+                  data_iterator = map(
+                      partial(get_detailed_recommendation, hub),
+                      data_iterator,
+                  )
+              count = store_to_s3(data_iterator, s3_prefix)
+
+              return f"Recorded {count}"
+
+      Handler: "index.lambda_handler"
+      MemorySize: 2688
+      Timeout: 600
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+          ROLENAME: !Ref ManagementRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+
+  CrawlerCostOptimizationHub:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+      Configuration: |
+        {
+          "Version": 1.0,
+          "CrawlerOutput": {
+            "Partitions": {
+              "AddOrUpdateBehavior": "InheritFromTable"
+            }
+          }
+        }
+  StepFunctionCostOptimizationHub:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "Payers" #TODO: use delegated account instead of management
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+  RefreshScheduleCostOptimizationHub:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} CostOptimizationHub module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt StepFunctionCostOptimizationHub.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  LambdaAnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
