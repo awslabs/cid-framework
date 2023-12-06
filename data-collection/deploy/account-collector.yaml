@@ -55,6 +55,14 @@ Resources:
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+        - PolicyName: "SSM"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ssm:GetParameter"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -73,10 +81,12 @@ Resources:
             import os
             import json
             import logging
+            from functools import partial
 
             import boto3
 
-            ROLE_NAME = os.environ['ROLENAME']
+            ROLE_NAME = os.environ['ROLE_NAME']
+            RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
 
             logger = logging.getLogger(__name__)
@@ -84,38 +94,62 @@ Resources:
 
             def lambda_handler(event, context): #pylint: disable=unused-argument
                 logger.info(f"Incoming event: {event}")
-                if "Type" not in event or event["Type"].upper() not in ('LINKED', 'PAYER'):
-                    raise Exception("Lambda event must have 'Type' parameter (LINKED|PAYER)") #pylint: disable=broad-exception-raised
-                accounts = list(iterate_accounts(account_type=event["Type"]))
+                functions = { # keep keys same as boto3 services
+                    'linked': iterate_linked_accounts,
+                    'payers': partial(iterate_admins_accounts, None),
+                    'organizations': partial(iterate_admins_accounts, 'organizations'),
+                    'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
+                    'backup': partial(iterate_admins_accounts, 'backup'),
+                }
+                account_type = event.get("Type", '').lower()
+                if account_type not in functions:
+                    raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
+                account_iterator = functions[account_type]
+                accounts = list(account_iterator())
                 if not accounts:
                     raise Exception('No accounts found. Check the log.') #pylint: disable=broad-exception-raised
-                return {
-                    'statusCode': 200,
-                    'accountList': accounts,
-                }
+                return {'statusCode': 200, 'accountList': accounts}
 
-            def iterate_accounts(account_type):
-                for payer_id in [r.strip() for r in MANAGEMENT_ACCOUNT_IDS.split(',')]:
-                    search_string = {
-                        'LINKED': "Accounts[Status='ACTIVE']",
-                        'PAYER': f"Accounts[Id='{payer_id}']",
-                    }.get(account_type.upper())
+            def get_all_payers():
+                for payer_id in MANAGEMENT_ACCOUNT_IDS.split(','):
+                    yield payer_id.strip()
+
+            def iterate_admins_accounts(service=None):
+                ssm = boto3.client('ssm')
+                for payer_id in get_all_payers():
+                    account_id = payer_id # default
+                    if service:
+                        ssm_key = f'/cid/{RESOURCE_PREFIX}config/delegated-admin/{service}/{payer_id}'
+                        try:
+                            account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
+                        except ssm.exceptions.ParameterNotFound:
+                            logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
+                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
+
+            def iterate_linked_accounts():
+                for org_account_data in iterate_admins_accounts('organizations'):
+                    org_account = json.loads(org_account_data['account'])
                     try:
-                        organizations = get_client_with_role(
-                            service="organizations",
-                            account_id=payer_id,
-                            region="us-east-1", #This MUST be us-east-1 regardless of lambda region
-                        )
-                        for account in organizations.get_paginator("list_accounts").paginate().search(search_string):
+                        organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
+                        for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
                             yield {
-                                "account" : json.dumps({
+                                "account": json.dumps({
                                     'account_id': account.get('Id'),
                                     'account_name': account.get('Name'),
-                                    'payer_id': payer_id,
+                                    'payer_id': org_account['payer_id'],
                                 })
                             }
                     except Exception as exc: #pylint: disable=broad-exception-caught
                         logger.error(f'{payer_id}: {exc}')
+
+            def dummy_iterate_linked_accounts():
+                # use this function if you have no access to payer or delegated admin at all
+                hardcoded_accounts = [
+                    {'account_id': '111222333444', 'account_name': 'replaceme', 'payer_id': '666777888999'},
+                    {'account_id': '555666777888', 'account_name': 'replaceme', 'payer_id': '666777888999'},
+                ]
+                for account_data in hardcoded_accounts:
+                    yield {"account": json.dumps(account_data)}
 
             def get_client_with_role(account_id, service, region):
                 credentials = boto3.client('sts').assume_role(
@@ -124,7 +158,7 @@ Resources:
                 )['Credentials']
                 return boto3.client(
                     service,
-                    region_name = region,
+                    region_name=region,
                     aws_access_key_id=credentials['AccessKeyId'],
                     aws_secret_access_key=credentials['SecretAccessKey'],
                     aws_session_token=credentials['SessionToken'],
@@ -136,8 +170,9 @@ Resources:
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          ROLENAME: !Ref ManagementRoleName
+          ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+          RESOURCE_PREFIX: !Ref ResourcePrefix
     Metadata:
       cfn_nag:
         rules_to_suppress:
