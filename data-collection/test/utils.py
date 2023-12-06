@@ -20,10 +20,12 @@ END = '\033[0m'
 BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
+PREFIX = "CID-DC-"
+BUCKET_PREFIX='cid-data-'
 
 def clean_bucket(s3, s3client, account_id, full=True):
     try:
-        bucket_name = f"costoptimizationdata{account_id}"
+        bucket_name = f"{BUCKET_PREFIX}{account_id}"
 
         if full:
             # Delete all
@@ -158,7 +160,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name='OptimizationDataReadPermissionsStack',
+        stack_name=f'{PREFIX}OptimizationDataReadPermissionsStack',
         file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
@@ -167,28 +169,29 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'AllowModuleReadInMgmt',           'ParameterValue': "yes"},
             {'ParameterKey': 'OrganizationalUnitIds',           'ParameterValue': org_unit_id},
-            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeOrgDataModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
-        ]
+            {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
+       ]
     )
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name='OptimizationDataCollectionStack',
+        stack_name=f'{PREFIX}OptimizationDataCollectionStack',
         file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
             {'ParameterKey': 'RegionsInScope',                  'ParameterValue': "us-east-1,eu-west-1"},
-            {'ParameterKey': 'DestinationBucket',               'ParameterValue': "costoptimizationdata"},
+            {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
@@ -199,17 +202,19 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                      'ParameterValue': "CID-DC-"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
         ]
     )
 
     logger.info('Waiting for stacks')
     watch_stacks(cloudformation, [
-        "OptimizationDataReadPermissionsStack",
-        "OptimizationDataCollectionStack",
+        f'{PREFIX}OptimizationDataReadPermissionsStack',
+        f'{PREFIX}OptimizationDataCollectionStack',
     ])
 
 
@@ -310,29 +315,33 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
 def trigger_update(account_id):
     region = boto3.session.Session().region_name
     state_machine_arns = [
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-budgets-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-ecs-chargeback-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-OpensearchDomains-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-ElasticacheClusters-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-RdsDbInstances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-EBS-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-AMI-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-Snapshot-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-Ec2Instances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-inventory-VpcInstances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-rds-usage-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-transit-gateway-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-trusted-advisor-StateMachine',
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-cost-anomaly-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-cost-explorer-rightsizing-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-organizations-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-compute-optimizer-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-pricing-AmazonRDS-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-pricing-AmazonEC2-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-pricing-AmazonElastiCache-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-pricing-AmazonES-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-pricing-AWSComputeSavingsPlan-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:CID-DC-pricing-RegionNames-StateMachine",
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}budgets-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}ecs-chargeback-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-OpensearchDomains-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-ElasticacheClusters-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-EBS-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-AMI-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Snapshot-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Ec2Instances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-VpcInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}rds-usage-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-anomaly-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-explorer-rightsizing-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}organizations-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}compute-optimizer-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonRDS-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonEC2-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonElastiCache-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonES-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSComputeSavingsPlan-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionNames-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-CopyJobs-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-optimization-hub-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []
@@ -351,8 +360,8 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
         logger.warning(f'Exception: {exc}')
 
     for stack_name in [
-        'OptimizationDataReadPermissionsStack',
-        'OptimizationDataCollectionStack',
+        f'{PREFIX}OptimizationDataReadPermissionsStack',
+        f'{PREFIX}OptimizationDataCollectionStack',
         ]:
         try:
             cloudformation.delete_stack(StackName=stack_name)
@@ -361,8 +370,8 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
             logger.error(f'{stack_name} {exc}')
 
     watch_stacks(cloudformation, [
-        'OptimizationDataReadPermissionsStack',
-        'OptimizationDataCollectionStack',
+        f'{PREFIX}OptimizationDataReadPermissionsStack',
+        f'{PREFIX}OptimizationDataCollectionStack',
     ])
     try:
         logger.info('Deleting all athena tables in optimization_data')
