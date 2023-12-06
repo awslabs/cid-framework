@@ -114,7 +114,7 @@ Resources:
           ROLE_NAME = os.environ['ROLENAME']
           COSTONLY = os.environ.get('COSTONLY', 'no').lower() == 'yes'
           TMP_FILE = "/tmp/data.json"
-          REGIONS = [r.strip() for r in os.environ.get("REGIONS", "us-east-1").split(',') if r]
+          REGIONS = ["us-east-1"]
 
           #config to avoid ThrottlingException
           config = Config(
