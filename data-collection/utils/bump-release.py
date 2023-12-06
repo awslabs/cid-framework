@@ -26,7 +26,7 @@ elif bump=='minor':
 else:
 	raise NotImplementedError('only patch and minor are implemented')
 
-print(repo.git.execute(f"git checkout -b 'release/{new_ver}'".split()))
+print(repo.git.execute(f"git checkout -b release/{new_ver}".split()))
 
 
 tx = open('data-collection/utils/_version.py').read()
