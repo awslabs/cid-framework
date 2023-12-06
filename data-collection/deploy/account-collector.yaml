@@ -18,7 +18,7 @@ Outputs:
     Description: Lambda function ARN
     Value: !GetAtt LambdaFunction.Arn
     Export:
-      Name: AccountCollectorLambdaARN
+      Name: !Sub ${ResourcePrefix}AccountCollectorLambdaARN
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role

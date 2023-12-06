@@ -21,11 +21,12 @@ Metadata:
           - IncludeCostAnomalyModule
           - IncludeECSChargebackModule
           - IncludeInventoryCollectorModule
-          - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeBackupModule
+          - IncludeCostOptimizationHubModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -51,8 +52,6 @@ Metadata:
         default: "Include ECS Chargeback Data Collection Module"
       IncludeInventoryCollectorModule:
         default: "Include Inventory Collector Module"
-      IncludeOrgDataModule:
-        default: "Include AWS Organization Data Collection Module"
       IncludeRDSUtilizationModule:
         default: "Include RDS Utilization Data Collection Module"
       IncludeRightsizingModule:
@@ -61,6 +60,10 @@ Metadata:
         default: "Include AWS Trusted Advisor Data Collection Module"
       IncludeTransitGatewayModule:
         default: "Include AWS TransitGateway Collection Module"
+      IncludeBackupModule:
+        default: "Include AWS Backup Collection Module"
+      IncludeCostOptimizationHubModule:
+        default: "Include Cost Optimization Hub Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -121,12 +124,6 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeOrgDataModule:
-    Type: String
-    Description: Collects AWS Organizations data such as account Id, account name, organization parent and specified tags
-    AllowedValues:
-      - "yes"
-      - "no"
   IncludeRDSUtilizationModule:
     Type: String
     Description: Collects RDS CloudWatch metrics from your accounts
@@ -151,6 +148,18 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeBackupModule:
+    Type: String
+    Description: Collects AES Backup events from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeCostOptimizationHubModule:
+    Type: String
+    Description: Collects CostOptimizationHub Recommendations from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -164,16 +173,11 @@ Resources:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
         ResourcePrefix: !Ref ResourcePrefix
-        IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
-        IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
-        IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
-        IncludeOrgDataModule: !Ref IncludeOrgDataModule
-        IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
-        IncludeTAModule: !Ref IncludeTAModule
-        IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeBackupModule: !Ref IncludeBackupModule
+        IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -192,7 +196,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organisation accounts"
+      Description: "StackSet in charge of deploying read roles across organization accounts"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
