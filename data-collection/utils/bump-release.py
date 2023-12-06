@@ -43,7 +43,7 @@ filenames = [
 for filename in filenames:
 	tx = open(filename).read()
 	with open(filename, "w") as f:
-		f.write(tx.replace(f"{old_ver}", f"{new_ver}"))
+		f.write(tx.replace(f"v{old_ver}", f"v{new_ver}"))
 
 
 print(repo.git.execute('git diff HEAD --unified=0'.split()))
