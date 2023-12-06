@@ -117,6 +117,7 @@ Resources:
           ROLE_NAME = os.environ['ROLENAME']
           MODULE_NAME = os.environ['PREFIX']
           TMP_FILE = '/tmp/tmp.json'
+          REGIONS = [r.strip() for r in os.environ.get("REGIONS", "us-east-1").split(',') if r]
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -185,7 +186,7 @@ Resources:
 
           def get_api_data(role_name, account_id, start_date, end_date):
               results = []
-              client = get_client_with_role(role_name, account_id, region="us-east-1", service="ce")
+              client = get_client_with_role(role_name, account_id, region=REGIONS[0], service="ce")
               next_token = None
               while True:
                   params = dict(

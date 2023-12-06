@@ -80,8 +80,9 @@ Resources:
             ROLE_NAME = os.environ['ROLENAME']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
             MODULE_NAME = "account-collector"
+            REGIONS = ["us-east-1"]
 
-            logger = logging.getLogger(__name__)
+            logger = logging.getLogger(__name__)acc
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
             # Helper Exception classes
@@ -140,7 +141,7 @@ Resources:
                         except CidNonCriticalError as exc:
                             pass #Not necessarily fatal
                     else:
-                        client = get_client_with_role(role_name, payer_id, region="us-east-1", service="organizations")
+                        client = get_client_with_role(role_name, payer_id, region=REGIONS[0], service="organizations")
                         account = client.describe_account(AccountId=payer_id)['Account']
                         account_data = populate_account(payer_id, account['Name'], payer_id)
                         account_list.append({"account" : json.dumps(account_data)})
@@ -155,7 +156,7 @@ Resources:
             def iterate_accounts(role_name, payer_id):
                 logger.info(f"Iterating accounts for payer '{payer_id}'")
                 try:
-                    client = get_client_with_role(role_name, payer_id, region="us-east-1", service="organizations") #This MUST be us-east-1 regardless of lambda region
+                    client = get_client_with_role(role_name, payer_id, region=REGIONS[0], service="organizations") #This MUST be us-east-1 regardless of lambda region
                     for page in client.get_paginator("list_accounts").paginate():
                         for account in page['Accounts']:
                             yield account
@@ -170,7 +171,7 @@ Resources:
             def get_client_with_role(role_name, account_id, service, region):
                 logger.debug(f"Getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
                 try:
-                    credentials = boto3.client('sts').assume_role(
+                    credentials = boto3.client('sts', region_name=region).assume_role(
                         RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
                         RoleSessionName="data_collection"
                     )['Credentials']
