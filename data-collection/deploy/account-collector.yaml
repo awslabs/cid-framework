@@ -55,6 +55,14 @@ Resources:
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
                 Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+        - PolicyName: "SSM"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ssm:GetParameter"
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -73,129 +81,98 @@ Resources:
             import os
             import json
             import logging
-            import boto3
-            from botocore.exceptions import BotoCoreError
-            from botocore.exceptions import ClientError
+            from functools import partial
 
-            ROLE_NAME = os.environ['ROLENAME']
+            import boto3
+
+            ROLE_NAME = os.environ['ROLE_NAME']
+            RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-            MODULE_NAME = "account-collector"
-            REGIONS = ["us-east-1"]
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-            # Helper Exception classes
-            class CidError(Exception):
-                def __init__(self, message="", exc=None):
-                    message = f"({type(exc).__name__}) exception. {message}" if exc else message
-                    if type(self) == CidNonCriticalError.__class__:
-                        logger.warning(message)
-                    else:
-                        logger.error(message)
-                    super().__init__(message)
-            class CidNonCriticalError(CidError):
-                def __init__(self, message="", exc=None):
-                    super().__init__(message, exc)
-            class CidCriticalError(CidError):
-                def __init__(self, message="", exc=None):
-                    super().__init__(message, exc)
-            class ClientAccessError(Exception):
-                def __init__(self, exc, role_name, account_id, service, region):
-                    message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
-                    logger.warning(message)
-                    super().__init__(message)
-
-            def lambda_handler(event, context):
+            def lambda_handler(event, context): #pylint: disable=unused-argument
                 logger.info(f"Incoming event: {event}")
-                key = "Type"
-                try:
-                    accounts = main(event[key], MANAGEMENT_ACCOUNT_IDS, ROLE_NAME)
-
-                except KeyError as exc:
-                    raise CidCriticalError(f"(MissingParameterError) Lambda event missing '{key}' parameter in {MODULE_NAME} module", exc)
-                except CidNonCriticalError as exc:
-                    pass
-                except CidCriticalError as exc:
-                    raise exc
-                except Exception as exc:
-                    raise CidCriticalError(f"(UnhandledExceptionError) in {MODULE_NAME} module", exc)
-
-                return {
-                    'statusCode': 200,
-                    'accountList': accounts
+                functions = { # keep keys same as boto3 services
+                    'linked': iterate_linked_accounts,
+                    'payers': partial(iterate_admins_accounts, None),
+                    'organizations': partial(iterate_admins_accounts, 'organizations'),
+                    'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
+                    'backup': partial(iterate_admins_accounts, 'backup'),
                 }
+                account_type = event.get("Type", '').lower()
+                if account_type not in functions:
+                    raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
+                account_iterator = functions[account_type]
+                accounts = list(account_iterator())
+                if not accounts:
+                    raise Exception('No accounts found. Check the log.') #pylint: disable=broad-exception-raised
+                return {'statusCode': 200, 'accountList': accounts}
 
-            def main(module_type, management_accounts, role_name):
-                logger.info(f"Processing for type '{module_type}' and using role '{role_name}'")
-                account_list = []
-                for payer_id in [r.strip() for r in management_accounts.split(',')]:
-                    if (module_type.upper()) == 'LINKED':
+            def get_all_payers():
+                for payer_id in MANAGEMENT_ACCOUNT_IDS.split(','):
+                    yield payer_id.strip()
+
+            def iterate_admins_accounts(service=None):
+                ssm = boto3.client('ssm')
+                for payer_id in get_all_payers():
+                    account_id = payer_id # default
+                    if service:
+                        ssm_key = f'/cid/{RESOURCE_PREFIX}config/delegated-admin/{service}/{payer_id}'
                         try:
-                            for account in iterate_accounts(role_name, payer_id):
-                                if account['Status'] != 'ACTIVE':
-                                    logger.info(f"Account {account['Id']} is not active")
-                                    continue
-                                account_data = {'account_id': account.get('Id'), 'account_name': account.get('Name'), 'payer_id': payer_id, }
-                                account_list.append({"account" : json.dumps(account_data)})
-                        except CidNonCriticalError as exc:
-                            pass #Not necessarily fatal
-                    else:
-                        client = get_client_with_role(role_name, payer_id, region=REGIONS[0], service="organizations")
-                        account = client.describe_account(AccountId=payer_id)['Account']
-                        account_data = populate_account(payer_id, account['Name'], payer_id)
-                        account_list.append({"account" : json.dumps(account_data)})
+                            account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
+                        except ssm.exceptions.ParameterNotFound:
+                            logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
+                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
 
-                if len(account_list) == 0:
-                    raise CidCriticalError("No accounts were collected")
+            def iterate_linked_accounts():
+                for org_account_data in iterate_admins_accounts('organizations'):
+                    org_account = json.loads(org_account_data['account'])
+                    try:
+                        organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
+                        for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
+                            yield {
+                                "account": json.dumps({
+                                    'account_id': account.get('Id'),
+                                    'account_name': account.get('Name'),
+                                    'payer_id': org_account['payer_id'],
+                                })
+                            }
+                    except Exception as exc: #pylint: disable=broad-exception-caught
+                        logger.error(f'{payer_id}: {exc}')
 
-                logger.info(f"Successfully found {len(account_list)} accounts")
-                logger.debug(f"Successfully found accounts: {json.dumps(account_list)}")
-                return account_list
+            def dummy_iterate_linked_accounts():
+                # use this function if you have no access to payer or delegated admin at all
+                hardcoded_accounts = [
+                    {'account_id': '111222333444', 'account_name': 'replaceme', 'payer_id': '666777888999'},
+                    {'account_id': '555666777888', 'account_name': 'replaceme', 'payer_id': '666777888999'},
+                ]
+                for account_data in hardcoded_accounts:
+                    yield {"account": json.dumps(account_data)}
 
-            def iterate_accounts(role_name, payer_id):
-                logger.info(f"Iterating accounts for payer '{payer_id}'")
-                try:
-                    client = get_client_with_role(role_name, payer_id, region=REGIONS[0], service="organizations") #This MUST be us-east-1 regardless of lambda region
-                    for page in client.get_paginator("list_accounts").paginate():
-                        for account in page['Accounts']:
-                            yield account
+            def get_client_with_role(account_id, service, region):
+                credentials = boto3.client('sts').assume_role(
+                    RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
+                    RoleSessionName="data_collection"
+                )['Credentials']
+                return boto3.client(
+                    service,
+                    region_name=region,
+                    aws_access_key_id=credentials['AccessKeyId'],
+                    aws_secret_access_key=credentials['SecretAccessKey'],
+                    aws_session_token=credentials['SessionToken'],
+                )
 
-                except ClientAccessError as exc:
-                    raise CidNonCriticalError(f"Payer account '{payer_id}' encountered access issues when iterating accounts", exc)
-
-
-            def populate_account(account_id, account_name, payer_id):
-                return { 'account_id': account_id, 'account_name': account_name, 'payer_id': payer_id, }
-
-            def get_client_with_role(role_name, account_id, service, region):
-                logger.debug(f"Getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-                try:
-                    credentials = boto3.client('sts', region_name=region).assume_role(
-                        RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
-                        RoleSessionName="data_collection"
-                    )['Credentials']
-                    logger.debug("Successfully assumed role, now getting client")
-                    client = boto3.client(
-                        service,
-                        region_name = region,
-                        aws_access_key_id=credentials['AccessKeyId'],
-                        aws_secret_access_key=credentials['SecretAccessKey'],
-                        aws_session_token=credentials['SessionToken'],
-                    )
-                    logger.debug("Successfully got client with assumed role")
-                    return client
-
-                except Exception as exc:
-                    raise ClientAccessError(exc, role_name, account_id, service, region)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
-          ROLENAME: !Ref ManagementRoleName
+          ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
+          RESOURCE_PREFIX: !Ref ResourcePrefix
     Metadata:
       cfn_nag:
         rules_to_suppress:
