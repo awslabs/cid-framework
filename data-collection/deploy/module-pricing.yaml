@@ -235,15 +235,16 @@ Mappings:
           - { Type: string, Name: current generation }
           - { Type: string, Name: instance family }
           - { Type: string, Name: vcpu }
-          - { Type: string, Name: storage }
+          - { Type: string, Name: memory }
+          - { Type: string, Name: network performance }
+          - { Type: string, Name: cache engine }
           - { Type: string, Name: storage media }
+          - { Type: string, Name: transfer type }
           - { Type: string, Name: usagetype }
           - { Type: string, Name: operation }
-          - { Type: string, Name: ecu }
-          - { Type: string, Name: memory (gib) }
           - { Type: string, Name: region code }
           - { Type: string, Name: servicename }
-          - { Type: string, Name: compute type }
+          - { Type: string, Name: ssd }
     AmazonES:
       path: opensearch
       partition:

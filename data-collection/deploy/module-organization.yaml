@@ -118,6 +118,7 @@ Resources:
           BUCKET = os.environ['BUCKET_NAME']
           ROLE = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
+          REGIONS = ["us-east-1"] #This MUST be us-east-1 regardless of region of Lambda
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -138,13 +139,13 @@ Resources:
           def process_management_acc(management_account_id):
               """Get info from management account and write to s3"""
               logger.info(f'Assuming role {ROLE} in {management_account_id}')
-              cred = boto3.client('sts').assume_role(
+              cred = boto3.client('sts', region_name=REGIONS[0]).assume_role(
                   RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
                   RoleSessionName="data_collection"
               )['Credentials']
               client = boto3.client(
                   "organizations",
-                  region_name="us-east-1", #This MUST be us-east-1 regardless of region of Lambda
+                  region_name=REGIONS[0],
                   aws_access_key_id=cred['AccessKeyId'],
                   aws_secret_access_key=cred['SecretAccessKey'],
                   aws_session_token=cred['SessionToken'],
