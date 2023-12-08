@@ -381,13 +381,13 @@ Resources:
                 aws:SecureTransport: "false"
             Principal: "*"
 
-  GlueDatabase:
-    Type: "AWS::Glue::Database"
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseInput:
-        Description: "CID Data Collection"
-        Name: !Ref DatabaseName
+  # GlueDatabase:
+  #   Type: "AWS::Glue::Database"
+  #   Properties:
+  #     CatalogId: !Ref AWS::AccountId
+  #     DatabaseInput:
+  #       Description: "CID Data Collection"
+  #       Name: !Ref DatabaseName
 
   GlueRole:
     Type: AWS::IAM::Role

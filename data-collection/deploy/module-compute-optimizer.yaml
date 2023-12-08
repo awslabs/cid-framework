@@ -108,7 +108,7 @@ Resources:
                   - cloudformation:DescribeStacks
                   - cloudformation:DeleteStack
                   - cloudformation:UpdateStack
-                Resource: !Sub 'arn:aws:cloudformation:*:${AWS::AccountId}:stack/StackSet-${BucketPrefix}${AWS::AccountId}-comp-optim-buckets*'
+                Resource: !Sub 'arn:aws:cloudformation:*:${AWS::AccountId}:stack/StackSet-${ResourcePrefix}ComputeOptimizerBuckets*'
         - PolicyName: ResourcesPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -123,7 +123,7 @@ Resources:
                   - s3:Get*
                   - s3:Replicate*
                 Resource:
-                  - !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}-*'
+                  - !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}.*'
               - Effect: Allow
                 Action:
                   - iam:GetRole
@@ -134,14 +134,14 @@ Resources:
                   - iam:GetRolePolicy
                   - iam:PutRolePolicy
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/StackSet-${BucketPrefix}*' # Shorter version of StackSetName
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/StackSet-${ResourcePrefix}ComputeOptimizer*' # Shorter version of StackSetName
     Metadata:
       cfn_nag:
         rules_to_suppress:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  ReplicationBucketsStackSet:
+  RegionalBucketsStackSet:
     Type: AWS::CloudFormation::StackSet
     # DependsOn: # managed via tags. DependsOn does not work in this case and Role can be deleted before StackSet
     #  - StackSetExecutionRole
@@ -165,7 +165,7 @@ Resources:
       Capabilities:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
-      StackSetName: !Sub "${BucketPrefix}${AWS::AccountId}-comp-optim-buckets"
+      StackSetName: !Sub "${ResourcePrefix}ComputeOptimizerBuckets"
       AdministrationRoleARN: !GetAtt StackSetAdminRole.Arn
       ExecutionRoleName: !Sub "${ResourcePrefix}ComputeOptimizer-StackSetExecutionRole"
       TemplateBody: |
@@ -195,7 +195,7 @@ Resources:
                   Action:
                   - s3:GetBucketAcl
                   - s3:GetBucketPolicyStatus
-                  Resource: !Sub "arn:aws:s3:::${Name}-${AWS::Region}"
+                  Resource: !Sub "arn:aws:s3:::${Name}.${AWS::Region}"
                 - Effect: Allow
                   Principal:
                     Service: compute-optimizer.amazonaws.com
@@ -204,7 +204,7 @@ Resources:
                     StringEquals:
                           s3:x-amz-acl:  bucket-owner-full-control
                           aws:SourceAccount: !Split [',', !Ref ManagementAccountID]
-                  Resource: !Sub "arn:aws:s3:::${Name}-${AWS::Region}/*"
+                  Resource: !Sub "arn:aws:s3:::${Name}.${AWS::Region}/*"
                 - Effect: Deny
                   Principal: "*"
                   Action: s3:*
@@ -212,9 +212,9 @@ Resources:
                     Bool:
                       aws:SecureTransport: 'false'
                   Resource:
-                    - !Sub "arn:aws:s3:::${Name}-${AWS::Region}"
-                    - !Sub "arn:aws:s3:::${Name}-${AWS::Region}/*"
-          ReplicaRole:
+                    - !Sub "arn:aws:s3:::${Name}.${AWS::Region}"
+                    - !Sub "arn:aws:s3:::${Name}.${AWS::Region}/*"
+          BucketReplicaRole:
             Type: AWS::IAM::Role
             Properties:
               AssumeRolePolicyDocument:
@@ -223,20 +223,21 @@ Resources:
                   Effect: Allow
                   Principal:
                     Service: [s3.amazonaws.com]
-          ReplicaPolicy:
+          BucketReplicaRolePolicy:
             Type: AWS::IAM::Policy
             Properties:
+              PolicyName: Replication
               PolicyDocument:
                 Statement:
                 - Action:
                   - s3:GetReplicationConfiguration
                   - s3:ListBucket
-                  Resource: !Sub arn:aws:s3:::${Name}-${AWS::Region}
+                  Resource: !Sub arn:aws:s3:::${Name}.${AWS::Region}
                   Effect: 'Allow'
                 - Action:
                   - s3:GetObjectVersionForReplication
                   - s3:GetObjectVersionAcl
-                  Resource: !Sub arn:aws:s3:::${Name}-${AWS::Region}/*
+                  Resource: !Sub arn:aws:s3:::${Name}.${AWS::Region}/*
                   Effect: 'Allow'
                 - Action:
                   - s3:ReplicateObject
@@ -244,19 +245,18 @@ Resources:
                   - s3:GetObjectVersionTagging
                   Effect: 'Allow'
                   Resource: !Sub arn:aws:s3:::${DestinationBucket}/*
-              PolicyName: ReplicaPolicy
-              Roles: [!Ref 'ReplicaRole']
+              Roles: [!Ref 'BucketReplicaRole']
           S3Bucket:
             Type: AWS::S3::Bucket
             DeletionPolicy: Delete
             Properties:
-              BucketName: !Sub ${Name}-${AWS::Region}
+              BucketName: !Sub ${Name}.${AWS::Region}
               BucketEncryption:
                 ServerSideEncryptionConfiguration:
                   - ServerSideEncryptionByDefault:
                       SSEAlgorithm: AES256
               ReplicationConfiguration:
-                Role: !GetAtt [ReplicaRole, Arn]
+                Role: !GetAtt [BucketReplicaRole, Arn]
                 Rules:
                   - Id: Replication to the main bucket
                     Priority: 2
@@ -505,19 +505,14 @@ Resources:
                   logger.info("send(..) failed executing requests.put(..): " + str(exc))
 
           def on_create():
-              try:
-                  name = LAMBDA_ARN.split(':')[-1]
-                  boto3.client('lambda').invoke(FunctionName=name, InvocationType="RequestResponse", Payload='{}')
-                  return (True, f'INFO: Invoked {name}')
-              except Exception as exc:
-                  return (True, f'ERROR: error invoking lambda {exc}')
+              return (True, f'nothing to do')
 
           def on_delete():
               # Delete all buckets (CF cannot delete if they are non-empty)
               s3 = boto3.resource('s3')
               log = []
               for region in REGIONS:
-                  name = BUCKET_PREFIX + "-" + region
+                  name = BUCKET_PREFIX + "." + region
                   try:
                       bucket = s3.Bucket(name)
                       bucket.object_versions.delete()
@@ -587,16 +582,16 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
-  FinalizeSetup:
+  FinalizeBucketsSetup:
     DependsOn:
       - LambdaTriggerExport
-      - ReplicationBucketsStackSet
+      - RegionalBucketsStackSet
       - FinalizeLambdaExecutionRole
     Type: Custom::CustomResource
     Properties:
       ServiceToken: !GetAtt CustomResourceFunctionFinalize.Arn
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN

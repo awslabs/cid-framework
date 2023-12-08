@@ -140,7 +140,7 @@ Resources:
                                 })
                             }
                     except Exception as exc: #pylint: disable=broad-exception-caught
-                        logger.error(f'{payer_id}: {exc}')
+                        logger.error(f'{org_account}: {exc}')
 
             def dummy_iterate_linked_accounts():
                 # use this function if you have no access to payer or delegated admin at all

@@ -382,7 +382,7 @@ Resources:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
