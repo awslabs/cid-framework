@@ -31,7 +31,7 @@ Metadata:
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
-        default: "Cost Account Id"
+        default: "Data Collection Account Id"
       MultiAccountRoleName:
         default: "Multi Account Role Name"
       OrganizationalUnitIds:

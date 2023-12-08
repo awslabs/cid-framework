@@ -20,7 +20,7 @@ Metadata:
         - IncludeTransitGatewayModule
     ParameterLabels:
       DataCollectionAccountID:
-        default: 'Cost Account Id'
+        default: 'Data Collection Account ID'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       ResourcePrefix:
