@@ -381,7 +381,7 @@ Resources:
                 aws:SecureTransport: "false"
             Principal: "*"
 
-  # GlueDatabase:
+  # GlueDatabase: # GlueDatabase can be already created by crawler in previous versions. So we cannot create it here. See Init CustomResource
   #   Type: "AWS::Glue::Database"
   #   Properties:
   #     CatalogId: !Ref AWS::AccountId
@@ -448,8 +448,8 @@ Resources:
                   - glue:DeletePartition
                 Resource:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/optimization_data" # FIXME: database name must be parameter
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/optimization_data/*" # FIXME: database name must be parameter
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
         - PolicyName: "CloudWatch"
           PolicyDocument:
             Version: "2012-10-17"
@@ -467,7 +467,7 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  LambdaAnalyticsRole: #Execution role for the custom resource
+  LambdaAnalyticsRole: #Execution role for the custom resource for Analytics Lambda
     Type: AWS::IAM::Role
     Properties:
       Path:
@@ -507,11 +507,11 @@ Resources:
           endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
           account_id = boto3.client("sts").get_caller_identity()["Account"]
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context):  #pylint: disable=unused-argument
               print(json.dumps(event))
               try:
-                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'UPDATE']:
-                      raise Exception(f"Unknown RequestType {event['RequestType']}")
+                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'DELETE']:
+                      raise Exception(f"Unknown RequestType {event['RequestType']}") #pylint: disable=broad-exception-raised
                   action = event['RequestType'].upper()
                   name = event['ResourceProperties']['Name']
                   method = {'CREATE':'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(action)
@@ -519,9 +519,9 @@ Resources:
                   payload = {'id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
                   r =  urllib3.PoolManager().request(method, endpoint, body=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
                   if r.status != 200:
-                      raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored")
+                      raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored") #pylint: disable=broad-exception-raised
                   res, reason = 'SUCCESS', 'success'
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=broad-exception-caught
                   res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
               body = {
                   'Status': res,
@@ -536,12 +536,143 @@ Resources:
               json_body=json.dumps(body)
               print(json_body)
               url = event.get('ResponseURL')
-              if not url: return
+              if not url:
+                  return
               try:
                   response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
                   print(f"Status code: {response}")
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=broad-exception-caught
                   print("Failed sending PUT to CFN: " + str(exc))
+
+  LambdaInitRole: #Execution role for the custom resource for Init Lambda
+    Type: AWS::IAM::Role
+    Properties:
+      Path:
+        Fn::Sub: /${ResourcePrefix}/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "GlueDatabase"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:CreateDatabase
+                  - glue:DeleteDatabase
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
+        - PolicyName: "GlueTable"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:CreateTable
+                  - glue:DeleteTable
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+  LambdaInit:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.10
+      FunctionName: !Sub ${ResourcePrefix}init-Lambda
+      Description: "Lambda function to initialize the stack"
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaInitRole.Arn
+      Timeout: 15
+      Environment:
+        Variables:
+          DATABASE_NAME: !Ref DatabaseName
+          RESOURCE_PREFIX: !Ref ResourcePrefix
+          BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import uuid
+          import urllib3
+          import boto3
+
+          database_name = os.environ['DATABASE_NAME']
+          resource_prefix = os.environ['RESOURCE_PREFIX']
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              print(json.dumps(event))
+              try:
+                  action = event.get('RequestType').upper()
+                  if action not in ['CREATE', 'UPDATE', 'DELETE']:
+                      raise Exception(f"Unknown RequestType {action}") #pylint: disable=broad-exception-raised
+                  func = {'CREATE': create, 'DELETE': delete, 'UPDATE': update}.get(action)
+                  res, reason = func()
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
+              body = {
+                  'Status': res,
+                  'Reason': reason,
+                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
+                  'StackId': event.get('StackId'),
+                  'RequestId': event.get('RequestId'),
+                  'LogicalResourceId': event.get('LogicalResourceId'),
+                  'NoEcho': False,
+                  'Data':  {'Reason': reason},
+              }
+              json_body=json.dumps(body)
+              print(json_body)
+              url = event.get('ResponseURL')
+              if not url:
+                  return
+              try:
+                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
+                  print(f"Status code: {response}")
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  print("Failed sending PUT to CFN: " + str(exc))
+
+          def create():
+              create_glue_table()
+              return  'SUCCESS', 'success'
+
+          def update():
+              return  'SUCCESS', 'nothing to do'
+
+          def delete():
+              return  'SUCCESS', 'nothing to do'
+
+          def create_glue_table():
+              glue_client = boto3.client('glue')
+              try:
+                  glue_client.get_database(Name=database_name)
+              except glue_client.exceptions.EntityNotFoundException:
+                  glue_client.create_database(DatabaseInput={'Name': database_name})
+                  print(f"Created database '{database_name}'")
+              else:
+                  # Delete all tables updated by previous versions of crawlers.
+                  # If not crawler will not be able to update the table and will create a new one with a random name.
+                  for table in glue_client.get_paginator('get_tables').paginate(DatabaseName=database_name).search('TableList'):
+                      table_name = table.get('Name')
+                      updated_by = table.get('Parameters', {}).get('UPDATED_BY_CRAWLER', '')
+                      if not updated_by.startswith(resource_prefix):
+                          glue_client.delete_table(DatabaseName=database_name, Name=table_name)
+                          print('table {table_name} was deleted to avoid crawler confusion')
+              return 'SUCCESS', 'success'
+
+  InitExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !GetAtt LambdaInit.Arn
 
   CrawlerExecutionStepFunction:
     Type: AWS::StepFunctions::StateMachine
