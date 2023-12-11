@@ -593,7 +593,7 @@ Resources:
   FinalizeBucketsSetup:
     DependsOn:
       - LambdaFunction
-      - ReplicationBucketsStackSet
+      - RegionalBucketsStackSet
       - FinalizeLambdaExecutionRole
     Type: Custom::CustomResource
     Properties:
