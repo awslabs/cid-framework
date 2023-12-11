@@ -27,6 +27,7 @@ jobs:
       - name: Install cfn-lint
         run: |
           pip install cfn-lint checkov
+          pip install --no-cache-dir packaging cyclonedx-python-lib=='5.2.0' #https://github.com/bridgecrewio/checkov/issues/5841
       - name: Scan all templates
         run: |
           data-collection/utils/lint.sh
