@@ -4,7 +4,7 @@ import logging
 
 import boto3
 
-from utils import cleanup_stacks
+from utils import cleanup_stacks, PREFIX
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
@@ -36,3 +36,9 @@ if __name__ == '__main__':
 
     cloudformation.delete_stack(StackName='TempDebugCIDStackSets')
     logging.info('Cleanup Done')
+
+    # delete all log groups
+    logs = boto3.client('logs')
+    for log_group in logs.get_paginator('describe_log_groups').paginate(logGroupNamePrefix=f'/aws/lambda/{PREFIX}').search('logGroups'):
+        logs.delete_log_group(logGroupName=log_group['logGroupName'])
+        print(f"deleted {log_group['logGroupName']}")
