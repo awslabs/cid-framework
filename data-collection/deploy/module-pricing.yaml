@@ -547,7 +547,6 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
-      LogGroupClass: INFREQUENT_ACCESS
 
   'Fn::ForEach::Service':
     - AwsService
@@ -638,7 +637,7 @@ Resources:
             S3Targets:
               - Path:
                   Fn::Sub:
-                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-pricing/"
+                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
                     - path: !FindInMap [ServicesMap, !Ref AwsService, path]
           Configuration: |
             {
@@ -660,7 +659,7 @@ Resources:
           TableInput:
             Name:
               Fn::Sub:
-                - 'pricing_${path}_pricing' # note '_' not '-'
+                - 'pricing_${path}_data' # note '_' not '-'
                 - path: !FindInMap [ServicesMap, !Ref AwsService, path]
             Owner: owner
             Retention: 0
@@ -677,7 +676,7 @@ Resources:
               InputFormat: org.apache.hadoop.mapred.TextInputFormat
               Location:
                 Fn::Sub:
-                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-pricing/"
+                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
                   - path: !FindInMap [ServicesMap, !Ref AwsService, path]
               OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
               SerdeInfo:
