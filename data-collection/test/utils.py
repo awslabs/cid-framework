@@ -34,7 +34,7 @@ def clean_bucket(s3, s3client, account_id, full=True):
         else:
             # Delete all objects older than 5 mins
             now = datetime.utcnow().replace(tzinfo=timezone(timedelta()))
-            objects = s3client.list_objects_v2(Bucket=bucket_name)['Contents']
+            objects = s3client.list_objects_v2(Bucket=bucket_name).get('Contents', [])
             if objects:
                 logger.info(f'Removing old objects the bucket {CYAN}{bucket_name}{END}')
             for obj in objects:
@@ -136,12 +136,13 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
     )
 
     try:
-        cloudformation.create_stack(
+        res = cloudformation.create_stack(
             EnableTerminationProtection=False,
             OnFailure='DELETE',
             TimeoutInMinutes=60,
             **options,
         )
+        logger.info(f'{stack_name} started creation strarted {res}')
     except cloudformation.exceptions.AlreadyExistsException:
         try:
             logger.info(f'{stack_name} exists')
@@ -153,7 +154,9 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
                 logger.info(f'No updates are to be performed for {stack_name}')
             else:
                 logger.error(exc)
-
+    except Exception as exc:
+        logger.error(exc)
+        raise
 
 def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
@@ -186,7 +189,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name=f'OptimizationDataCollectionStack',
+        stack_name=f'{PREFIX}OptimizationDataCollectionStack',
         file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},

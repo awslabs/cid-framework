@@ -343,7 +343,6 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
-      LogGroupClass: INFREQUENT_ACCESS
 
   'Fn::ForEach::Object':
     - AwsObject
@@ -457,7 +456,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's with CUR data
       Name: inventory_snapshot_connected_to_ami_with_CUR
-      QueryString: !Sub |
+      QueryString: |
           SELECT DISTINCT
             snapshotid
           , volume
