@@ -50,7 +50,7 @@ Parameters:
     Description: Common role for module Scheduler execution
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots
     Description: Services for pulling price data
 
 Mappings:
@@ -61,6 +61,8 @@ Mappings:
       path: elasticache-clusters
     RdsDbInstances:
       path: rds-db-instances
+    RdsDbSnapshots:
+      path: rds-db-snapshots
     EBS:
       path: ebs
     AMI:
@@ -154,9 +156,9 @@ Resources:
               )
 
           @lru_cache(maxsize=10000)
-          def assume_session(account_id):
+          def assume_session(account_id, region):
               """assume role in account"""
-              credentials = boto3.client('sts').assume_role(
+              credentials = boto3.client('sts', region_name=region).assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}" ,
                   RoleSessionName="data_collection"
               )['Credentials']
@@ -166,25 +168,13 @@ Resources:
                   aws_session_token=credentials['SessionToken']
               )
 
-          @lru_cache(maxsize=10000)
-          def enabled_regions(session):
-              """list enabled regions"""
-              if len(REGIONS) > 0:
-                  return set(REGIONS)
-                  logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-              else:
-                  return set(reg['RegionName'] for reg in session.client('ec2').describe_regions()['Regions'])
-
           def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
               """ paginated scan """
-              session = assume_session(account_id)
-              regions = REGIONS #set(session.get_available_regions(service)) & enabled_regions(session)
               obj_name = obj_name or function_name.split('_')[-1].capitalize()
               obj_name_keys = obj_name.split(".")
-              logger.info(f"obj_name is {'simple' if len(obj_name_keys) == 1 else 'compound'}")
-              logger.info(f"Regions in scope {regions}")
-              for region in regions:
+              for region in REGIONS:
                   logger.info(f"Collecting in {region}")
+                  session = assume_session(account_id, region)
                   client = session.client(service, region_name=region)
                   logger.info(f"Working with result key {obj_name}")
                   try:
@@ -212,11 +202,9 @@ Resources:
           def opensearch_domains_scan(account_id):
               """ special treatment for opensearch_scan """
               service = 'opensearch'
-              session = assume_session(account_id)
-              regions = set(session.get_available_regions(service)) & enabled_regions(session)
-
-              for region in regions:
+              for region in REGIONS:
                   logger.info(f"Collecting in {region}")
+                  session = assume_session(account_id, region)
                   client = session.client(service, region_name=region)
                   try:
                       domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
@@ -261,6 +249,12 @@ Resources:
                       service='rds',
                       function_name='describe_db_instances',
                       obj_name='DBInstances'
+                  ),
+                  'rds-db-snapshots': partial(
+                      paginated_scan,
+                      service='rds',
+                      function_name='describe_db_snapshots',
+                      obj_name='DBSnapshots'
                   ),
                   'ebs': partial(
                       paginated_scan,
@@ -323,7 +317,7 @@ Resources:
                   return
               key =  datetime.now().strftime(
                   f"{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}"
-                  f"/year=%Y/month=%m/{account_id}-%Y%m%d-%H%M%S.json"
+                  f"/year=%Y/month=%m/day=%d/{account_id}-%Y-%m-%d.json"
               )
               s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
               try:
@@ -406,7 +400,7 @@ Resources:
             Arn: !GetAtt [!Sub 'StepFunction${AwsObject}', Arn]
             RoleArn: !Ref SchedulerExecutionRoleARN
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
@@ -418,7 +412,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's
       Name: inventory_snapshot_connected_to_ami
-      QueryString: |
+      QueryString: !Sub |
         SELECT distinct(snapshotid),volume,volumesize,starttime,snapdescription, ownerid,
         snap_ami_id, imageid, name, description, state, rootdevicetype, virtualizationtype,year, month,
         CASE
@@ -445,7 +439,7 @@ Resources:
             split_part(Description,' ', 4)
             ELSE ''
             END AS snap_ami_id
-        FROM optimization_data.inventory_snapshot_data
+        FROM ${DatabaseName}.inventory_snapshot_data
         ) AS snapshots
         LEFT JOIN
             (SELECT imageid,
@@ -454,7 +448,7 @@ Resources:
             state,
             rootdevicetype,
             virtualizationtype
-            FROM optimization_data.inventory_ami_data) AS ami
+            FROM ${DatabaseName}.inventory_ami_data) AS ami
                 ON snapshots.snap_ami_id = ami.imageid )
 
   AthenaSnaphotAMICUR:
@@ -463,7 +457,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's with CUR data
       Name: inventory_snapshot_connected_to_ami_with_CUR
-      QueryString: |
+      QueryString: !Sub |
           SELECT DISTINCT
             snapshotid
           , volume
@@ -480,7 +474,7 @@ Resources:
           , virtualizationtype
           , snapshots.year
           , snapshots.month
-          , (CASE WHEN (snap_ami_id = imageid) THEN 'AMI Avalible' WHEN (snap_ami_id LIKE 'ami%') THEN 'AMI Removed' ELSE 'Not AMI' END) status
+          , (CASE WHEN (snap_ami_id = imageid) THEN 'AMI Available' WHEN (snap_ami_id LIKE 'ami%') THEN 'AMI Removed' ELSE 'Not AMI' END) status
           ,sum_line_item_usage_amount
           ,sum_line_item_unblended_cost
           FROM
@@ -495,7 +489,7 @@ Resources:
             , ownerid
             , (CASE WHEN ("substr"(Description, 1, 22) = 'Created by CreateImage') THEN "split_part"(Description, ' ', 5) WHEN ("substr"(Description, 2, 11) = 'Copied snap') THEN "split_part"(Description, ' ', 9) WHEN ("substr"(Description, 1, 22) = 'Copied for Destination') THEN "split_part"(Description, ' ', 4) ELSE '' END) snap_ami_id
             FROM
-              optimization_data.inventory_snapshot_data)
+              ${DatabaseName}.inventory_snapshot_data)
           as   snapshots
           LEFT JOIN (
             SELECT
@@ -506,7 +500,7 @@ Resources:
             , rootdevicetype
             , virtualizationtype
             FROM
-              optimization_data.inventory_ami_data
+              ${DatabaseName}.inventory_ami_data
           )  ami ON (snapshots.snap_ami_id = ami.imageid)
           left join
           (SELECT
@@ -547,11 +541,11 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's with Pricing data
       Name: inventory_snapshot_connected_to_ami_with_pricing
-      QueryString: |
+      QueryString: !Sub |
         CREATE OR REPLACE VIEW snapshot_ami_quicksight_view AS
         SELECT *,
           CASE
-            WHEN snap_ami_id = imageid THEN 'AMI Avalible'
+            WHEN snap_ami_id = imageid THEN 'AMI Available'
             WHEN snap_ami_id LIKE 'ami%' THEN 'AMI Removed' ELSE 'Not AMI'
           END AS status,
          cast(priceperunit as decimal)*volumesize as est_snap_cost
@@ -571,7 +565,7 @@ Resources:
                   WHEN substr(Description, 2, 11) = 'Copied snap' THEN split_part(Description, ' ', 9)
                   WHEN substr(Description, 1, 22) = 'Copied for Destination' THEN split_part(Description, ' ', 4) ELSE ''
                 END AS snap_ami_id
-              FROM optimization_data.inventory_snapshot_data
+              FROM ${DatabaseName}.inventory_snapshot_data
             ) AS snapshots
             LEFT JOIN (
               SELECT imageid,
@@ -582,7 +576,7 @@ Resources:
                 virtualizationtype,
                 month as ami_month,
                 year as ami_year
-              FROM optimization_data.inventory_ami_data) AS ami
+              FROM ${DatabaseName}.inventory_ami_data) AS ami
             ON snapshots.snap_ami_id = ami.imageid and snapshots.month=ami.ami_month and snapshots.year = ami.ami_year
           )
           LEFT JOIN (
@@ -590,14 +584,14 @@ Resources:
             region region_code
           , regionname
           FROM
-            optimization_data.pricing_regionnames_data
+            ${DatabaseName}.pricing_regionnames_data
         )  region ON (snapshots.region = region.region_code))
         LEFT JOIN (
           SELECT DISTINCT
             volumeid volume_mapping
           , count(DISTINCT snapshotid) snap_count
           FROM
-            optimization_data.inventory_snapshot_data
+            ${DatabaseName}.inventory_snapshot_data
           GROUP BY 1
         )  mapping ON (mapping.volume_mapping = snapshots.volume)) s
         LEFT JOIN (
@@ -607,7 +601,7 @@ Resources:
           , priceperunit
           , unit
           FROM
-            optimization_data.pricing_ec2_data
+            ${DatabaseName}.pricing_ec2_data
           WHERE ((("product family" = 'Storage Snapshot') AND (usagetype LIKE '%SnapshotUsage%')) AND ("location type" = 'AWS Region'))
         )  snap_unit_price ON (s.regionname = snap_unit_price.location))
 
@@ -617,19 +611,19 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's with Pricing data
       Name: inventory_ebs_with_ta_data
-      QueryString: |
+      QueryString: !Sub |
         SELECT *
-        FROM optimization_data.inventory_ebs_data
+        FROM ${DatabaseName}.inventory_ebs_data
         LEFT JOIN (
           SELECT "volume id","volume name", "volume type","volume size",status,	"monthly storage cost" ,accountid as taaccountid, category, region as taregion, year as tayear,month as tamonth
-          FROM optimization_data.trusted_advisor_data
+          FROM ${DatabaseName}.trusted_advisor_data
           WHERE category = 'cost_optimizing' ) ta
           ON inventory_ebs_data.volumeid = ta."volume id" and inventory_ebs_data.year = ta.tayear and inventory_ebs_data.month = ta.tamonth
         LEFT JOIN (
           SELECT
             region region_code
           , regionname
-          FROM optimization_data.pricing_regionnames_data
+          FROM ${DatabaseName}.pricing_regionnames_data
           )  region
           ON (inventory_ebs_data.region = region.region_code)
 
@@ -639,14 +633,14 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's with Pricing data
       Name: ebs-view
-      QueryString: |
+      QueryString: !Sub |
         CREATE OR REPLACE VIEW inventory_ebs_view AS
         SELECT * FROM
-                    optimization_data.inventory_ebs_data
+                    ${DatabaseName}.inventory_ebs_data
                 LEFT JOIN
                 (select "volume id","volume name", "volume type","volume size",	"monthly storage cost" ,accountid as ta_accountid, status, category, region as ta_region, year as ta_year ,month as ta_month
                 from
-                optimization_data.trusted_advisor_data
+                ${DatabaseName}.trusted_advisor_data
                 where category = 'cost_optimizing') ta
                 ON inventory_ebs_data.volumeid = ta."volume id" and inventory_ebs_data.year = ta.ta_year and inventory_ebs_data.month = ta.ta_month
                 LEFT JOIN (
@@ -654,7 +648,7 @@ Resources:
             "region" "region_code"
           , regionname
           FROM
-            optimization_data.pricing_regionnames_data
+            ${DatabaseName}.pricing_regionnames_data
         )  region ON (inventory_ebs_data.region = region.region_code)
 
   AthenaEBSTAPricing:
@@ -663,7 +657,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies snapshots connected to AMI's with Pricing data
       Name: inventory_ebs_with_ta_data_with_pricing
-      QueryString: |
+      QueryString: !Sub |
         CREATE OR REPLACE VIEW ebs_quicksight_view AS
           SELECT
             volumeid
@@ -685,7 +679,7 @@ Resources:
           , (priceperunit * size) ebs_cost
           , (CASE WHEN (volumetype = 'io1') THEN (iop_price * CAST(iops AS integer)) WHEN (volumetype = 'io2') THEN (iop_price * CAST(iops AS integer)) ELSE 0 END) iop_cost
           FROM
-            ((optimization_data.inventory_ebs_view
+            ((${DatabaseName}.inventory_ebs_view
           LEFT JOIN (
             SELECT
               "volume api name"
@@ -694,7 +688,7 @@ Resources:
             , unit
             , "product family"
             FROM
-              optimization_data.pricing_ec2_data
+              ${DatabaseName}.pricing_ec2_data
             WHERE ("product family" = 'Storage')
           )  ebs_price ON ((inventory_ebs_view.volumetype = ebs_price."volume api name") AND (inventory_ebs_view.regionname = ebs_price.location)))
           LEFT JOIN (
@@ -706,7 +700,7 @@ Resources:
             , "product family"
             , usagetype
             FROM
-              optimization_data.pricing_ec2_data
+              ${DatabaseName}.pricing_ec2_data
             WHERE ((("Product Family" = 'System Operation') AND ("volume api name" IN ('io1', 'io2'))) AND ((usagetype LIKE '%EBS:VolumeP-IOPS.io2') OR (usagetype LIKE '%EBS:VolumeP-IOPS.piops')))
           )  ebs_iops_price ON ((inventory_ebs_view.volumetype = ebs_iops_price."volume api name") AND (inventory_ebs_view.regionname = ebs_iops_price.location)))
           ORDER BY volumeid DESC
@@ -717,7 +711,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: Identifies gp2, io1, io2 that could move to gp3
       Name: gp3-opportunity
-      QueryString: |
+      QueryString: !Sub |
         WITH raw_ebs_pricedata AS (
         SELECT
             pricing_regionnames_data.region,
@@ -734,8 +728,8 @@ Resources:
                     WHEN "volume api name" = 'gp3' AND unit = 'GiBps-mo' THEN 'gp3_GiBps-mo'
                     ELSE unit
                 END, priceperunit) kv1
-        FROM optimization_data.pricing_ec2_data
-        JOIN optimization_data.pricing_regionnames_data ON pricing_regionnames_data.regionname = pricing_ec2_data.location
+        FROM ${DatabaseName}.pricing_ec2_data
+        JOIN ${DatabaseName}.pricing_regionnames_data ON pricing_regionnames_data.regionname = pricing_ec2_data.location
         WHERE "volume api name" IN ('io1','io2','gp3','gp2')
         GROUP BY pricing_regionnames_data.region
         ),
@@ -803,7 +797,7 @@ Resources:
                     WHEN volumetype = 'gp2' AND size <= 170 THEN gp3_throughput_unit_cost * (128.0 - 125.0)
                     WHEN volumetype = 'gp2' AND size > 170 THEN gp3_throughput_unit_cost * (250.0 - 125.0)
                 END AS gp3_throughput_cost
-            FROM optimization_data.inventory_ebs_view
+            FROM ${DatabaseName}.inventory_ebs_view
             LEFT JOIN pivoted_ebs_pricedata ON pivoted_ebs_pricedata.region = inventory_ebs_view.region
             WHERE
                 volumetype in('io1', 'io2', 'gp2')
@@ -821,5 +815,5 @@ Resources:
       Database: !Ref DatabaseName
       Description: Use as needed if queries were previously dependent upon pricing_region_names, which has been renamed for standardization
       Name: backward_compat_pricing_region_names
-      QueryString: |
-        CREATE OR REPLACE VIEW pricing_region_names AS SELECT * FROM optimization_data.pricing_regionnames_data
+      QueryString: !Sub |
+        CREATE OR REPLACE VIEW pricing_region_names AS SELECT * FROM ${DatabaseName}.pricing_regionnames_data

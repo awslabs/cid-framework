@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Stack that will deployed across all accounts in an org so we can assume to read data using a lambda
+Description: CID Data Collection - All-in-One for Management Account v3.0.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -12,7 +12,7 @@ Metadata:
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
           - ResourcePrefix
-          - CFNTemplateSourceBucket
+          - CFNSourceBucket
       - Label:
           default: "Available modules"
         Parameters:
@@ -31,7 +31,7 @@ Metadata:
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
-        default: "Cost Account Id"
+        default: "Data Collection Account Id"
       MultiAccountRoleName:
         default: "Multi Account Role Name"
       OrganizationalUnitIds:
@@ -40,7 +40,7 @@ Metadata:
         default: "Allow creation of read roles for modules in management account"
       ResourcePrefix:
         default: "Role Prefix"
-      CFNTemplateSourceBucket:
+      CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       IncludeBudgetsModule:
         default: "Include AWS Budgets Collection Module"
@@ -90,7 +90,7 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "CID-DC-"
-  CFNTemplateSourceBucket:
+  CFNSourceBucket:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
@@ -168,7 +168,7 @@ Resources:
   DataCollectorMgmtAccountReadStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
       Parameters:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
@@ -182,7 +182,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
       Parameters:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         MultiAccountRoleName: !Ref MultiAccountRoleName
@@ -235,4 +235,4 @@ Resources:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"

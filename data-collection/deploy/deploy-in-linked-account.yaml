@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Stack that will deployed across all accounts in an org so we can assume to read data using a lambda 
+Description: CID Data Collection - Role for Linked Account v3.0.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -20,7 +20,7 @@ Metadata:
         - IncludeTransitGatewayModule
     ParameterLabels:
       DataCollectionAccountID:
-        default: 'Cost Account Id'
+        default: 'Data Collection Account ID'
       MultiAccountRoleName:
         default: 'Multi Account Role Name'
       ResourcePrefix:
@@ -190,6 +190,7 @@ Resources:
               - "ec2:DescribeInstances"
               - "ec2:DescribeVpcs"
               - "rds:DescribeDBInstances"
+              - "rds:DescribeDBSnapshots"
               - "es:ListDomainNames"
               - "es:DescribeDomain"
               - "es:DescribeElasticsearchDomains"

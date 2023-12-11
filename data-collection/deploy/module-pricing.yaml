@@ -235,15 +235,16 @@ Mappings:
           - { Type: string, Name: current generation }
           - { Type: string, Name: instance family }
           - { Type: string, Name: vcpu }
-          - { Type: string, Name: storage }
+          - { Type: string, Name: memory }
+          - { Type: string, Name: network performance }
+          - { Type: string, Name: cache engine }
           - { Type: string, Name: storage media }
+          - { Type: string, Name: transfer type }
           - { Type: string, Name: usagetype }
           - { Type: string, Name: operation }
-          - { Type: string, Name: ecu }
-          - { Type: string, Name: memory (gib) }
           - { Type: string, Name: region code }
           - { Type: string, Name: servicename }
-          - { Type: string, Name: compute type }
+          - { Type: string, Name: ssd }
     AmazonES:
       path: opensearch
       partition:
@@ -637,7 +638,7 @@ Resources:
             S3Targets:
               - Path:
                   Fn::Sub:
-                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
+                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-pricing/"
                     - path: !FindInMap [ServicesMap, !Ref AwsService, path]
           Configuration: |
             {
@@ -659,7 +660,7 @@ Resources:
           TableInput:
             Name:
               Fn::Sub:
-                - 'pricing_${path}_data' # note '_' not '-'
+                - 'pricing_${path}_pricing' # note '_' not '-'
                 - path: !FindInMap [ServicesMap, !Ref AwsService, path]
             Owner: owner
             Retention: 0
@@ -676,7 +677,7 @@ Resources:
               InputFormat: org.apache.hadoop.mapred.TextInputFormat
               Location:
                 Fn::Sub:
-                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
+                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-pricing/"
                   - path: !FindInMap [ServicesMap, !Ref AwsService, path]
               OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
               SerdeInfo:
@@ -686,7 +687,7 @@ Resources:
                   serialization.format: '1'
                 SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde # Need a specific lib for quotes
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN

@@ -148,16 +148,7 @@ Resources:
                   payer_id = account["payer_id"]
                   logger.info(f"Collecting data for account: {account_id}")
 
-                  session = assume_session(account_id)
-                  if len(REGIONS) > 0:
-                      ec2_regions = REGIONS
-                      logger.info(f"List of regions in scope is pre-defined: {REGIONS}")
-                  else:
-                      ec2_regions = [region['RegionName'] for region in session.client('ec2').describe_regions()['Regions']]
-                  svc_regions = boto3.Session().get_available_regions('ec2')
-                  regions = list(set(ec2_regions).intersection(svc_regions))
-
-                  for region in regions:
+                  for region in REGIONS:
                       try:
                           cw_client = assume_role('cloudwatch', account_id, region)
                           ec2_client = assume_role('ec2', account_id, region)
@@ -235,10 +226,10 @@ Resources:
               return cw_data
 
           def assume_role(service, account_id, region_name):
-              return assume_session(account_id).client(service, region_name=region_name)
+              return assume_session(account_id, region_name).client(service, region_name=region_name)
 
-          def assume_session(account_id):
-              cred = boto3.client('sts').assume_role(
+          def assume_session(account_id, region):
+              cred = boto3.client('sts', region_name=region).assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
                   RoleSessionName="data_collection"
               )['Credentials']
@@ -315,7 +306,7 @@ Resources:
         RoleArn: !Ref SchedulerExecutionRoleARN
         Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${ResourcePrefix}${CFDataName}-Crawler"]}'
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
