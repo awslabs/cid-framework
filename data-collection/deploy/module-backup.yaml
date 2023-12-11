@@ -250,6 +250,13 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+      LogGroupClass: INFREQUENT_ACCESS
+
   'Fn::ForEach::Object':
     - AwsObject
     - !Ref AwsObjects
@@ -305,7 +312,7 @@ Resources:
             Arn: !GetAtt [!Sub 'StepFunction${AwsObject}', Arn]
             RoleArn: !Ref SchedulerExecutionRoleARN
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN

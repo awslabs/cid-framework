@@ -21,7 +21,7 @@ Metadata:
       ManagementAccountRole:
         default: "Management account role"
       DataCollectionAccountID:
-        default: "Cost Account Id"
+        default: "Data Collection Account Id"
       ResourcePrefix:
         default: "Role Prefix"
       IncludeComputeOptimizerModule:
