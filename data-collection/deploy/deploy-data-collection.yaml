@@ -12,7 +12,7 @@ Metadata:
           - MultiAccountRoleName
           - Schedule
           - ResourcePrefix
-          - CFNTemplateSourceBucket
+          - CFNSourceBucket
           - DatabaseName
       - Label:
           default: 'Available modules'
@@ -47,7 +47,7 @@ Metadata:
         default: "Name of the Athena database to be created to hold lambda information"
       ResourcePrefix:
         default: "Role Prefix"
-      CFNTemplateSourceBucket:
+      CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
@@ -217,7 +217,7 @@ Parameters:
     Type: String
     Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
     Default: "CID-DC-"
-  CFNTemplateSourceBucket:
+  CFNSourceBucket:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
@@ -339,7 +339,7 @@ Conditions:
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
-  ProdCFNTemplateUsed: !Equals [ !Ref CFNTemplateSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
+  ProdCFNTemplateUsed: !Equals [ !Ref CFNSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
 
 Resources:
   S3Bucket:
@@ -381,13 +381,13 @@ Resources:
                 aws:SecureTransport: "false"
             Principal: "*"
 
-  GlueDatabase:
-    Type: "AWS::Glue::Database"
-    Properties:
-      CatalogId: !Ref AWS::AccountId
-      DatabaseInput:
-        Description: "CID Data Collection"
-        Name: !Ref DatabaseName
+  # GlueDatabase: # GlueDatabase can be already created by crawler in previous versions. So we cannot create it here. See Init CustomResource
+  #   Type: "AWS::Glue::Database"
+  #   Properties:
+  #     CatalogId: !Ref AWS::AccountId
+  #     DatabaseInput:
+  #       Description: "CID Data Collection"
+  #       Name: !Ref DatabaseName
 
   GlueRole:
     Type: AWS::IAM::Role
@@ -448,8 +448,8 @@ Resources:
                   - glue:DeletePartition
                 Resource:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/optimization_data" # FIXME: database name must be parameter
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/optimization_data/*" # FIXME: database name must be parameter
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
         - PolicyName: "CloudWatch"
           PolicyDocument:
             Version: "2012-10-17"
@@ -467,7 +467,7 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  LambdaAnalyticsRole: #Execution role for the custom resource
+  LambdaAnalyticsRole: #Execution role for the custom resource for Analytics Lambda
     Type: AWS::IAM::Role
     Properties:
       Path:
@@ -486,7 +486,7 @@ Resources:
   LambdaAnalytics:
     Type: AWS::Lambda::Function
     Properties:
-      Runtime: python3.9
+      Runtime: python3.10
       FunctionName: !Sub ${ResourcePrefix}analytics-Lambda
       Description: "Lambda function to collect general deployment metrics"
       Handler: index.lambda_handler
@@ -507,11 +507,11 @@ Resources:
           endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
           account_id = boto3.client("sts").get_caller_identity()["Account"]
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context):  #pylint: disable=unused-argument
               print(json.dumps(event))
               try:
-                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'UPDATE']:
-                      raise Exception(f"Unknown RequestType {event['RequestType']}")
+                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'DELETE']:
+                      raise Exception(f"Unknown RequestType {event['RequestType']}") #pylint: disable=broad-exception-raised
                   action = event['RequestType'].upper()
                   name = event['ResourceProperties']['Name']
                   method = {'CREATE':'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(action)
@@ -519,9 +519,9 @@ Resources:
                   payload = {'id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
                   r =  urllib3.PoolManager().request(method, endpoint, body=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
                   if r.status != 200:
-                      raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored")
+                      raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored") #pylint: disable=broad-exception-raised
                   res, reason = 'SUCCESS', 'success'
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=broad-exception-caught
                   res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
               body = {
                   'Status': res,
@@ -536,12 +536,143 @@ Resources:
               json_body=json.dumps(body)
               print(json_body)
               url = event.get('ResponseURL')
-              if not url: return
+              if not url:
+                  return
               try:
                   response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
                   print(f"Status code: {response}")
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=broad-exception-caught
                   print("Failed sending PUT to CFN: " + str(exc))
+
+  LambdaInitRole: #Execution role for the custom resource for Init Lambda
+    Type: AWS::IAM::Role
+    Properties:
+      Path:
+        Fn::Sub: /${ResourcePrefix}/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "GlueDatabase"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:CreateDatabase
+                  - glue:DeleteDatabase
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
+        - PolicyName: "GlueTable"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:CreateTable
+                  - glue:DeleteTable
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+  LambdaInit:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.10
+      FunctionName: !Sub ${ResourcePrefix}init-Lambda
+      Description: "Lambda function to initialize the stack"
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaInitRole.Arn
+      Timeout: 15
+      Environment:
+        Variables:
+          DATABASE_NAME: !Ref DatabaseName
+          RESOURCE_PREFIX: !Ref ResourcePrefix
+          BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import uuid
+          import urllib3
+          import boto3
+
+          database_name = os.environ['DATABASE_NAME']
+          resource_prefix = os.environ['RESOURCE_PREFIX']
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              print(json.dumps(event))
+              try:
+                  action = event.get('RequestType').upper()
+                  if action not in ['CREATE', 'UPDATE', 'DELETE']:
+                      raise Exception(f"Unknown RequestType {action}") #pylint: disable=broad-exception-raised
+                  func = {'CREATE': create, 'DELETE': delete, 'UPDATE': update}.get(action)
+                  res, reason = func()
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
+              body = {
+                  'Status': res,
+                  'Reason': reason,
+                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
+                  'StackId': event.get('StackId'),
+                  'RequestId': event.get('RequestId'),
+                  'LogicalResourceId': event.get('LogicalResourceId'),
+                  'NoEcho': False,
+                  'Data':  {'Reason': reason},
+              }
+              json_body=json.dumps(body)
+              print(json_body)
+              url = event.get('ResponseURL')
+              if not url:
+                  return
+              try:
+                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
+                  print(f"Status code: {response}")
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  print("Failed sending PUT to CFN: " + str(exc))
+
+          def create():
+              create_glue_table()
+              return  'SUCCESS', 'success'
+
+          def update():
+              return  'SUCCESS', 'nothing to do'
+
+          def delete():
+              return  'SUCCESS', 'nothing to do'
+
+          def create_glue_table():
+              glue_client = boto3.client('glue')
+              try:
+                  glue_client.get_database(Name=database_name)
+              except glue_client.exceptions.EntityNotFoundException:
+                  glue_client.create_database(DatabaseInput={'Name': database_name})
+                  print(f"Created database '{database_name}'")
+              else:
+                  # Delete all tables updated by previous versions of crawlers.
+                  # If not crawler will not be able to update the table and will create a new one with a random name.
+                  for table in glue_client.get_paginator('get_tables').paginate(DatabaseName=database_name).search('TableList'):
+                      table_name = table.get('Name')
+                      updated_by = table.get('Parameters', {}).get('UPDATED_BY_CRAWLER', '')
+                      if not updated_by.startswith(resource_prefix):
+                          glue_client.delete_table(DatabaseName=database_name, Name=table_name)
+                          print('table {table_name} was deleted to avoid crawler confusion')
+              return 'SUCCESS', 'success'
+
+  InitExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !GetAtt LambdaInit.Arn
 
   CrawlerExecutionStepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -754,7 +885,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTAModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-trusted-advisor.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-trusted-advisor.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -771,7 +902,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRightsizingModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -788,7 +919,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostOptimizationHubModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-optimization-hub.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-optimization-hub.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -805,7 +936,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -822,7 +953,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBackupModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-backup.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-backup.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -839,7 +970,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployInventoryCollectorModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-inventory.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-inventory.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -861,12 +992,12 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployPricingModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-pricing.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-pricing.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNTemplateSourceBucket ]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
@@ -881,7 +1012,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployComputeOptimizerModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-compute-optimizer.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-compute-optimizer.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -904,7 +1035,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployEcsChargebackModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-ecs-chargeback.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-ecs-chargeback.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -926,7 +1057,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployRDSUtilizationModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-rds-usage.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-rds-usage.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -948,7 +1079,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployOrgDataModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-organization.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-organization.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -966,7 +1097,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-budgets.yaml" 
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-budgets.yaml" 
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -983,7 +1114,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployTransitGatewayModule
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-transit-gateway.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-transit-gateway.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
@@ -1005,7 +1136,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployAccountCollector
     Properties:
-      TemplateURL: !Sub "https://${CFNTemplateSourceBucket}.s3.amazonaws.com/cfn/data-collection/account-collector.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/account-collector.yaml"
       Parameters:
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID

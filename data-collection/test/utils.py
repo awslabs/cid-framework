@@ -163,7 +163,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
         stack_name=f'{PREFIX}OptimizationDataReadPermissionsStack',
         file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
         parameters=[
-            {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
+            {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'DataCollectionAccountID',         'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
@@ -186,10 +186,10 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
 
     deploy_stack(
         cloudformation=cloudformation,
-        stack_name=f'{PREFIX}OptimizationDataCollectionStack',
+        stack_name=f'OptimizationDataCollectionStack',
         file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
-            {'ParameterKey': 'CFNTemplateSourceBucket',         'ParameterValue': bucket},
+            {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'RegionsInScope',                  'ParameterValue': "us-east-1,eu-west-1"},
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
@@ -325,6 +325,7 @@ def trigger_update(account_id):
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Snapshot-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Ec2Instances-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-VpcInstances-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbSnapshots-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',

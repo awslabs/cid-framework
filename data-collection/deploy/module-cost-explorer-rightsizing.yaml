@@ -204,6 +204,13 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+      LogGroupClass: INFREQUENT_ACCESS
+
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
@@ -246,7 +253,7 @@ Resources:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
@@ -258,20 +265,20 @@ Resources:
       Database: !Ref DatabaseName
       Description: Provides a summary view of the rightsizing recommendations for same family
       Name: cost-explorer-rightsizing-same-family
-      QueryString: |
+      QueryString: !Sub |
         WITH rightsizing_dates AS (
             SELECT
               "recommendations"."currentinstance"."resourceid"          AS "instance_id"
             , min(date_parse(concat("year", "month", "day"), '%Y%m%d')) AS "earliest_date"
             , max(date_parse(concat("year", "month", "day"), '%Y%m%d')) AS "latest_date"
             , count(*)                                                  AS "frequency"
-            FROM (optimization_data.cost_explorer_rightsizing_data
+            FROM (${DatabaseName}.cost_explorer_rightsizing_data
                 CROSS JOIN UNNEST("rightsizingrecommendationssamefamily") t(recommendations))
             GROUP BY 1
         ),
         data AS (
             SELECT recommendations
-            FROM (optimization_data.cost_explorer_rightsizing_data
+            FROM (${DatabaseName}.cost_explorer_rightsizing_data
                 CROSS JOIN UNNEST("rightsizingrecommendationssamefamily") t(recommendations))
             WHERE ("date_parse"("concat"("year", "month", "day"), '%Y%m%d') >= (current_timestamp - INTERVAL '7' DAY))
         ),
@@ -373,20 +380,20 @@ Resources:
       Database: !Ref DatabaseName
       Description: Provides a summary view of the rightsizing recommendations for cross family
       Name: cost-explorer-rightsizing-cross-family
-      QueryString: |
+      QueryString: !Sub |
         WITH rightsizing_dates AS (
             SELECT
               "recommendations"."currentinstance"."resourceid"          AS "instance_id"
             , min(date_parse(concat("year", "month", "day"), '%Y%m%d')) AS "earliest_date"
             , max(date_parse(concat("year", "month", "day"), '%Y%m%d')) AS "latest_date"
             , count(*)                                                  AS "frequency"
-            FROM (optimization_data.cost_explorer_rightsizing_data
+            FROM (${DatabaseName}.cost_explorer_rightsizing_data
                 CROSS JOIN UNNEST("rightsizingrecommendationscrossfamily") t(recommendations))
             GROUP BY 1
         ),
         data AS (
             SELECT recommendations
-            FROM (optimization_data.cost_explorer_rightsizing_data
+            FROM (${DatabaseName}.cost_explorer_rightsizing_data
                 CROSS JOIN UNNEST("rightsizingrecommendationscrossfamily") t(recommendations))
             WHERE ("date_parse"("concat"("year", "month", "day"), '%Y%m%d') >= (current_timestamp - INTERVAL '7' DAY))
         ),

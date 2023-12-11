@@ -542,6 +542,13 @@ Resources:
           - id: W92 # Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+      LogGroupClass: INFREQUENT_ACCESS
+
   'Fn::ForEach::Service':
     - AwsService
     - !Ref AwsServices
@@ -631,7 +638,7 @@ Resources:
             S3Targets:
               - Path:
                   Fn::Sub:
-                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
+                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-pricing/"
                     - path: !FindInMap [ServicesMap, !Ref AwsService, path]
           Configuration: |
             {
@@ -653,7 +660,7 @@ Resources:
           TableInput:
             Name:
               Fn::Sub:
-                - 'pricing_${path}_data' # note '_' not '-'
+                - 'pricing_${path}_pricing' # note '_' not '-'
                 - path: !FindInMap [ServicesMap, !Ref AwsService, path]
             Owner: owner
             Retention: 0
@@ -670,7 +677,7 @@ Resources:
               InputFormat: org.apache.hadoop.mapred.TextInputFormat
               Location:
                 Fn::Sub:
-                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
+                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-pricing/"
                   - path: !FindInMap [ServicesMap, !Ref AwsService, path]
               OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
               SerdeInfo:
@@ -680,7 +687,7 @@ Resources:
                   serialization.format: '1'
                 SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde # Need a specific lib for quotes
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
