@@ -299,7 +299,7 @@ Resources:
         RoleArn: !Ref SchedulerExecutionRoleARN
         Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${ResourcePrefix}${CFDataName}-Crawler"]}'
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN

@@ -29,7 +29,7 @@ Resources:
   AdministrationRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: StackSetAdminRole
+      RoleName: CID-DC-StackSetAdminRole
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:

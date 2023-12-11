@@ -263,7 +263,7 @@ Resources:
         Arn: !GetAtt StepFunctionCostOptimizationHub.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
 
-  LambdaAnalyticsExecutor:
+  AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
