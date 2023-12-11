@@ -255,7 +255,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: !Sub "Provides a summary view of the ${CFDataName}"
       Name: !Sub "${CFDataName}_view"
-      QueryString:
+      QueryString: !Sub |
         CREATE OR REPLACE VIEW budgets_view AS
         SELECT
           budgetname budget_name
@@ -270,5 +270,5 @@ Resources:
         , year budget_year
         , month budget_month
         FROM
-          optimization_data.budgets_data
+          ${DatabaseName}.budgets_data
         WHERE (budgettype = 'COST')  AND costfilters.filter[1] = 'None'

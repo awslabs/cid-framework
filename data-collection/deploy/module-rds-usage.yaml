@@ -422,7 +422,7 @@ Resources:
       Database: !Ref DatabaseName
       Description: Provides a view of modernization opportunities for Graviton
       Name: rds-usage-rds-graviton
-      QueryString: |
+      QueryString: !Sub |
         WITH
         raw_data AS (
           SELECT dbinstanceidentifier,
@@ -495,7 +495,7 @@ Resources:
               END
             ) priceperunit,
             unit
-          FROM optimization_data.pricing_rds_data
+          FROM ${DatabaseName}.pricing_rds_data
           WHERE ((("location type" = 'AWS Region')AND (purchaseoption = ''))AND ("product family" = 'Database Instance'))),
         graviton_mapping AS (
           SELECT raw_data.dbinstanceidentifier,
@@ -597,9 +597,9 @@ Resources:
           FROM (
               (
                 raw_data
-                LEFT JOIN optimization_data.pricing_regionnames_data ON (raw_data.region = pricing_regionnames_data.region)
+                LEFT JOIN ${DatabaseName}.pricing_regionnames_data ON (raw_data.region = pricing_regionnames_data.region)
               )
-              LEFT JOIN optimization_data.rds_graviton_mapping ON (
+              LEFT JOIN ${DatabaseName}.rds_graviton_mapping ON (
                 (
                   (raw_data.rds_type = rds_graviton_mapping.dbtype)
                   AND (
