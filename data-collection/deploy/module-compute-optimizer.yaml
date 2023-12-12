@@ -388,7 +388,7 @@ Resources:
                           'ebs_volume':   co.export_ebs_volume_recommendations,
                           'ecs_service':  co.export_ecs_service_recommendations,
                       }
-                      bkt = BUCKET_PREFIX + '-' + region
+                      bkt = BUCKET_PREFIX + '.' + region
                       logger.info(f"INFO: bucket={bkt}")
                       for name, func in export_funcs.items():
                           try:
@@ -425,7 +425,6 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
-      LogGroupClass: INFREQUENT_ACCESS
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
