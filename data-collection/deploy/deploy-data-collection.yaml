@@ -391,6 +391,8 @@ Resources:
 
   GlueRole:
     Type: AWS::IAM::Role
+    DependsOn:
+      - InitExecutor # Custom resource that creates Glue database
     Properties:
       RoleName: !Sub "${ResourcePrefix}Glue-Crawler"
       AssumeRolePolicyDocument:
