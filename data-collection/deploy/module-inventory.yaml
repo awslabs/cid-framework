@@ -123,10 +123,8 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          """ Scan linked accounts and store instances info to s3 bucket
-          Supported types: ebs, snapshots, ami, rds instances
-          """
           import os
+          import re
           import json
           import logging
           from functools import partial, lru_cache
@@ -143,7 +141,6 @@ Resources:
           TRACKING_TAGS = os.environ.get("TRACKING_TAGS")
           TAG_LIST = TRACKING_TAGS.split(",") if TRACKING_TAGS else []
 
-
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
@@ -154,6 +151,21 @@ Resources:
                   default=lambda x:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
+
+          def escape(pattern):
+              return pattern.replace('[','\[').replace(']','\]').replace('*','.+?')
+
+          def find_in_flatten_dict(d, pattern,  parent_key='', sep='.'):
+              if re.match(pattern, parent_key):
+                  yield (parent_key, d)
+              elif isinstance(d, list):
+                  for i, v in enumerate(d):
+                      item_key = f"{parent_key}[{i}]"
+                      yield from find_in_flatten_dict(v, pattern, item_key, sep=sep)
+              elif isinstance(d, dict):
+                  for k, v in d.items():
+                      new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                      yield from find_in_flatten_dict(v, pattern, new_key, sep=sep)
 
           @lru_cache(maxsize=10000)
           def assume_session(account_id, region):
@@ -168,58 +180,37 @@ Resources:
                   aws_session_token=credentials['SessionToken']
               )
 
-          def paginated_scan(service, account_id, function_name, params=None, obj_name=None):
+          def paginated_scan(service, account_id, function_name, region, params=None, obj_name=None):
               """ paginated scan """
-              obj_name = obj_name or function_name.split('_')[-1].capitalize()
-              obj_name_keys = obj_name.split(".")
-              for region in REGIONS:
-                  logger.info(f"Collecting in {region}")
-                  session = assume_session(account_id, region)
-                  client = session.client(service, region_name=region)
-                  logger.info(f"Working with result key {obj_name}")
-                  try:
-                      paginator = client.get_paginator(function_name)
-                      for page in paginator.paginate(**(params or {})):
-                          objs = page
-                          for traversed_key in obj_name_keys:
-                              logger.debug(f"traversed_key = {traversed_key} for type {type(objs).__name__} with length {len(objs)}")
-                              if type(objs) == dict:
-                                  objs = objs[traversed_key]
-                                  logger.debug(f"Processed as dict, result type is {type(objs).__name__}")
-                              elif type(objs) == list and len(objs) > 0:
-                                  logger.debug(f"Processing as list, first pop is type {type(objs[0]).__name__}")
-                                  objs = objs[0][traversed_key]
-                                  logger.debug(f"Processed as list, applied key and result is type {type(objs).__name__}")
-                              if len(objs) == 0:
-                                  break
-                          logger.debug(f"Done traversing and resulting count is {len(objs)}")
-                          for obj in objs:
-                              obj['region'] = region
-                              yield obj
-                  except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'Error in scan {function_name}/{account_id}: {exc}')
+              obj_name = obj_name or function_name.split('_')[-1].capitalize() + '[*]'
+              session = assume_session(account_id, region)
+              client = session.client(service, region_name=region)
+              try:
+                  paginator = client.get_paginator(function_name)
+                  for obj in paginator.paginate(**(params or {})).search(obj_name):
+                      yield obj
+              except Exception as exc:  #pylint: disable=broad-exception-caught
+                  logger.info(f'Error in scan {function_name}/{account_id}: {exc}')
 
-          def opensearch_domains_scan(account_id):
+          def opensearch_domains_scan(account_id, region):
               """ special treatment for opensearch_scan """
               service = 'opensearch'
-              for region in REGIONS:
-                  logger.info(f"Collecting in {region}")
-                  session = assume_session(account_id, region)
-                  client = session.client(service, region_name=region)
-                  try:
-                      domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
-                      for domain_name in domain_names:
-                          domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
-                          yield {
-                              'region': region,
-                              'DomainName': domain['DomainName'],
-                              'DomainId': domain['DomainId'],
-                              'EngineVersion': domain['EngineVersion'],
-                              'InstanceType': domain['ClusterConfig']['InstanceType'],
-                              'InstanceCount': domain['ClusterConfig']['InstanceCount'],
-                          }
-                  except Exception as exc:  #pylint: disable=broad-exception-caught
-                      logger.info(f'scan {service}/{account_id}/{region}: {exc}')
+              session = assume_session(account_id, region)
+              client = session.client(service, region_name=region)
+              try:
+                  domain_names = [name.get('DomainName') for name in client.list_domain_names().get('DomainNames', [])]
+                  for domain_name in domain_names:
+                      domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
+                      yield {
+                          'region': region,
+                          'DomainName': domain['DomainName'],
+                          'DomainId': domain['DomainId'],
+                          'EngineVersion': domain['EngineVersion'],
+                          'InstanceType': domain['ClusterConfig']['InstanceType'],
+                          'InstanceCount': domain['ClusterConfig']['InstanceCount'],
+                      }
+              except Exception as exc:  #pylint: disable=broad-exception-caught
+                  logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
@@ -233,7 +224,6 @@ Resources:
                   )
               params = [p for p in event.get('params', '').split() if p]
               name = params[0]
-              collection_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
               sub_modules = {
                   'opensearch-domains': opensearch_domains_scan, # special function for opensearch
@@ -248,13 +238,13 @@ Resources:
                       paginated_scan,
                       service='rds',
                       function_name='describe_db_instances',
-                      obj_name='DBInstances'
+                      obj_name='DBInstances[*]'
                   ),
                   'rds-db-snapshots': partial(
                       paginated_scan,
                       service='rds',
                       function_name='describe_db_snapshots',
-                      obj_name='DBSnapshots'
+                      obj_name='DBSnapshots[*]'
                   ),
                   'ebs': partial(
                       paginated_scan,
@@ -277,13 +267,13 @@ Resources:
                       paginated_scan,
                       service='ec2',
                       function_name='describe_instances',
-                      obj_name='Reservations.Instances'
+                      obj_name='Reservations[*].Instances[*][]'
                   ),
                   'vpc': partial(
                       paginated_scan,
                       service='ec2',
-                      function_name='describe_vpcs',
-                      obj_name='Vpcs'
+                      function_name='describe_vpcs'#,
+                      #obj_name='Vpcs'
                   )
               }
 
@@ -296,15 +286,18 @@ Resources:
               collection_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
               try:
                   with open(TMP_FILE, "w", encoding='utf-8') as file_:
-                      for counter, obj in enumerate(func(account_id=account_id), start=1):
-                          obj['accountid'] = account_id
-                          if len(TAG_LIST) > 0 and "Tags" in obj:
-                              logger.debug(f"Tags enabled and found tags {obj['Tags']}")
-                              for tag in obj["Tags"]:
-                                  if tag["Key"] in TAG_LIST:
-                                      obj[f"tag_{tag['Key']}"] = tag["Value"]
-                          obj['collection_date'] = collection_date
-                          file_.write(to_json(obj) + "\n")
+                      for region in REGIONS:
+                          logger.info(f"Collecting in {region}")
+                          for counter, obj in enumerate(func(account_id=account_id,region=region), start=1):
+                              obj['accountid'] = account_id
+                              if len(TAG_LIST) > 0 and "Tags" in obj:
+                                  logger.debug(f"Tags enabled and found tags {obj['Tags']}")
+                                  for tag in obj["Tags"]:
+                                      if tag["Key"] in TAG_LIST:
+                                          obj[f"tag_{tag['Key']}"] = tag["Value"]
+                              obj['collection_date'] = collection_date
+                              obj['region'] = region
+                              file_.write(to_json(obj) + "\n")
                   logger.info(f"Collected {counter} total {name} instances")
                   upload_to_s3(name, account_id, payer_id)
               except Exception as exc:   #pylint: disable=broad-exception-caught
@@ -325,7 +318,6 @@ Resources:
                   logger.info(f"Data {account_id} in s3 - {BUCKET}/{key}")
               except Exception as exc:  #pylint: disable=broad-exception-caught
                   logger.info(exc)
-
 
       Handler: 'index.lambda_handler'
       MemorySize: 2688
