@@ -127,7 +127,6 @@ Resources:
           Supported types: ebs, snapshots, ami, rds instances
           """
           import os
-          import re
           import json
           import logging
           from functools import partial, lru_cache
