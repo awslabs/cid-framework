@@ -123,6 +123,9 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
+          """ Scan linked accounts and store instances info to s3 bucket
+          Supported types: ebs, snapshots, ami, rds instances
+          """
           import os
           import re
           import json
