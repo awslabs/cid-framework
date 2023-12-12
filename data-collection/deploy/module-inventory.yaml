@@ -155,21 +155,6 @@ Resources:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
 
-          def escape(pattern):
-              return pattern.replace('[','\[').replace(']','\]').replace('*','.+?')
-
-          def find_in_flatten_dict(d, pattern,  parent_key='', sep='.'):
-              if re.match(pattern, parent_key):
-                  yield (parent_key, d)
-              elif isinstance(d, list):
-                  for i, v in enumerate(d):
-                      item_key = f"{parent_key}[{i}]"
-                      yield from find_in_flatten_dict(v, pattern, item_key, sep=sep)
-              elif isinstance(d, dict):
-                  for k, v in d.items():
-                      new_key = f"{parent_key}{sep}{k}" if parent_key else k
-                      yield from find_in_flatten_dict(v, pattern, new_key, sep=sep)
-
           @lru_cache(maxsize=10000)
           def assume_session(account_id, region):
               """assume role in account"""
@@ -275,8 +260,7 @@ Resources:
                   'vpc': partial(
                       paginated_scan,
                       service='ec2',
-                      function_name='describe_vpcs'#,
-                      #obj_name='Vpcs'
+                      function_name='describe_vpcs'
                   )
               }
 
