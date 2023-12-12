@@ -2,8 +2,15 @@
 Moving s3 objects from old structure to the new one.
 
 Usage:
+    When migrating data in the same bucket:
+
     python3 {prog} <ODC_bucket>
 
+    When migrating data between 2 different buckets:
+
+    python3 {prog} <ODC_source_bucket> <ODC_destination_bucket>
+
+        If source and destination arguments have the same bucket name, the migration will be done in the same bucket.
 
 """
 import re
