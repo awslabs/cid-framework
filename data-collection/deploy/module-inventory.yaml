@@ -273,7 +273,7 @@ Resources:
                   with open(TMP_FILE, "w", encoding='utf-8') as file_:
                       for region in REGIONS:
                           logger.info(f"Collecting in {region}")
-                          for counter, obj in enumerate(func(account_id=account_id,region=region), start=1):
+                          for counter, obj in enumerate(func(account_id=account_id,region=region), start=counter + 1):
                               obj['accountid'] = account_id
                               if len(TAG_LIST) > 0 and "Tags" in obj:
                                   logger.debug(f"Tags enabled and found tags {obj['Tags']}")
