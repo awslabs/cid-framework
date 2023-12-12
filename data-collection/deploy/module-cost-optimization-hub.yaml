@@ -218,7 +218,6 @@ Resources:
     Properties:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
-      LogGroupClass: INFREQUENT_ACCESS
 
   CrawlerCostOptimizationHub:
     Type: AWS::Glue::Crawler
