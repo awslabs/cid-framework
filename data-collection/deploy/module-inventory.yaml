@@ -190,7 +190,6 @@ Resources:
                   for domain_name in domain_names:
                       domain = client.describe_domain(DomainName=domain_name)['DomainStatus']
                       yield {
-                          'region': region,
                           'DomainName': domain['DomainName'],
                           'DomainId': domain['DomainId'],
                           'EngineVersion': domain['EngineVersion'],
