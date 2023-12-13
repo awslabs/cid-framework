@@ -391,6 +391,8 @@ Resources:
 
   GlueRole:
     Type: AWS::IAM::Role
+    DependsOn:
+      - InitExecutor # Custom resource that creates Glue database
     Properties:
       RoleName: !Sub "${ResourcePrefix}Glue-Crawler"
       AssumeRolePolicyDocument:
@@ -571,6 +573,7 @@ Resources:
                   - glue:CreateDatabase
                   - glue:DeleteDatabase
                 Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
         - PolicyName: "GlueTable"
           PolicyDocument:
