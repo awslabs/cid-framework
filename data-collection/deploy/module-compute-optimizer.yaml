@@ -590,12 +590,12 @@ Resources:
                 Action:
                   - s3:DeleteObject
                   - s3:DeleteObjectVersion
-                Resource: !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}-*/*'
+                Resource: !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}.*/*'
               - Effect: Allow
                 Action:
                   - s3:ListBucketVersions
                   - s3:DeleteBucket
-                Resource: !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}-*'
+                Resource: !Sub 'arn:aws:s3:::${BucketPrefix}${AWS::AccountId}.*'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
 
