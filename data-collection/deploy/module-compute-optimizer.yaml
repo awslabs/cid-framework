@@ -215,6 +215,16 @@ Resources:
                   Resource:
                     - !Sub "arn:aws:s3:::${Name}.${AWS::Region}"
                     - !Sub "arn:aws:s3:::${Name}.${AWS::Region}/*"
+                - Sid: AllowTLS12Only
+                  Effect: Deny
+                  Principal: "*"
+                  Action: s3:*
+                  Resource:
+                    - !Sub "arn:aws:s3:::${Name}.${AWS::Region}"
+                    - !Sub "arn:aws:s3:::${Name}.${AWS::Region}/*"
+                  Condition:
+                    NumericLessThan:
+                      s3:TlsVersion: 1.2
           BucketReplicaRole:
             Type: AWS::IAM::Role
             Properties:
