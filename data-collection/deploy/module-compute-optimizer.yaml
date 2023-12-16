@@ -371,17 +371,13 @@ Resources:
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          def lambda_handler(event, context): #pylint: disable=unused-argument,too-many-locals
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(f"Event data {json.dumps(event)}")
               if 'account' not in event:
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              today = date.today()
-              year = today.year
-              month = today.month
-
               account = json.loads(event["account"])
               payer_id = account["account_id"]
               try:
@@ -415,7 +411,9 @@ Resources:
                                   includeMemberAccounts=INCLUDE_MEMBER_ACCOUNTS,
                                   s3DestinationConfig={
                                       'bucket': bucket,
-                                      'keyPrefix': f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year={year}/month={month}'
+                                      'keyPrefix': date.today().strftime(
+                                          f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year=%Y/month=%m'
+                                      ),
                                   }
                               )
                               result_messages.append(f"{region} {name} export queued. JobId: {res['jobId']}")
