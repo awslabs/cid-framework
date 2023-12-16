@@ -387,7 +387,7 @@ Resources:
                       credentials = boto3.client('sts', region_name=region).assume_role(
                           RoleArn=f"arn:aws:iam::{payer_id}:role/{ROLE_NAME}",
                           RoleSessionName="data_collection"
-                      )
+                      )["Credentials"]
                       co = boto3.client(
                           "compute-optimizer",
                           region_name=region,
