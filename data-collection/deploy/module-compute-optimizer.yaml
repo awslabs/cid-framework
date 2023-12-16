@@ -350,9 +350,17 @@ Resources:
         ZipFile: |
           import os
           import json
-          import boto3
           import logging
           from datetime import date
+
+          # update boto3 version
+          import sys
+          from pip._internal import main
+          main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
+          sys.path.insert(0,'/tmp/')
+
+          import boto3 #pylint: disable=wrong-import-position
+
 
           BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
           INCLUDE_MEMBER_ACCOUNTS = os.environ.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
@@ -397,6 +405,7 @@ Resources:
                           'lambda':       co.export_lambda_function_recommendations,
                           'ebs_volume':   co.export_ebs_volume_recommendations,
                           'ecs_service':  co.export_ecs_service_recommendations,
+                          'license_recommendations':  co.export_license_recommendations,
                       }
                       bkt = BUCKET_PREFIX + '.' + region
                       logger.info(f"INFO: bucket={bkt}")

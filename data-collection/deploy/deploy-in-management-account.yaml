@@ -319,6 +319,27 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
+  COExportLicenseRecommendations:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableComputeOptimizerModule
+    Properties:
+      PolicyName: ComputeOptimizer-ExportLicenseRecommendations
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportLicenseRecommendations"
+              - "compute-optimizer:GetLicenseRecommendations"
+              - "ec2:DescribeInstances"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
   CostOptimizationHubRecommendations:
     Type: "AWS::IAM::Policy"
     Condition: EnableCostOptimizationHubModule
