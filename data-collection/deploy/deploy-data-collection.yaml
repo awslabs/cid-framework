@@ -365,21 +365,29 @@ Resources:
           - id: W35 #S3 Bucket should have access logging configured
             reason: "The bucket is used with Athena and logging can be extensive."
 
-  S3BucketPolicy:
+  S3DataBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref S3Bucket
       PolicyDocument:
         Version: 2012-10-17
         Statement:
-          - Sid: AllowSSLRequestsOnly
+          - Sid: AllowSSLOnly
             Action: s3:*
             Effect: Deny
+            Principal: "*"
             Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
             Condition:
               Bool:
-                aws:SecureTransport: "false"
+                aws:SecureTransport: false
+          - Sid: AllowTLS12Only
+            Action: s3:*
+            Effect: Deny
             Principal: "*"
+            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: 1.2
 
   # GlueDatabase: # GlueDatabase can be already created by crawler in previous versions. So we cannot create it here. See Init CustomResource
   #   Type: "AWS::Glue::Database"
@@ -391,6 +399,8 @@ Resources:
 
   GlueRole:
     Type: AWS::IAM::Role
+    DependsOn:
+      - InitExecutor # Custom resource that creates Glue database
     Properties:
       RoleName: !Sub "${ResourcePrefix}Glue-Crawler"
       AssumeRolePolicyDocument:
@@ -571,6 +581,7 @@ Resources:
                   - glue:CreateDatabase
                   - glue:DeleteDatabase
                 Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
         - PolicyName: "GlueTable"
           PolicyDocument:
