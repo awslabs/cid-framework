@@ -128,6 +128,10 @@ Mappings:
           - { Type: string, Name: unit }
           - { Type: double, Name: priceperunit }
           - { Type: string, Name: currency }
+          - { Type: string, Name: relatedto }
+          - { Type: string, Name: leasecontractlength }
+          - { Type: string, Name: purchaseoption }
+          - { Type: string, Name: offeringclass }
           - { Type: string, Name: product family }
           - { Type: string, Name: servicecode }
           - { Type: string, Name: location }
@@ -148,11 +152,18 @@ Mappings:
           - { Type: string, Name: max iops/volume }
           - { Type: string, Name: max iops burst performance }
           - { Type: string, Name: max throughput/volume }
+          - { Type: string, Name: provisioned }
           - { Type: string, Name: tenancy }
+          - { Type: string, Name: ebs optimized }
           - { Type: string, Name: operating system }
           - { Type: string, Name: license model }
           - { Type: string, Name: group }
           - { Type: string, Name: group description }
+          - { Type: string, Name: transfer type }
+          - { Type: string, Name: from location }
+          - { Type: string, Name: from location type }
+          - { Type: string, Name: to location }
+          - { Type: string, Name: to location type }
           - { Type: string, Name: usagetype }
           - { Type: string, Name: operation }
           - { Type: string, Name: availabilityzone }
@@ -160,27 +171,13 @@ Mappings:
           - { Type: string, Name: classicnetworkingsupport }
           - { Type: string, Name: dedicated ebs throughput }
           - { Type: string, Name: ecu }
+          - { Type: string, Name: elastic graphics type }
           - { Type: string, Name: enhanced networking supported }
+          - { Type: string, Name: from region code }
           - { Type: string, Name: gpu }
           - { Type: string, Name: gpu memory }
           - { Type: string, Name: instance }
-          - { Type: string, Name: instancesku }
-          - { Type: string, Name: intel avx2 available }
-          - { Type: string, Name: intel avx available }
-          - { Type: string, Name: intel turbo available }
-          - { Type: string, Name: marketoption }
-          - { Type: string, Name: normalization size factor }
-          - { Type: string, Name: pre installed s/w }
-          - { Type: string, Name: processor features }
-          - { Type: string, Name: region code }
-          - { Type: string, Name: servicename }
-          - { Type: string, Name: volume api name }
-          - { Type: string, Name: vpcnetworkingsupport }
-          - { Type: string, Name: relatedto }
-          - { Type: string, Name: leasecontractlength }
-          - { Type: string, Name: purchaseoption }
-          - { Type: string, Name: offeringclass }
-          - { Type: string, Name: provisioned }
+          - { Type: string, Name: instance capacity - 10xlarge }
           - { Type: string, Name: instance capacity - 12xlarge }
           - { Type: string, Name: instance capacity - 16xlarge }
           - { Type: string, Name: instance capacity - 18xlarge }
@@ -191,23 +188,26 @@ Mappings:
           - { Type: string, Name: instance capacity - 8xlarge }
           - { Type: string, Name: instance capacity - 9xlarge }
           - { Type: string, Name: instance capacity - large }
+          - { Type: string, Name: instance capacity - medium }
           - { Type: string, Name: instance capacity - metal }
           - { Type: string, Name: instance capacity - xlarge }
+          - { Type: string, Name: instancesku }
+          - { Type: string, Name: intel avx2 available }
+          - { Type: string, Name: intel avx available }
+          - { Type: string, Name: intel turbo available }
+          - { Type: string, Name: marketoption }
+          - { Type: string, Name: normalization size factor }
           - { Type: string, Name: physical cores }
+          - { Type: string, Name: pre installed s/w }
+          - { Type: string, Name: processor features }
           - { Type: string, Name: product type }
+          - { Type: string, Name: region code }
           - { Type: string, Name: resource type }
+          - { Type: string, Name: servicename }
           - { Type: string, Name: snapshotarchivefeetype }
-          - { Type: string, Name: ebs optimized }
-          - { Type: string, Name: transfer type }
-          - { Type: string, Name: from location }
-          - { Type: string, Name: from location type }
-          - { Type: string, Name: to location }
-          - { Type: string, Name: to location type }
-          - { Type: string, Name: elastic graphics type }
-          - { Type: string, Name: from region code }
-          - { Type: string, Name: instance capacity - 10xlarge }
-          - { Type: string, Name: instance capacity - medium }
           - { Type: string, Name: to region code }
+          - { Type: string, Name: volume api name }
+          - { Type: string, Name: vpcnetworkingsupport }
     AmazonElastiCache:
       path: elasticache
       partition:
