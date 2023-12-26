@@ -151,7 +151,7 @@ def test_compute_optimizer_export_triggered(compute_optimizer, start_time):
     # TODO: check how we can add better test, taking into account 15-30 mins delay of export in CO
 
 def test_cost_optimization_hub_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_data" LIMIT 10;')
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_summary_data" LIMIT 10;')
     assert len(data) > 0, 'cost_optimization_hub_data is empty'
 
 if __name__ == '__main__':
