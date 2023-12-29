@@ -128,8 +128,16 @@ Resources:
           sys.path.insert(0,'/tmp/')
 
           import boto3 #pylint: disable=wrong-import-position
+          from botocore.config import Config
 
           logger = logging.getLogger()
+          # Create a new handler here because downloading the updated boto3 affects the
+          # default Lambda logging handler such that only Warning and Error are logged.
+          for h in logger.handlers:
+            logger.removeHandler(h)
+          h = logging.StreamHandler(sys.stdout)
+          h.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+          logger.addHandler(h)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           BUCKET_NAME = os.environ['BUCKET_NAME']
@@ -138,15 +146,13 @@ Resources:
           DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
           TMP_FILE = "/tmp/data.json"
           TMP_FILE_BATCH = "/tmp/batch.csv"
-
-          ACTION_TYPES = [
-              'Rightsize',
-              'Stop',
-              'Upgrade',
-              'PurchaseSavingsPlans',
-              'PurchaseReservedInstances',
-              'MigrateToGraviton'
-          ]
+          RETRIES = int(os.environ.get('RETRIES', "10"))
+          BOTO_CONFIG = Config(
+              retries = {
+                'max_attempts': RETRIES,
+                'mode': 'standard'
+            }
+          )
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -154,11 +160,11 @@ Resources:
                   return obj.isoformat() if isinstance(obj, (date, datetime)) else None
               return json.dumps(obj, default=_date_transformer)
 
-
           def store_summary_to_s3(records, payer_id):
               """ Upload records to s3 """
               count = 0
 
+              # Use two temp files, one for full summary records and one for batch processor data
               with open(TMP_FILE, "w", encoding='utf-8') as summary_file:
                   with open(TMP_FILE_BATCH, "w", encoding='utf-8') as batch_file:
                       batch_file.write('id,actionType\n')
@@ -172,45 +178,36 @@ Resources:
                   logger.info(f"No records found")
                   return count
 
-              key = date.today().strftime(f"{PREFIX}/{PREFIX}-summary-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
-              boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+              s3 = boto3.client('s3')
+              key = date.today().strftime(
+                  f"{PREFIX}/{PREFIX}-summary-data/payer_id={payer_id}"
+                  f"/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              s3.upload_file(TMP_FILE, BUCKET_NAME, key)
               logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
 
               key =  f"{PREFIX}/{PREFIX}-batch-data/payer_id={payer_id}/recommendations.csv"
-              boto3.client('s3').upload_file(TMP_FILE_BATCH, BUCKET_NAME, key)
+              s3.upload_file(TMP_FILE_BATCH, BUCKET_NAME, key)
 
               return count, key
 
-          def store_detail_to_s3(records, index, payer_id):
+          def store_detail_to_s3(records, payer_id):
               """ Upload records to s3 """
               count = 0
-
-              action_types = {}
-              action_counts = {}
-              for action_type in ACTION_TYPES:
-                  f = open(f'/tmp/{action_type}.json', "w", encoding='utf-8')
-                  action_types[action_type] = f
-                  action_counts[action_type] = 0
-
-              for count, record in enumerate(records, start=1):
-                  json_file = action_types[record['actionType']]
-                  json_file.write(to_json(record) + '\n')
-                  action_counts[record['actionType']] += 1
+              s3 = boto3.client('s3', config=BOTO_CONFIG)
 
               cur_date = date.today()
-              for key in action_types:
-                  action_types[key].close()
-                  s3_prefix = f'{PREFIX}/{PREFIX}-detail-{key}-data/payer_id={payer_id}'
-                  s3_key = cur_date.strftime(f"{s3_prefix}/year=%Y/month=%m/day=%d/%Y-%m-%d-{index}.json")
-                  boto3.client('s3').delete_object(Bucket=BUCKET_NAME, Key=s3_key)
-                  if action_counts[key] > 0:
-                      boto3.client('s3').upload_file(f'/tmp/{action_type}.json', BUCKET_NAME, s3_key)
-                      logger.info(f'Uploaded {action_counts[key]} {key} records to s3://{BUCKET_NAME}/{s3_key}')
+              # Each record will be a unique file named by the base64 recommendation id
+              for count, record in enumerate(records, start=1):
+                  s3_key = cur_date.strftime(
+                      f'{PREFIX}/{PREFIX}-detail-{record["actionType"]}-recommendation/payer_id={payer_id}'
+                      f'/year=%Y/month=%m/day=%d/{record["recommendationId"]}.json'
+                  )
+                  s3.put_object(Body=to_json(record), Bucket=BUCKET_NAME, Key=s3_key)
 
               return count
 
           def get_detailed_recommendation(hub, rec):
-              res = hub.get_recommendation(recommendationId=rec['Value']['id'])
+              res = hub.get_recommendation(recommendationId=rec['id'])
               res.pop('ResponseMetadata', None)
               return res
 
@@ -220,24 +217,24 @@ Resources:
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects CostOptimizationHub data
               and must be called from the corresponding Step Function to orchestrate
+
+              It can be called from two different modes, one for obtaining a summary
+              of all recommendations and the other to get individual details of each recommendations
               """
               logger.info(f"Event data: {event}")
               account = event.get('account')
-              input = event.get('BatchInput')
+              batch_input = event.get('BatchInput')
               items = event.get('Items')
-              if not account and not (input and items):
+              if not (account or batch_input):
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              is_summary = account != None
-              if is_summary:
-                  account = json.loads(account)
-                  account_id = account["account_id"]
-                  logger.info(f"Executing in summary flow")
-              else:
-                  account_id = input.get('account_id')
-                  logger.info(f"Executing in detail flow")
+              # Identify if this is invoked in summary vs. batch detail mode, via the event data present
+              is_summary_mode = batch_input == None
+              logger.info(f"Executing in {'summary' if is_summary_mode else 'detail'} mode flow")
+              account = json.loads(account) if is_summary_mode else batch_input.get('account')
+              account_id = account["account_id"]
 
               creds = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
@@ -249,9 +246,10 @@ Resources:
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
+                  config=BOTO_CONFIG,
               )
 
-              if is_summary:
+              if is_summary_mode:
                   data_iterator = iterate_paginated_results(
                       client=hub,
                       function='list_recommendations',
@@ -260,23 +258,23 @@ Resources:
                           includeAllRecommendations=True,
                       ),
                   )
-                  #data_iterator = DUMMY_DATA.__iter__()
                   count, rec_key = store_summary_to_s3(data_iterator, account_id)
                   sf = boto3.client('stepfunctions')
                   sf_input = {
                       "bucket": BUCKET_NAME,
                       "file": rec_key,
-                      "account_id": account_id
+                      "account": account
                   }
-                  sf_input = json.dumps(sf_input).replace('"', '\"')
+                  sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
                   sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
-              else:
+              elif items:
                   data_iterator = map(
                       partial(get_detailed_recommendation, hub),
                       items.__iter__(),
                   )
-                  index = items[0]['Index']
-                  count = store_detail_to_s3(data_iterator, index, account_id)
+                  count = store_detail_to_s3(data_iterator, account_id)
+              else:
+                  count = 0
 
               return {"status":"200","Recorded":f'"{count}"'}
       Handler: "index.lambda_handler"
@@ -413,12 +411,8 @@ Resources:
               "ItemBatcher": {
                 "MaxItemsPerBatch": ${ItemsPerBatch},
                 "BatchInput": {
-                  "account_id.$": "$.account_id"
+                  "account.$": "$.account"
                 }
-              },
-              "ItemSelector": {
-                "Index.$": "$$.Map.Item.Index",
-                "Value.$": "$$.Map.Item.Value"
               },
               "Next": "CrawlerStepFunctionStartExecution"
             },
