@@ -571,7 +571,7 @@ Resources:
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Policies:
-        - PolicyName: "GlueDatabase"
+        - PolicyName: "Glue"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -580,20 +580,13 @@ Resources:
                   - glue:GetDatabase
                   - glue:CreateDatabase
                   - glue:DeleteDatabase
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
-        - PolicyName: "GlueTable"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
                   - glue:GetTable
                   - glue:GetTables
                   - glue:CreateTable
                   - glue:DeleteTable
                 Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
   LambdaInit:
     Type: AWS::Lambda::Function
@@ -631,9 +624,9 @@ Resources:
                   res, reason = func()
               except Exception as exc: #pylint: disable=broad-exception-caught
                   if 'Insufficient Lake Formation permission' in str(exc):
-                      res, reason = 'FAILURE', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
+                      res, reason = 'FAILED', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
                   else:
-                      res, reason = 'FAILURE', str(exc)
+                      res, reason = 'FAILED', str(exc)
               body = {
                   'Status': res,
                   'Reason': reason,
