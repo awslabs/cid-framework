@@ -630,7 +630,10 @@ Resources:
                   func = {'CREATE': create, 'DELETE': delete, 'UPDATE': update}.get(action)
                   res, reason = func()
               except Exception as exc: #pylint: disable=broad-exception-caught
-                  res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
+                  if 'Insufficient Lake Formation permission' in str(exc):
+                      res, reason = 'FAILURE', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
+                  else:
+                      res, reason = 'FAILURE', str(exc)
               body = {
                   'Status': res,
                   'Reason': reason,
