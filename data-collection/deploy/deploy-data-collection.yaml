@@ -184,9 +184,9 @@ Mappings:
 Parameters:
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket that needs to be created to hold information
+    Description: A Prefix of S3 Bucket name that will hold information. A Bucket name will be concatenated with account_id automatically (cid-data-123456123456). You can keep this parameter as is.
     AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
-    Default: costoptimizationdata
+    Default: cid-data-
   ManagementAccountRole:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
