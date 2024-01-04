@@ -215,11 +215,11 @@ Parameters:
     Default: optimization_data
   ResourcePrefix:
     Type: String
-    Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable e.g. prefix-
+    Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable (e.g. 'prefix-'). This parameter cannot be updated. Delete and re-create stack if needed an update.
     Default: "CID-DC-"
   CFNSourceBucket:
     Type: String
-    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be allways 'aws-managed-cost-intelligence-dashboards'"
+    Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
   IncludeTAModule:
     Type: String
