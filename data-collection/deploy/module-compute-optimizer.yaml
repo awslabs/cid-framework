@@ -412,7 +412,7 @@ Resources:
                                   s3DestinationConfig={
                                       'bucket': bucket,
                                       'keyPrefix': date.today().strftime(
-                                          f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year=%Y/month=%m'
+                                          f'compute_optimizer/compute_optimizer_{name}/payer_id={payer_id}/year=%Y/month=%-m'
                                       ),
                                   }
                               )

@@ -115,8 +115,8 @@ Resources:
           from botocore.exceptions import ClientError
           from boto3.session import Session
 
-          bucket = os.environ["BUCKET_NAME"]
-          prefix = os.environ["PREFIX"]
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
           role_name = os.environ['ROLENAME']
           REGIONS = [r.strip() for r in os.environ.get("REGIONS").split(',') if r]
           local_file = "/tmp/data.json"
@@ -176,15 +176,11 @@ Resources:
                                   print(region, account_id, type(exc), exc)
 
                   if os.path.getsize(local_file) == 0:
-                      print(f"No data in file for {prefix}")
+                      print(f"No data in file for {PREFIX}")
                   else:
-                      today = date.today()
-                      year = today.year
-                      month = today.month
-                      day = today.day
-                      key = f"{prefix}/{prefix}-data/payer_id={payer_id}/year={year}/month={month}/{account_id}-{year}-{month}-{day}.json"
+                      key = datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/{account_id}-%Y-%m-%d.json")
                       client = boto3.client("s3")
-                      client.upload_file(local_file, bucket, key)
+                      client.upload_file(local_file, BUCKET, key)
                       print(f"Data in s3 - {key}")
               except Exception as exc:
                   logging.warning(exc)
