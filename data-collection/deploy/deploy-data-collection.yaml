@@ -6,15 +6,15 @@ Metadata:
       - Label:
           default: 'Deployment parameters'
         Parameters:
+          - ManagementAccountID
+          - RegionsInScope
           - ResourcePrefix
           - ManagementAccountRole
           - MultiAccountRoleName
           - DestinationBucket
-          - ManagementAccountID
+          - DatabaseName
           - Schedule
           - CFNSourceBucket
-          - DatabaseName
-          - RegionsInScope
       - Label:
           default: 'Available modules'
         Parameters:
