@@ -7,16 +7,16 @@ Metadata:
         default: 'Deployment parameters'
       Parameters:
         - DataCollectionAccountID
-        - MultiAccountRoleName
         - ResourcePrefix
+        - MultiAccountRoleName
     - Label:
         default: 'Available modules'
       Parameters:
-        - IncludeTAModule
-        - IncludeInventoryCollectorModule
-        - IncludeECSChargebackModule
-        - IncludeRDSUtilizationModule
         - IncludeBudgetsModule
+        - IncludeECSChargebackModule
+        - IncludeInventoryCollectorModule
+        - IncludeRDSUtilizationModule
+        - IncludeTAModule
         - IncludeTransitGatewayModule
     ParameterLabels:
       DataCollectionAccountID:
