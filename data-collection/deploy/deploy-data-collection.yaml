@@ -207,7 +207,7 @@ Parameters:
     Type: String
     Description: "Ex: us-east-1,us-east-2,us-west-1,us-west-2,eu-central-1,eu-west-1,eu-west-2,eu-west-3  if empty, the current region will be used. You can add regions later by updating the stack."
     Default: ""
-    AllowedPattern: ([a-z0-9\-, ]*?$)
+    AllowedPattern: (^(([a-z]{2}-([a-z]|-){4,10}-[1-9]{1}|[a-z]{2}-([a-z]|-){4,10}-[1-9]{1},?)+|)$)
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
