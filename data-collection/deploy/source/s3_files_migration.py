@@ -207,46 +207,45 @@ def migrate_v2(source_bucket, dest_bucket):
         Bucket=source_bucket,
     )
 
-    operations = [f"{source_bucket},{dest_bucket},is_mod,file_date"]
-    while more_objects_to_fetch:
-        contents = list_objects_result.get("Contents", [])
-        for content in contents:
-            try:
-                source_key = content["Key"]
-                file_date = content["LastModified"]
-                applicable_mods = get_applicable_mods(source_key, available_mods)
-                new_key = source_key
-                for old_prefix, new_prefix in applicable_mods.items():
+    with open("migration_log.csv", "w") as f:
+        f.write(f"{source_bucket},{dest_bucket},is_modified,file_date\n")
+        while more_objects_to_fetch:
+            contents = list_objects_result.get("Contents", [])
+            for content in contents:
+                try:
                     is_mod = False
-                    new_prefix = file_date.strftime(new_prefix)
-                    new_key = re.sub(
-                        old_prefix, new_prefix, source_key
-                    )  # Returns the same source_key string when no match exists for the given pattern
-                    if new_key != source_key:
-                        logger.info(f"Modifying source {source_key} to {new_key}")
-                        is_mod = True
-                        break #break the loop after the first matching pattern
-                copy_source = {"Bucket": source_bucket, "Key": source_key}
-                s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
-                operations.append(f"{source_key},{new_key},{is_mod},{file_date}")
-                logger.info(
-                    f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
+                    source_key = content["Key"]
+                    file_date = content["LastModified"]
+                    applicable_mods = get_applicable_mods(source_key, available_mods)
+                    new_key = source_key
+                    for old_prefix, new_prefix in applicable_mods.items():
+                        new_prefix = file_date.strftime(new_prefix)
+                        new_key = re.sub(
+                            old_prefix, new_prefix, source_key
+                        )  # Returns the same source_key string when no match exists for the given pattern
+                        if new_key != source_key:
+                            logger.info(f"Modifying source {source_key} to {new_key}")
+                            is_mod = True
+                            break #break the loop after the first matching pattern
+                    copy_source = {"Bucket": source_bucket, "Key": source_key}
+                    #s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
+                    f.write(f"{source_key},{new_key},{is_mod},{file_date}\n")
+                    logger.info(
+                        f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
+                    )
+                    # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
+                except Exception as e:
+                    logger.warning(e)
+
+            more_objects_to_fetch = list_objects_result["IsTruncated"]
+            if more_objects_to_fetch:
+                next_continuation_token = list_objects_result["NextContinuationToken"]
+                list_objects_result = s3.list_objects_v2(
+                    Bucket=source_bucket,
+                    ContinuationToken=next_continuation_token,
                 )
-                # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
-            except Exception as e:
-                logger.warning(e)
-
-        more_objects_to_fetch = list_objects_result["IsTruncated"]
-        if more_objects_to_fetch:
-            next_continuation_token = list_objects_result["NextContinuationToken"]
-            list_objects_result = s3.list_objects_v2(
-                Bucket=source_bucket,
-                ContinuationToken=next_continuation_token,
-            )
-        else:
-            next_continuation_token = None
-
-    s3.put_object(Bucket=dest_bucket, Key="migration-log.csv", Body="\n".join(operations))
+            else:
+                next_continuation_token = None
 
 
 def get_applicable_mods(object_key: str, available_mods: dict):
