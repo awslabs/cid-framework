@@ -1,6 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Retrieves AWS Cost Optimization Hub Data across AWS organization
-Transform: 'AWS::LanguageExtensions'
 Parameters:
   DatabaseName:
     Type: String
@@ -45,10 +44,6 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  CostOptimizationHubActionTypes:
-    Type: CommaDelimitedList
-    Default: Rightsize, Stop, Upgrade, PurchaseSavingsPlans, PurchaseReservedInstances, MigrateToGraviton
-    Description: Action types collected by Cost Optimization Hub
 
 
 Resources:
@@ -85,7 +80,6 @@ Resources:
                   - "s3:PutObject"
                   - "s3:GetObject"
                   - "s3:PutObjectAcl"
-                  - "s3:DeleteObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
@@ -93,13 +87,6 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "${DestinationBucketARN}"
-        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: "states:StartExecution"
-                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -128,31 +115,15 @@ Resources:
           sys.path.insert(0,'/tmp/')
 
           import boto3 #pylint: disable=wrong-import-position
-          from botocore.config import Config
 
           logger = logging.getLogger()
-          # Create a new handler here because downloading the updated boto3 affects the
-          # default Lambda logging handler such that only Warning and Error are logged.
-          for h in logger.handlers:
-            logger.removeHandler(h)
-          h = logging.StreamHandler(sys.stdout)
-          h.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-          logger.addHandler(h)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           BUCKET_NAME = os.environ['BUCKET_NAME']
           ROLENAME = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
-          DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
           TMP_FILE = "/tmp/data.json"
-          TMP_FILE_BATCH = "/tmp/batch.csv"
-          RETRIES = int(os.environ.get('RETRIES', "10"))
-          BOTO_CONFIG = Config(
-              retries = {
-                'max_attempts': RETRIES,
-                'mode': 'standard'
-            }
-          )
+          NEED_DETAILED = True # set it to False to fallback to collection of only summaries if any perf issue or timeout
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -160,81 +131,41 @@ Resources:
                   return obj.isoformat() if isinstance(obj, (date, datetime)) else None
               return json.dumps(obj, default=_date_transformer)
 
-          def store_summary_to_s3(records, payer_id):
+          def store_to_s3(records, path):
               """ Upload records to s3 """
               count = 0
-
-              # Use two temp files, one for full summary records and one for batch processor data
-              with open(TMP_FILE, "w", encoding='utf-8') as summary_file:
-                  with open(TMP_FILE_BATCH, "w", encoding='utf-8') as batch_file:
-                      batch_file.write('id,actionType\n')
-                      for count, record in enumerate(records, start=1):
-                          summary_file.write(to_json(record) + '\n')
-                          rec_id = record.get('recommendationId')
-                          actionType = record.get('actionType')
-                          if rec_id and actionType:
-                              batch_file.write(f'{rec_id},{actionType}\n')
+              with open(TMP_FILE, "w", encoding='utf-8') as json_file:
+                  for count, record in enumerate(records, start=1):
+                      json_file.write(to_json(record) + '\n')
               if not count:
-                  logger.info(f"No records found")
+                  logger.info(f"No records for {path}")
                   return count
-
-              s3 = boto3.client('s3')
-              key = date.today().strftime(
-                  f"{PREFIX}/{PREFIX}-summary-data/payer_id={payer_id}"
-                  f"/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
-              s3.upload_file(TMP_FILE, BUCKET_NAME, key)
+              key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
               logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
-
-              key =  f"{PREFIX}/{PREFIX}-batch-data/payer_id={payer_id}/recommendations.csv"
-              s3.upload_file(TMP_FILE_BATCH, BUCKET_NAME, key)
-
-              return count, key
-
-          def store_detail_to_s3(records, payer_id):
-              """ Upload records to s3 """
-              count = 0
-              s3 = boto3.client('s3', config=BOTO_CONFIG)
-
-              cur_date = date.today()
-              # Each record will be a unique file named by the base64 recommendation id
-              for count, record in enumerate(records, start=1):
-                  s3_key = cur_date.strftime(
-                      f'{PREFIX}/{PREFIX}-detail-{record["actionType"]}-recommendation/payer_id={payer_id}'
-                      f'/year=%Y/month=%m/day=%d/{record["recommendationId"]}.json'
-                  )
-                  s3.put_object(Body=to_json(record), Bucket=BUCKET_NAME, Key=s3_key)
-
               return count
-
-          def get_detailed_recommendation(hub, rec):
-              res = hub.get_recommendation(recommendationId=rec['id'])
-              res.pop('ResponseMetadata', None)
-              return res
 
           def iterate_paginated_results(client, function, search, params=None):
               yield from client.get_paginator(function).paginate(**(params or {})).search(search)
 
+          def get_detailed_recommendation(hub, rec):
+              res = hub.get_recommendation(recommendationId=rec['recommendationId'])
+              res.pop('ResponseMetadata', None)
+              return res
+
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects CostOptimizationHub data
               and must be called from the corresponding Step Function to orchestrate
-
-              It can be called from two different modes, one for obtaining a summary
-              of all recommendations and the other to get individual details of each recommendations
               """
               logger.info(f"Event data: {event}")
-              account = event.get('account')
-              batch_input = event.get('BatchInput')
-              items = event.get('Items')
-              if not (account or batch_input):
+              if 'account' not in event:
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              # Identify if this is invoked in summary vs. batch detail mode, via the event data present
-              is_summary_mode = batch_input == None
-              logger.info(f"Executing in {'summary' if is_summary_mode else 'detail'} mode flow")
-              account = json.loads(account) if is_summary_mode else batch_input.get('account')
+              account = json.loads(event["account"])
               account_id = account["account_id"]
+              payer_id = account["payer_id"]
 
               creds = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
@@ -246,37 +177,25 @@ Resources:
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
-                  config=BOTO_CONFIG,
               )
-
-              if is_summary_mode:
-                  data_iterator = iterate_paginated_results(
-                      client=hub,
-                      function='list_recommendations',
-                      search='items',
-                      params=dict( #pylint: disable=R1735
-                          includeAllRecommendations=True,
-                      ),
-                  )
-                  count, rec_key = store_summary_to_s3(data_iterator, account_id)
-                  sf = boto3.client('stepfunctions')
-                  sf_input = {
-                      "bucket": BUCKET_NAME,
-                      "file": rec_key,
-                      "account": account
-                  }
-                  sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
-                  sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
-              elif items:
+              s3_prefix = f'{PREFIX}/{PREFIX}-data/payer_id={payer_id}'
+              data_iterator = iterate_paginated_results(
+                  client=hub,
+                  function='list_recommendations',
+                  search='items',
+                  params=dict( #pylint: disable=R1735
+                      includeAllRecommendations=True,
+                  ),
+              )
+              if NEED_DETAILED:
                   data_iterator = map(
                       partial(get_detailed_recommendation, hub),
-                      items.__iter__(),
+                      data_iterator,
                   )
-                  count = store_detail_to_s3(data_iterator, account_id)
-              else:
-                  count = 0
+              count = store_to_s3(data_iterator, s3_prefix)
 
-              return {"status":"200","Recorded":f'"{count}"'}
+              return f"Recorded {count}"
+
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 600
@@ -286,7 +205,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref ManagementRoleName
-          DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -309,7 +227,7 @@ Resources:
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-summary-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
       Configuration: |
         {
           "Version": 1.0,
@@ -349,127 +267,6 @@ Resources:
       Target:
         Arn: !GetAtt StepFunctionCostOptimizationHub.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
-
-  StepFunctionCostOptimizationHubDetail:
-    Type: AWS::StepFunctions::StateMachine
-    Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
-      StateMachineType: STANDARD
-      RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: |
-        {
-          "Comment": "Collects individual Cost Optimization Hub recommendations",
-          "StartAt": "DetailProcessor Map",
-          "States": {
-            "DetailProcessor Map": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "DISTRIBUTED",
-                  "ExecutionType": "EXPRESS"
-                },
-                "StartAt": "DetailLambda Invoke",
-                "States": {
-                  "DetailLambda Invoke": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:::lambda:invoke",
-                    "OutputPath": "$.Payload",
-                    "Parameters": {
-                      "Payload.$": "$",
-                      "FunctionName": "${ModuleLambdaARN}"
-                    },
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "Lambda.TooManyRequestsException"
-                        ],
-                        "IntervalSeconds": 1,
-                        "MaxAttempts": 3,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "End": true
-                  }
-                }
-              },
-              "Label": "DetailProcessorMap",
-              "MaxConcurrency": ${MaxConcurrentBatches},
-              "ItemReader": {
-                "Resource": "arn:aws:states:::s3:getObject",
-                "ReaderConfig": {
-                  "InputType": "CSV",
-                  "CSVHeaderLocation": "FIRST_ROW"
-                },
-                "Parameters": {
-                  "Bucket.$": "$.bucket",
-                  "Key.$": "$.file"
-                }
-              },
-              "ItemBatcher": {
-                "MaxItemsPerBatch": ${ItemsPerBatch},
-                "BatchInput": {
-                  "account.$": "$.account"
-                }
-              },
-              "Next": "CrawlerStepFunctionStartExecution"
-            },
-            "CrawlerStepFunctionStartExecution": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::states:startExecution.sync:2",
-              "Parameters": {
-                "StateMachineArn": "arn:aws:states:us-east-1:317256447485:stateMachine:CID-DC-CrawlerExecution-StateMachine",
-                "Input": {
-                  "crawlers": ${Crawlers}
-                }
-              },
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 3600
-        }
-      DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub |
-          ["${ResourcePrefix}${CFDataName}-Rightsize-Crawler",
-          "${ResourcePrefix}${CFDataName}-Stop-Crawler",
-          "${ResourcePrefix}${CFDataName}-Upgrade-Crawler",
-          "${ResourcePrefix}${CFDataName}-PurchaseSavingsPlans-Crawler",
-          "${ResourcePrefix}${CFDataName}-PurchaseReservedInstances-Crawler",
-          "${ResourcePrefix}${CFDataName}-MigrateToGraviton-Crawler"]
-        CollectionType: "Payers"
-        Params: ''
-        Module: !Ref CFDataName
-        DeployRegion: !Ref AWS::Region
-        Account: !Ref AWS::AccountId
-        Prefix: !Ref ResourcePrefix
-        ItemsPerBatch: 1000
-        MaxConcurrentBatches: 10
-
-  'Fn::ForEach::Action':
-    - ActionType
-    - !Ref CostOptimizationHubActionTypes
-    - 'Crawler${ActionType}':
-        Type: AWS::Glue::Crawler
-        Properties:
-          Name: !Sub '${ResourcePrefix}${CFDataName}-${ActionType}-Crawler'
-          Role: !Ref GlueRoleARN
-          DatabaseName: !Ref DatabaseName
-          Targets:
-            S3Targets:
-              - Path: !Sub s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-${ActionType}-data/
-          Configuration: |
-            {
-              "Version": 1.0,
-              "CrawlerOutput": {
-                "Partitions": {
-                  "AddOrUpdateBehavior": "InheritFromTable"
-                }
-              }
-            }
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
