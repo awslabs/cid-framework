@@ -170,5 +170,7 @@ ta.zip
 # Local sandbox
 sandbox/
 scratch/
+migration_log.csv
+
 # Pylint custom script temporal folder
 .tmp
