@@ -3,7 +3,7 @@ Description: Retrieves AWS Compute Optimizer information from across an organiza
 Parameters:
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket to be created to hold data information
+    Description: Name of the S3 Bucket to be created to hold data information.
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
   ManagementRoleName:
     Type: String
@@ -25,9 +25,9 @@ Parameters:
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
   BucketPrefix:
     Type: String
-    Default: 'costoptimization'
-    Description: This prefix will be used for buckets creation
-    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    # This stack will create other buckets with {DestinationBucket}.{region} so we need to keep the space for region prefix
+    Description: This prefix will be used for buckets creation. Must be less shorter then 50 characters.
+    AllowedPattern: (?=^.{3,49}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
   RegionsInScope:
     Type: String
     Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
@@ -135,7 +135,8 @@ Resources:
                   - iam:GetRolePolicy
                   - iam:PutRolePolicy
                 Resource:
-                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/StackSet-${ResourcePrefix}ComputeOptimizer*' # Shorter version of StackSetName
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ResourcePrefix}Compute-Optimizer-Replication-*'
+                  - !Sub 'arn:aws:iam::${AWS::AccountId}:role/StackSet-${ResourcePrefix}ComputeOptimizer*' # For Compatibility with older versions: Shorter version of StackSetName
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -158,6 +159,8 @@ Resources:
           ParameterValue: !Ref DestinationBucket
         - ParameterKey: ManagementAccountID
           ParameterValue: !Ref ManagementAccountID
+        - ParameterKey: ResourcePrefix
+          ParameterValue: !Ref ResourcePrefix
       StackInstancesGroup:
         - DeploymentTargets:
             Accounts:
@@ -182,6 +185,9 @@ Resources:
           DestinationBucket:
             Type: String
             Description: A name of the main bucket where all data will be stored
+          ResourcePrefix:
+            Type: String
+            Description: Resource Prefix
         Resources:
           BucketPolicy:
             Type: AWS::S3::BucketPolicy
@@ -225,16 +231,17 @@ Resources:
                   Condition:
                     NumericLessThan:
                       s3:TlsVersion: 1.2
-          BucketReplicaRole:
+          RegionalBucketReplicaRole:
             Type: AWS::IAM::Role
             Properties:
+              RoleName: !Sub "${ResourcePrefix}Compute-Optimizer-Replication-${AWS::Region}"
               AssumeRolePolicyDocument:
                 Statement:
                 - Action: ['sts:AssumeRole']
                   Effect: Allow
                   Principal:
                     Service: [s3.amazonaws.com]
-          BucketReplicaRolePolicy:
+          RegionalBucketReplicaRolePolicy:
             Type: AWS::IAM::Policy
             Properties:
               PolicyName: Replication
@@ -256,7 +263,7 @@ Resources:
                   - s3:GetObjectVersionTagging
                   Effect: 'Allow'
                   Resource: !Sub arn:aws:s3:::${DestinationBucket}/*
-              Roles: [!Ref 'BucketReplicaRole']
+              Roles: [!Ref 'RegionalBucketReplicaRole']
           S3Bucket:
             Type: AWS::S3::Bucket
             DeletionPolicy: Delete
@@ -267,7 +274,7 @@ Resources:
                   - ServerSideEncryptionByDefault:
                       SSEAlgorithm: AES256
               ReplicationConfiguration:
-                Role: !GetAtt [BucketReplicaRole, Arn]
+                Role: !GetAtt [RegionalBucketReplicaRole, Arn]
                 Rules:
                   - Id: Replication to the main bucket
                     Priority: 2
