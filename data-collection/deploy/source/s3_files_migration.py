@@ -289,4 +289,3 @@ if __name__ == "__main__":
             f"Migrating from source={source_bucket} to destination={dest_bucket}"
         )
         migrate_v2(source_bucket, dest_bucket)
-
