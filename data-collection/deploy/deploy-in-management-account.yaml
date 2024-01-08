@@ -6,17 +6,17 @@ Metadata:
       - Label:
           default: "Deployment parameters"
         Parameters:
-          - ManagementAccountRole
           - DataCollectionAccountID
+          - ManagementAccountRole
           - ResourcePrefix
       - Label:
           default: "Available modules"
         Parameters:
+          - IncludeBackupModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeRightsizingModule
-          - IncludeBackupModule
           - IncludeCostOptimizationHubModule
+          - IncludeRightsizingModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"

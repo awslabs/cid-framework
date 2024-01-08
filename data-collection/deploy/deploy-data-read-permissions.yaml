@@ -6,27 +6,27 @@ Metadata:
       - Label:
           default: "Deployment parameters"
         Parameters:
-          - ManagementAccountRole
           - DataCollectionAccountID
+          - ResourcePrefix
+          - ManagementAccountRole
           - MultiAccountRoleName
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
-          - ResourcePrefix
           - CFNSourceBucket
       - Label:
           default: "Available modules"
         Parameters:
+          - IncludeBackupModule
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
+          - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
           - IncludeInventoryCollectorModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
-          - IncludeBackupModule
-          - IncludeCostOptimizationHubModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
