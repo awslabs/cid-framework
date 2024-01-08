@@ -117,7 +117,7 @@ Resources:
 
           BUCKET = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["PREFIX"]
-          role_name = os.environ['ROLENAME']
+          ROLE_NAME = os.environ['ROLENAME']
           REGIONS = [r.strip() for r in os.environ.get("REGIONS").split(',') if r]
           local_file = "/tmp/data.json"
 
@@ -187,7 +187,7 @@ Resources:
 
           def assume_session(account_id, region):
               cred = boto3.client('sts', region_name=region).assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
                   RoleSessionName="data_collection"
               )['Credentials']
               return boto3.Session(
