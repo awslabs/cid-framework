@@ -6,27 +6,27 @@ Metadata:
       - Label:
           default: "Deployment parameters"
         Parameters:
-          - ManagementAccountRole
           - DataCollectionAccountID
+          - ResourcePrefix
+          - ManagementAccountRole
           - MultiAccountRoleName
           - OrganizationalUnitIds
           - AllowModuleReadInMgmt
-          - ResourcePrefix
           - CFNSourceBucket
       - Label:
           default: "Available modules"
         Parameters:
+          - IncludeBackupModule
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
+          - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
           - IncludeInventoryCollectorModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
-          - IncludeBackupModule
-          - IncludeCostOptimizationHubModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -78,7 +78,7 @@ Parameters:
     Default: "Optimization-Data-Multi-Account-Role"
   OrganizationalUnitIds:
     Type: String
-    AllowedPattern: ^(ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}|r-[a-z0-9]{4,32})$
+    AllowedPattern: ^(ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}|r-[a-z0-9]{4,32})(,(ou-[a-z0-9]{4,32}-[a-z0-9]{8,32}|r-[a-z0-9]{4,32}))*$
     Description: "(Ex: r-ab01,ou-ab01-abcd1234) List of Organizational Unit IDs you wish to collect data for. It can be a single organizational unit. The organization root ID is usually preferred to collect data from all the member accounts."
   AllowModuleReadInMgmt:
     Type: String

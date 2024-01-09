@@ -6,30 +6,30 @@ Metadata:
       - Label:
           default: 'Deployment parameters'
         Parameters:
-          - DestinationBucket
-          - ManagementAccountRole
           - ManagementAccountID
-          - MultiAccountRoleName
-          - Schedule
+          - RegionsInScope
           - ResourcePrefix
-          - CFNSourceBucket
+          - ManagementAccountRole
+          - MultiAccountRoleName
+          - DestinationBucket
           - DatabaseName
+          - Schedule
+          - CFNSourceBucket
       - Label:
           default: 'Available modules'
         Parameters:
-          - IncludeTAModule
-          - IncludeRightsizingModule
-          - IncludeCostAnomalyModule
-          - IncludeInventoryCollectorModule
-          - IncludeComputeOptimizerModule
-          - RegionsInScope
-          - IncludeECSChargebackModule
-          - IncludeRDSUtilizationModule
-          - IncludeOrgDataModule
-          - IncludeBudgetsModule
-          - IncludeTransitGatewayModule
           - IncludeBackupModule
+          - IncludeBudgetsModule
+          - IncludeComputeOptimizerModule
+          - IncludeCostAnomalyModule
           - IncludeCostOptimizationHubModule
+          - IncludeECSChargebackModule
+          - IncludeInventoryCollectorModule
+          - IncludeOrgDataModule
+          - IncludeRDSUtilizationModule
+          - IncludeRightsizingModule
+          - IncludeTAModule
+          - IncludeTransitGatewayModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -193,7 +193,7 @@ Parameters:
     Default: Lambda-Assume-Role-Management-Account
   ManagementAccountID:
     Type: String
-    AllowedPattern: ([a-z0-9\-, ]*?$)
+    AllowedPattern: ^(\d{12})(,\d{12})*$
     Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
   MultiAccountRoleName:
     Type: String
@@ -571,7 +571,7 @@ Resources:
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Policies:
-        - PolicyName: "GlueDatabase"
+        - PolicyName: "Glue"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -580,20 +580,13 @@ Resources:
                   - glue:GetDatabase
                   - glue:CreateDatabase
                   - glue:DeleteDatabase
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
-                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
-        - PolicyName: "GlueTable"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
                   - glue:GetTable
                   - glue:GetTables
                   - glue:CreateTable
                   - glue:DeleteTable
                 Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
   LambdaInit:
     Type: AWS::Lambda::Function
@@ -630,7 +623,10 @@ Resources:
                   func = {'CREATE': create, 'DELETE': delete, 'UPDATE': update}.get(action)
                   res, reason = func()
               except Exception as exc: #pylint: disable=broad-exception-caught
-                  res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
+                  if 'Insufficient Lake Formation permission' in str(exc):
+                      res, reason = 'FAILED', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
+                  else:
+                      res, reason = 'FAILED', str(exc)
               body = {
                   'Status': res,
                   'Reason': reason,
