@@ -1,6 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Retrieves AWS Cost Optimization Hub Data across AWS organization
-Transform: 'AWS::LanguageExtensions'
 Parameters:
   DatabaseName:
     Type: String
@@ -142,6 +141,7 @@ Resources:
           DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
           TMP_FILE = "/tmp/data.json"
           TMP_FILE_BATCH = "/tmp/batch.csv"
+          NEED_DETAILED = os.environ.get('NEED_DETAILED', 'true').lower() in ['true', '1', 'y', 'yes']
           RETRIES = int(os.environ.get('RETRIES', "10"))
           BOTO_CONFIG = Config(
               retries = {
@@ -264,7 +264,7 @@ Resources:
                   }
                   sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
                   sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
-              elif items:
+              elif (items and NEED_DETAILED):
                   data_iterator = map(
                       partial(get_detailed_recommendation, hub),
                       items.__iter__(),
@@ -285,6 +285,7 @@ Resources:
           ROLENAME: !Ref ManagementRoleName
           DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
           DETAIL_THROTTLE: "250"
+          NEED_DETAILED: "true"
     Metadata:
       cfn_nag:
         rules_to_suppress:
