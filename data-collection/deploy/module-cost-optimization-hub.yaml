@@ -544,6 +544,11 @@ Resources:
         Prefix: !Ref ResourcePrefix
         ItemsPerBatch: 1000
         MaxConcurrentBatches: 10
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E2532 #Passing a dynamic structure for crawlers input into the template as a DefinitionSubstitution
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
