@@ -117,9 +117,9 @@ Resources:
           from boto3.s3.transfer import S3Transfer
 
           #Environment Variables
-          bucket = os.environ["BUCKET_NAME"]
-          prefix = os.environ["PREFIX"]
-          role_name = os.environ['ROLENAME']
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
+          ROLE_NAME = os.environ['ROLENAME']
           REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
 
           logger = logging.getLogger(__name__)
@@ -205,7 +205,7 @@ Resources:
                   rds_inventory.append(format_rds(rds))
               return rds_inventory
 
-          def store_data_to_s3(data, region, service, path, resource_type, resource_value, filename, accountID, payer_id):
+          def store_data_to_s3(data, region, service, path, resource_value, filename, accountID, payer_id):
               local_file = f"/tmp/{region}-{filename}"
               with open(local_file, 'w') as f:
                   json.dump(data, f, default=str)
@@ -213,10 +213,10 @@ Resources:
               if os.path.getsize(local_file) == 0:
                   logger.info(f"No data in file for {path}")
                   return
-              key = f"{prefix}/{path}/payer_id={payer_id}/accountid={accountID}/region={region}/{resource_type}={resource_value}/year={year}/month={month}/{today}-{filename}"
+              key = datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/accountid={accountID}/region={region}/year=%Y/month=%m/day=%d/{resource_value}.json")
               s3client = boto3.client('s3')
-              logger.info("Uploading file %s to %s/%s" %(local_file, bucket, key))
-              S3Transfer(s3client).upload_file(local_file, bucket, key, extra_args={'ACL': 'bucket-owner-full-control'})
+              logger.info("Uploading file %s to %s/%s" %(local_file, BUCKET, key))
+              S3Transfer(s3client).upload_file(local_file, BUCKET, key, extra_args={'ACL': 'bucket-owner-full-control'})
               logger.info('file upload successful')
 
           def get_rds_stats(cwclient, client, s3client, region, service, path, filename, accountID, payer_id):
@@ -230,11 +230,10 @@ Resources:
                       Dimensions=[{"Name": "DBInstanceIdentifier", "Value": rds["DBInstanceIdentifier"]}])
                       datapoints.update({metric:results['Datapoints']})
                   rds["Datapoints"] = datapoints
-                  store_data_to_s3(rds, region, service, path, 'rds_id', rds['DBInstanceIdentifier'], filename, accountID, payer_id)
+                  store_data_to_s3(rds, region, service, path, rds['DBInstanceIdentifier'], filename, accountID, payer_id)
 
           def assume_role(account_id, service, region):
-              role_name = os.environ['ROLENAME']
-              role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+              role_arn = f"arn:aws:iam::{account_id}:role/{ROLE_NAME}"
               cred = boto3.client('sts', region_name = region).assume_role(
                   RoleArn=role_arn,
                   RoleSessionName="data_collection"
@@ -288,6 +287,7 @@ Resources:
               except Exception as e:
                   # Send some context about this error to Lambda Logs
                   logger.warning(e)
+
 
       Handler: 'index.lambda_handler'
       MemorySize: 2688

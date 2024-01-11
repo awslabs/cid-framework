@@ -116,8 +116,8 @@ Resources:
           from botocore.client import Config
           from botocore.exceptions import ClientError
 
-          bucket = os.environ["BUCKET_NAME"]
-          prefix = os.environ["PREFIX"]
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
           role_name = os.environ['ROLENAME']
           local_file = "/tmp/data.json"
           REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
@@ -184,8 +184,8 @@ Resources:
                               #FIXME: check file size
                               boto3.client("s3").upload_file(
                                   "/tmp/data.json",
-                                  bucket,
-                                  f"{os.environ['PREFIX']}/{os.environ['PREFIX']}-data/payer_id={payer_id}/year={year}/month={month}/tgw-{item['TransitGatewayAttachmentId']}-{region}.json"
+                                  BUCKET,
+                                  datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/{item['TransitGatewayAttachmentId']}-{region}.json")
                               )
 
                       except Exception as e:

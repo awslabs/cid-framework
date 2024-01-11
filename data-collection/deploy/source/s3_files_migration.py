@@ -88,8 +88,10 @@ def migrate_v2(source_bucket, dest_bucket):
         "budgets": {
             # Migration from v0 (no payer_id)
             "budgets/year=": f"budgets/budgets-data/payer_id={payer_id}/year=",
-            # Migration from v1 (payer_id exists)
+            # Migration from v1 (payer_id exists, month now double-digit)
             "budgets/payer_id=": "budgets/budgets-data/payer_id=",
+            # Migration from v2.0 to v3.0 (month to double-digit)
+            "month=([0-9])/": "month=0\\1/",
         },
         "optics-data-collector": {
             # Migration from v0 (no payer_id)
@@ -103,11 +105,27 @@ def migrate_v2(source_bucket, dest_bucket):
             "optics-data-collector/snapshot-data/payer_id=": "inventory/inventory-snapshot-data/payer_id",
             "optics-data-collector/ta-data/payer_id=": "trusted-advisor/trusted-advisor-data/payer_id=",
         },
+        "inventory": {
+            # Migration from v2.0 to v3.0 (add date partition)
+            "month=([0-9]{2})/inventory-([0-9]*)-([0-9]{2})([0-9]{2})([0-9]{4})(.*)\.": "month=\\1/day=\\3/\\2-\\5-\\4-\\3.",
+        },
         "ecs-chargeback-data": {
             # Migration from v0 (no payer_id)
             "ecs-chargeback-data/year=": f"ecs-chargeback/ecs-chargeback-data/payer_id={payer_id}/year=",
             # Migration from v1 (payer_id exists)
             "ecs-chargeback-data/payer_id=": "ecs-chargeback/ecs-chargeback-data/payer_id=",
+            # Migration from v2.0 to v3.0 (month now double-digit and add date partition)
+            "month=([0-9]{1})/([0-9]*)-([0-9]{4})-([0-9]{1})-([0-9]{1})\.": "month=0\\1/day=0\\5/\\2-\\3-0\\4-0\\5.",
+            "month=([0-9]{1})/([0-9]*)-([0-9]{4})-([0-9]{1})-([0-9]{2})\.": "month=0\\1/day=\\5/\\2-\\3-0\\4-\\5.",
+            "month=([0-9]{2})/([0-9]*)-([0-9]{4})-([0-9]{2})-([0-9]{1})\.": "month=\\1/day=0\\5/\\2-\\3-\\4-0\\5.",
+            "month=([0-9]{2})/([0-9]*)-([0-9]{4})-([0-9]{2})-([0-9]{2})\.": "month=\\1/day=\\5/\\2-\\3-\\4-\\5.",
+        },
+        "ecs-chargeback": {
+            # Migration from v2.0 to v3.0 (month now double-digit and add date partition)
+            "month=([0-9]{1})/([0-9]*)-([0-9]{4})-([0-9]{1})-([0-9]{1})\.": "month=0\\1/day=0\\5/\\2-\\3-0\\4-0\\5.",
+            "month=([0-9]{1})/([0-9]*)-([0-9]{4})-([0-9]{1})-([0-9]{2})\.": "month=0\\1/day=\\5/\\2-\\3-0\\4-\\5.",
+            "month=([0-9]{2})/([0-9]*)-([0-9]{4})-([0-9]{2})-([0-9]{1})\.": "month=\\1/day=0\\5/\\2-\\3-\\4-0\\5.",
+            "month=([0-9]{2})/([0-9]*)-([0-9]{4})-([0-9]{2})-([0-9]{2})\.": "month=\\1/day=\\5/\\2-\\3-\\4-\\5.",
         },
         "rds_metrics": {
             # Migration from v0 (no payer_id)
@@ -121,13 +139,19 @@ def migrate_v2(source_bucket, dest_bucket):
             # Migration from v1 (payer_id exists)
             "rightsizing/payer_id=": "cost-explorer-rightsizing/cost-explorer-rightsizing-data/payer_id=",
         },
+        "cost-explorer-rightsizing": {
+             # Migration from v2.0 to v3.0 (month and day now double-digit)
+            "month=([0-9]{1})/day=([0-9]{1})/([0-9]{4})-.*\.": "month=0\\1/day=0\\2/\\3-0\\1-0\\2.",
+            "month=([0-9]{1})/day=([0-9]{2})/([0-9]{4})-.*\.": "month=0\\1/day=\\2/\\3-0\\1-\\2.",
+            "month=([0-9]{2})/day=([0-9]{1})/([0-9]{4})-.*\.": "month=\\1/day=0\\2/\\3-\\1-0\\2.",
+        },
         "Compute_Optimizer": {
             # Migration from v0 (no payer_id)
             "Compute_Optimizer/Compute_Optimizer_ec2_instance/year=": f"compute_optimizer/compute_optimizer_ec2_instance/payer_id={payer_id}/year=",
             "Compute_Optimizer/Compute_Optimizer_auto_scale/year=": f"compute_optimizer/compute_optimizer_auto_scale/payer_id={payer_id}/year=",
             "Compute_Optimizer/Compute_Optimizer_lambda/year=": f"compute_optimizer/compute_optimizer_lambda/payer_id={payer_id}/year=",
             "Compute_Optimizer/Compute_Optimizer_ebs_volume/year=": f"compute_optimizer/compute_optimizer_ebs_volume/payer_id={payer_id}/year=",
-            # Migration from v1 (payer_id exists)
+            # Migration from v1 (payer_id exists, month now double-digit)
             "Compute_Optimizer/Compute_Optimizer_ec2_instance/payer_id=": "compute_optimizer/compute_optimizer_ec2_instance/payer_id=",
             "Compute_Optimizer/Compute_Optimizer_auto_scale/payer_id=": "compute_optimizer/compute_optimizer_auto_scale/payer_id=",
             "Compute_Optimizer/Compute_Optimizer_lambda/payer_id=": "compute_optimizer/compute_optimizer_lambda/payer_id=",
@@ -151,19 +175,27 @@ def migrate_v2(source_bucket, dest_bucket):
             # Migration from v1 (payer_id exists)
             "transitgateway/payer_id=": "transit-gateway/transit-gateway-data/payer_id=",
         },
+        "transit-gateway": {
+            # Migration from v2.0 to v3.0 (month to double-digit, add date partition based on timestamp)
+            "month=([0-9])/tgw-": "month=%m/day=%d/",
+        },
         "organization": {
             # Migration from v1.1 (adding payer to organizations)
             "organization/organization-data/([a-z\-]*?)-(\d{12}).json": rf"organization/organization-data/payer_id=\2/\1.json",
-            # Migration from v2.0 to v3.0 (read roles as stack set and step functions implementation)
+            # Migration from v2.0 to v3.0 (prefix change)
             "organization/organization-data/payer_id=": "organizations/organization-data/payer_id=",
         },
         "cost-explorer-cost-anomaly": {
-            # Migration from v2.0 to v3.0 (read roles as stack set and step functions implementation)
-            "cost-explorer-cost-anomaly/cost-anomaly-data/payer_id=": "cost-anomaly/cost-anomaly-data/payer_id=",
+            # Migration from v2.0 to v3.0 (prefix change, force month and date partitions to double digit)
+            "cost-explorer-cost-anomaly/cost-anomaly-data/payer_id=(.*)/month=([0-9])/day=([0-9])/(.{4}).*\.": "cost-anomaly/cost-anomaly-data/payer_id=\\1/month=0\\2/day=0\\3/\\4-0\\2-0\\3.",
+            "cost-explorer-cost-anomaly/cost-anomaly-data/payer_id=(.*)/month=([0-9]{2})/day=([0-9])/(.{4}).*\.": "cost-anomaly/cost-anomaly-data/payer_id=\\1/month=\\2/day=0\\3/\\4-\\2-0\\3.",
+            "cost-explorer-cost-anomaly/cost-anomaly-data/payer_id=(.*)/month=([0-9])/day=([0-9]{2})/(.{4}).*\.": "cost-anomaly/cost-anomaly-data/payer_id=\\1/month=0\\2/day=\\3/\\4-0\\2-\\3.",
+            "cost-explorer-cost-anomaly/cost-anomaly-data/payer_id=(.*)/month=([0-9]{2})/day=([0-9]{2})/(.{4}).*\.": "cost-anomaly/cost-anomaly-data/payer_id=\\1/month=\\2/day=\\3/\\4-\\2-\\3.",
         },
         "rds_usage_data": {
-            # Migration from v2.0 to v3.0 (read roles as stack set and step functions implementation)
-            "rds_usage_data/rds-usage-data/payer_id=": "rds-usage/rds-usage-data/payer_id=",
+            # Migration from v2.0 to v3.0 (prefix change, remove db-id partition, add day partition)
+            "rds_usage_data/rds-usage-data/payer_id=(.*)/rds_id=(.*)/year=(.{4})/month=(.{2})/.{8}(.{2}).*": 
+                "rds-usage/rds-usage-data/payer_id=\\1/year=\\3/month=\\4/day=\\5/\\2.json",
         },
     }
 
@@ -175,37 +207,46 @@ def migrate_v2(source_bucket, dest_bucket):
         Bucket=source_bucket,
     )
 
-    while more_objects_to_fetch:
-        contents = list_objects_result.get("Contents", [])
-        for content in contents:
-            try:
-                source_key = content["Key"]
-                applicable_mods = get_applicable_mods(source_key, available_mods)
-                new_key = source_key
-                for old_prefix, new_prefix in applicable_mods.items():
-                    new_key = re.sub(
-                        old_prefix, new_prefix, source_key
-                    )  # Returns the same source_key string when no match exists for the given pattern
-                    if new_key != source_key:
-                        logger.info(f"Modifying source {source_key} to {new_key}")
-                copy_source = {"Bucket": source_bucket, "Key": source_key}
-                s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
-                logger.info(
-                    f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
-                )
-                # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
-            except Exception as e:
-                logger.warning(e)
+    with open("migration_log.csv", "w") as f:
+        f.write(f"{source_bucket},{dest_bucket},is_modified,file_date\n")
+        while more_objects_to_fetch:
+            contents = list_objects_result.get("Contents", [])
+            for content in contents:
+                try:
+                    is_mod = False
+                    source_key = content["Key"]
+                    file_date = content["LastModified"]
+                    applicable_mods = get_applicable_mods(source_key, available_mods)
+                    new_key = source_key
+                    for old_prefix, new_prefix in applicable_mods.items():
+                        new_prefix = file_date.strftime(new_prefix)
+                        new_key = re.sub(
+                            old_prefix, new_prefix, source_key
+                        )  # Returns the same source_key string when no match exists for the given pattern
+                        if new_key != source_key:
+                            logger.info(f"Modifying source {source_key} to {new_key}")
+                            is_mod = True
+                            break #break the loop after the first matching pattern
+                    copy_source = {"Bucket": source_bucket, "Key": source_key}
+                    #s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
+                    f.write(f"{source_key},{new_key},{is_mod},{file_date}\n")
+                    logger.info(
+                        f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
+                    )
+                    # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
+                except Exception as e:
+                    logger.warning(e)
 
-        more_objects_to_fetch = list_objects_result["IsTruncated"]
-        if more_objects_to_fetch:
-            next_continuation_token = list_objects_result["NextContinuationToken"]
-            list_objects_result = s3.list_objects_v2(
-                Bucket=source_bucket,
-                ContinuationToken=next_continuation_token,
-            )
-        else:
-            next_continuation_token = None
+            more_objects_to_fetch = list_objects_result["IsTruncated"]
+            if more_objects_to_fetch:
+                next_continuation_token = list_objects_result["NextContinuationToken"]
+                list_objects_result = s3.list_objects_v2(
+                    Bucket=source_bucket,
+                    ContinuationToken=next_continuation_token,
+                )
+            else:
+                next_continuation_token = None
+
 
 def get_applicable_mods(object_key: str, available_mods: dict):
     top_prefix = object_key.split("/")[0]
@@ -248,4 +289,3 @@ if __name__ == "__main__":
             f"Migrating from source={source_bucket} to destination={dest_bucket}"
         )
         migrate_v2(source_bucket, dest_bucket)
-
