@@ -830,6 +830,7 @@ Resources:
                   - states:StartExecution
                 Resource:
                   - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}CrawlerExecution-StateMachine'
+                  - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}*detail-StateMachine'
               - Effect: Allow
                 Action:
                   - states:DescribeExecution
@@ -837,6 +838,16 @@ Resources:
                 Resource:
                   - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*:*'
                   - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:express:*:*:*'
+        - PolicyName: "S3-ReadOnlyAccess" #Used for getting summary record list for map iterations to retrieve detail API calls
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                Resource: !Sub
+                  - '${DestinationBucketARN}/*'
+                  - DestinationBucketARN: !GetAtt S3Bucket.Arn
 
   StepFunctionExecutionRoleInvokeAccountCollectorPolicy:
     Type: 'AWS::IAM::Policy'
