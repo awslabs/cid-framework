@@ -12,7 +12,6 @@ print(repo.git.execute('git pull'.split()))
 old_ver = json.load(open("data-collection/utils/version.json"))['version']
 
 print (old_ver)
-exit()
 bump='patch'
 if len(sys.argv)>1:
 	bump = sys.argv[1]
