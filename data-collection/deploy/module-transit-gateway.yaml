@@ -185,7 +185,7 @@ Resources:
                               boto3.client("s3").upload_file(
                                   "/tmp/data.json",
                                   BUCKET,
-                                  datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/{item['TransitGatewayAttachmentId']}.json")
+                                  datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/{item['TransitGatewayAttachmentId']}-{region}.json")
                               )
 
                       except Exception as e:
