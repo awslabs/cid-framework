@@ -45,7 +45,6 @@ Parameters:
     Type: String
     Description: Common role for module Scheduler execution
 
-
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -80,6 +79,7 @@ Resources:
                   - "s3:PutObject"
                   - "s3:GetObject"
                   - "s3:PutObjectAcl"
+                  - "s3:DeleteObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
@@ -87,6 +87,13 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "${DestinationBucketARN}"
+        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "states:StartExecution"
+                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -104,6 +111,7 @@ Resources:
         ZipFile: |
           import os
           import json
+          import time
           import logging
           from functools import partial
           from datetime import date, datetime
@@ -115,15 +123,32 @@ Resources:
           sys.path.insert(0,'/tmp/')
 
           import boto3 #pylint: disable=wrong-import-position
+          from botocore.config import Config
 
           logger = logging.getLogger()
+          # Create a new handler here because downloading the updated boto3 affects the
+          # default Lambda logging handler such that only Warning and Error are logged.
+          for h in logger.handlers:
+            logger.removeHandler(h)
+          h = logging.StreamHandler(sys.stdout)
+          h.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+          logger.addHandler(h)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           BUCKET_NAME = os.environ['BUCKET_NAME']
           ROLENAME = os.environ['ROLENAME']
           PREFIX = os.environ['PREFIX']
+          DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
           TMP_FILE = "/tmp/data.json"
-          NEED_DETAILED = True # set it to False to fallback to collection of only summaries if any perf issue or timeout
+          TMP_FILE_BATCH = "/tmp/batch.csv"
+          NEED_DETAILED = os.environ.get('NEED_DETAILED', 'true').lower() in ['true', '1', 'y', 'yes']
+          RETRIES = int(os.environ.get('RETRIES', "10"))
+          BOTO_CONFIG = Config(
+              retries = {
+                'max_attempts': RETRIES,
+                'mode': 'standard'
+            }
+          )
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -131,41 +156,82 @@ Resources:
                   return obj.isoformat() if isinstance(obj, (date, datetime)) else None
               return json.dumps(obj, default=_date_transformer)
 
-          def store_to_s3(records, path):
+          def store_summary_to_s3(records, payer_id):
               """ Upload records to s3 """
               count = 0
-              with open(TMP_FILE, "w", encoding='utf-8') as json_file:
-                  for count, record in enumerate(records, start=1):
-                      json_file.write(to_json(record) + '\n')
+
+              # Use two temp files, one for full summary records and one for batch processor data
+              with open(TMP_FILE, "w", encoding='utf-8') as summary_file:
+                  with open(TMP_FILE_BATCH, "w", encoding='utf-8') as batch_file:
+                      batch_file.write('id,actionType\n')
+                      for count, record in enumerate(records, start=1):
+                          summary_file.write(to_json(record) + '\n')
+                          rec_id = record.get('recommendationId')
+                          actionType = record.get('actionType')
+                          if rec_id and actionType:
+                              batch_file.write(f'{rec_id},{actionType}\n')
               if not count:
-                  logger.info(f"No records for {path}")
+                  logger.info(f"No records found")
                   return count
-              key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
-              boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+
+              s3 = boto3.client('s3')
+              key = date.today().strftime(
+                  f"{PREFIX}/{PREFIX}-summary-data/payer_id={payer_id}"
+                  f"/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              s3.upload_file(TMP_FILE, BUCKET_NAME, key)
               logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
+
+              key =  f"{PREFIX}/{PREFIX}-batch-data/payer_id={payer_id}/recommendations.csv"
+              s3.upload_file(TMP_FILE_BATCH, BUCKET_NAME, key)
+
+              return count, key
+
+          def store_detail_to_s3(records, payer_id):
+              """ Upload records to s3 """
+              count = 0
+              s3 = boto3.client('s3', config=BOTO_CONFIG)
+
+              cur_date = date.today()
+              # Each record will be a unique file named by the base64 recommendation id
+              for count, record in enumerate(records, start=1):
+                  s3_key = cur_date.strftime(
+                      f'{PREFIX}/{PREFIX}-detail-data/payer_id={payer_id}'
+                      f'/year=%Y/month=%m/day=%d/{record["recommendationId"]}.json'
+                  )
+                  s3.put_object(Body=to_json(record), Bucket=BUCKET_NAME, Key=s3_key)
+
               return count
+
+          def get_detailed_recommendation(hub, rec):
+              time.sleep(.25)
+              res = hub.get_recommendation(recommendationId=rec['id'])
+              res.pop('ResponseMetadata', None)
+              return res
 
           def iterate_paginated_results(client, function, search, params=None):
               yield from client.get_paginator(function).paginate(**(params or {})).search(search)
 
-          def get_detailed_recommendation(hub, rec):
-              res = hub.get_recommendation(recommendationId=rec['recommendationId'])
-              res.pop('ResponseMetadata', None)
-              return res
-
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects CostOptimizationHub data
               and must be called from the corresponding Step Function to orchestrate
+
+              It can be called from two different modes, one for obtaining a summary
+              of all recommendations and the other to get individual details of each recommendations
               """
               logger.info(f"Event data: {event}")
-              if 'account' not in event:
+              account = event.get('account')
+              batch_input = event.get('BatchInput')
+              items = event.get('Items')
+              if not (account or batch_input):
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              account = json.loads(event["account"])
+              # Identify if this is invoked in summary vs. batch detail mode, via the event data present
+              is_summary_mode = batch_input == None
+              logger.info(f"Executing in {'summary' if is_summary_mode else 'detail'} mode flow")
+              account = json.loads(account) if is_summary_mode else batch_input.get('account')
               account_id = account["account_id"]
-              payer_id = account["payer_id"]
 
               creds = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
@@ -177,25 +243,37 @@ Resources:
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
+                  config=BOTO_CONFIG,
               )
-              s3_prefix = f'{PREFIX}/{PREFIX}-data/payer_id={payer_id}'
-              data_iterator = iterate_paginated_results(
-                  client=hub,
-                  function='list_recommendations',
-                  search='items',
-                  params=dict( #pylint: disable=R1735
-                      includeAllRecommendations=True,
-                  ),
-              )
-              if NEED_DETAILED:
+
+              if is_summary_mode:
+                  data_iterator = iterate_paginated_results(
+                      client=hub,
+                      function='list_recommendations',
+                      search='items',
+                      params=dict( #pylint: disable=R1735
+                          includeAllRecommendations=True,
+                      ),
+                  )
+                  count, rec_key = store_summary_to_s3(data_iterator, account_id)
+                  sf = boto3.client('stepfunctions')
+                  sf_input = {
+                      "bucket": BUCKET_NAME,
+                      "file": rec_key,
+                      "account": account
+                  }
+                  sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
+                  sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
+              elif (items and NEED_DETAILED):
                   data_iterator = map(
                       partial(get_detailed_recommendation, hub),
-                      data_iterator,
+                      items.__iter__(),
                   )
-              count = store_to_s3(data_iterator, s3_prefix)
+                  count = store_detail_to_s3(data_iterator, account_id)
+              else:
+                  count = 0
 
-              return f"Recorded {count}"
-
+              return {"status":"200","Recorded":f'"{count}"'}
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 600
@@ -205,6 +283,9 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref ManagementRoleName
+          DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
+          DETAIL_THROTTLE: "250"
+          NEED_DETAILED: "true"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -222,12 +303,12 @@ Resources:
   CrawlerCostOptimizationHub:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-summary-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-summary-data/"
       Configuration: |
         {
           "Version": 1.0,
@@ -237,6 +318,110 @@ Resources:
             }
           }
         }
+  CrawlerCostOptimizationHubDetail:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
+      Configuration: |
+        {
+          "Version": 1.0,
+          "CrawlerOutput": {
+            "Partitions": {
+              "AddOrUpdateBehavior": "InheritFromTable"
+            }
+          }
+        }
+
+  CostOptimizationHubDetailTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref "AWS::AccountId"
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: !Join ['_', !Split [ '-', !Sub "${CFDataName}_detail_data" ]]
+        Owner: owner
+        Retention: 0
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          EXTERNAL: 'TRUE'
+          UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
+          averageRecordSize: '26673'
+          classification: json
+          compressionType: none
+          typeOfData: file
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+        StorageDescriptor:
+          BucketColumns: []
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            Parameters:
+              paths: accountId,actionType,costCalculationLookbackPeriodInDays,currencyCode,currentResourceDetails,currentResourceType,estimatedMonthlyCost,estimatedMonthlySavings,estimatedSavingsOverCostCalculationLookbackPeriod,estimatedSavingsPercentage,implementationEffort,lastRefreshTimestamp,recommendationId,recommendationLookbackPeriodInDays,recommendedResourceDetails,recommendedResourceType,region,resourceArn,resourceId,restartNeeded,rollbackPossible,source,tags
+              serialization.format: '1'
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          StoredAsSubDirectories: false
+          Columns:
+          - Name: accountid
+            Type: string
+          - Name: actiontype
+            Type: string
+          - Name: costcalculationlookbackperiodindays
+            Type: int
+          - Name: currencycode
+            Type: string
+          - Name: currentresourcedetails
+            Type: struct<computesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ebsvolume:struct<configuration:struct<attachmentstate:string,performance:struct<iops:double,throughput:double>,storage:struct<sizeingb:double,type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2autoscalinggroup:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instance:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instancesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,instancefamily:string,paymentoption:string,savingsplansregion:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ec2reservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,offeringclass:string,paymentoption:string,platform:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,tenancy:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,ecsservice:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,elasticachereservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,lambdafunction:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,opensearchreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,rdsreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,databaseedition:string,databaseengine:string,deploymentoption:string,instancefamily:string,instancetype:string,licensemodel:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,redshiftreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,sagemakersavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>>
+          - Name: currentresourcetype
+            Type: string
+          - Name: estimatedmonthlycost
+            Type: double
+          - Name: estimatedmonthlysavings
+            Type: double
+          - Name: estimatedsavingsovercostcalculationlookbackperiod
+            Type: double
+          - Name: estimatedsavingspercentage
+            Type: double
+          - Name: implementationeffort
+            Type: string
+          - Name: lastrefreshtimestamp
+            Type: string
+          - Name: recommendationid
+            Type: string
+          - Name: recommendationlookbackperiodindays
+            Type: int
+          - Name: recommendedresourcedetails
+            Type: struct<computesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ebsvolume:struct<configuration:struct<attachmentstate:string,performance:struct<iops:double,throughput:double>,storage:struct<sizeingb:double,type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2autoscalinggroup:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instance:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instancesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,instancefamily:string,paymentoption:string,savingsplansregion:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ec2reservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,offeringclass:string,paymentoption:string,platform:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,tenancy:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,ecsservice:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,elasticachereservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,lambdafunction:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,opensearchreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,rdsreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,databaseedition:string,databaseengine:string,deploymentoption:string,instancefamily:string,instancetype:string,licensemodel:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,redshiftreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,sagemakersavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>>
+          - Name: recommendedresourcetype
+            Type: string
+          - Name: region
+            Type: string
+          - Name: resourcearn
+            Type: string
+          - Name: resourceid
+            Type: string
+          - Name: restartneeded
+            Type: string
+          - Name: rollbackpossible
+            Type: string
+          - Name: source
+            Type: string
+          - Name: tags
+            Type: array<struct<key:string,value:string>>
+
   StepFunctionCostOptimizationHub:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -247,7 +432,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-summary-Crawler"]'
         CollectionType: "Payers" #TODO: use delegated account instead of management
         Params: ''
         Module: !Ref CFDataName
@@ -267,6 +452,104 @@ Resources:
       Target:
         Arn: !GetAtt StepFunctionCostOptimizationHub.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
+
+  StepFunctionCostOptimizationHubDetail:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: |
+        {
+          "Comment": "Collects individual Cost Optimization Hub recommendations",
+          "StartAt": "DetailProcessor Map",
+          "States": {
+            "DetailProcessor Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "DISTRIBUTED",
+                  "ExecutionType": "EXPRESS"
+                },
+                "StartAt": "DetailLambda Invoke",
+                "States": {
+                  "DetailLambda Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "Payload.$": "$",
+                      "FunctionName": "${ModuleLambdaARN}"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 3,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "Label": "DetailProcessorMap",
+              "MaxConcurrency": ${MaxConcurrentBatches},
+              "ItemReader": {
+                "Resource": "arn:aws:states:::s3:getObject",
+                "ReaderConfig": {
+                  "InputType": "CSV",
+                  "CSVHeaderLocation": "FIRST_ROW"
+                },
+                "Parameters": {
+                  "Bucket.$": "$.bucket",
+                  "Key.$": "$.file"
+                }
+              },
+              "ItemBatcher": {
+                "MaxItemsPerBatch": ${ItemsPerBatch},
+                "BatchInput": {
+                  "account.$": "$.account"
+                }
+              },
+              "Next": "CrawlerStepFunctionStartExecution"
+            },
+            "CrawlerStepFunctionStartExecution": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:aws:states:us-east-1:317256447485:stateMachine:CID-DC-CrawlerExecution-StateMachine",
+                "Input": {
+                  "crawlers": ${Crawlers}
+                }
+              },
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 3600
+        }
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+        ItemsPerBatch: 1000
+        MaxConcurrentBatches: 10
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E2532 #Passing a dynamic structure for crawlers input into the template as a DefinitionSubstitution
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
