@@ -214,7 +214,7 @@ Resources:
                       return key.replace(':', '_').replace('-', '_').replace(' ', '_').replace('.', '_') if athena_friendly else key
                   paginator = self.org.get_paginator("list_tags_for_resource")
                   tags = sum([resp['Tags'] for resp in paginator.paginate(ResourceId=id_)], [])
-                  return {_process_key(tag['Key']): tag['Value'] for tag in tags}
+                  return {_process_key(tag['Key'], athena_friendly): tag['Value'] for tag in tags}
 
               @lru_cache(maxsize=10000)
               def get_hierarchy_tags(self, id_):
