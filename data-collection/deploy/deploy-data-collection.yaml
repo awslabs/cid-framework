@@ -456,6 +456,7 @@ Resources:
                   - glue:BatchGetPartition
                   - glue:UpdatePartition
                   - glue:DeletePartition
+                  - glue:TagResource
                 Resource:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
@@ -584,6 +585,7 @@ Resources:
                   - glue:GetTables
                   - glue:CreateTable
                   - glue:DeleteTable
+                  - glue:TagResource
                 Resource:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
