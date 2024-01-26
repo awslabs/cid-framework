@@ -106,6 +106,7 @@ Resources:
           """ Get Account info from AWS Organizations and store on s3 bucket
           """
           import os
+          import re
           import json
           import logging
           import datetime
@@ -211,7 +212,7 @@ Resources:
               def get_tags(self, id_, athena_friendly=False):
                   """returns a dict of tags"""
                   def _process_key(key, athena_friendly):
-                      return key.replace(':', '_').replace('-', '_').replace(' ', '_').replace('.', '_') if athena_friendly else key
+                      return re.sub('[^a-zA-Z0-9_]', '_', key) if athena_friendly else key
                   paginator = self.org.get_paginator("list_tags_for_resource")
                   tags = sum([resp['Tags'] for resp in paginator.paginate(ResourceId=id_)], [])
                   return {_process_key(tag['Key'], athena_friendly): tag['Value'] for tag in tags}
