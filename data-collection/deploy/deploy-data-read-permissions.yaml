@@ -150,7 +150,7 @@ Parameters:
       - "no"
   IncludeBackupModule:
     Type: String
-    Description: Collects AES Backup events from your accounts
+    Description: Collects AWS Backup events from your accounts
     AllowedValues:
       - "yes"
       - "no"
