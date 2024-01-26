@@ -23,6 +23,8 @@ UNDERLINE = '\033[4m'
 PREFIX = "CID-DC-"
 BUCKET_PREFIX='cid-data-'
 
+REGIONS = "us-east-1,eu-west-1"
+
 def clean_bucket(s3, s3client, account_id, full=True):
     try:
         bucket_name = f"{BUCKET_PREFIX}{account_id}"
@@ -44,6 +46,13 @@ def clean_bucket(s3, s3client, account_id, full=True):
                     s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
         logger.exception(exc)
+
+    for region in REGIONS.split(','):
+        try:
+            bucket_name = f"{BUCKET_PREFIX}{account_id}.{region}"
+            s3.Bucket(bucket_name).object_versions.delete()
+        except:
+            pass
 
 
 def athena_query(athena, sql_query, sleep_duration=1, database: str=None, catalog: str='AwsDataCatalog', workgroup: str='primary'):
@@ -193,7 +202,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
         file=root / 'deploy' / 'deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
-            {'ParameterKey': 'RegionsInScope',                  'ParameterValue': "us-east-1,eu-west-1"},
+            {'ParameterKey': 'RegionsInScope',                  'ParameterValue': REGIONS},
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},

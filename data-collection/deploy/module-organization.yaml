@@ -106,6 +106,7 @@ Resources:
           """ Get Account info from AWS Organizations and store on s3 bucket
           """
           import os
+          import re
           import json
           import logging
           import datetime
@@ -208,11 +209,13 @@ Resources:
                   return path[::-1]
 
               @lru_cache(maxsize=10000)
-              def get_tags(self, id_):
+              def get_tags(self, id_, athena_friendly=False):
                   """returns a dict of tags"""
+                  def _process_key(key, athena_friendly):
+                      return re.sub('[^a-zA-Z0-9_]', '_', key) if athena_friendly else key
                   paginator = self.org.get_paginator("list_tags_for_resource")
                   tags = sum([resp['Tags'] for resp in paginator.paginate(ResourceId=id_)], [])
-                  return {tag['Key']: tag['Value'] for tag in tags}
+                  return {_process_key(tag['Key'], athena_friendly): tag['Value'] for tag in tags}
 
               @lru_cache(maxsize=10000)
               def get_hierarchy_tags(self, id_):
@@ -220,7 +223,7 @@ Resources:
                   tags = {}
                   full_path = self.get_ou_path(id_) + [{'Id': id_}]
                   for level in full_path:
-                      tags.update(self.get_tags(level['Id']))
+                      tags.update(self.get_tags(level['Id'], athena_friendly=True))
                   return tags
 
               def iterate_accounts(self):
