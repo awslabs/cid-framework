@@ -802,11 +802,6 @@ Resources:
                   - glue:StartCrawler
                   - glue:GetCrawler
                 Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler'
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource:
-                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*Lambda*'
         - PolicyName: InvokeCollectionLambda
           PolicyDocument:
             Version: 2012-10-17
@@ -847,9 +842,8 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:GetObject"
-                Resource: !Sub
-                  - '${DestinationBucketARN}/*'
-                  - DestinationBucketARN: !GetAtt S3Bucket.Arn
+                Resource: !Sub '${S3Bucket.Arn}/*'
+
 
   StepFunctionExecutionRoleInvokeAccountCollectorPolicy:
     Type: 'AWS::IAM::Policy'
@@ -1117,7 +1111,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployBudgetsModule
     Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-budgets.yaml" 
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-budgets.yaml"
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
