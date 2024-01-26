@@ -523,7 +523,7 @@ Resources:
               "Type": "Task",
               "Resource": "arn:aws:states:::states:startExecution.sync:2",
               "Parameters": {
-                "StateMachineArn": "arn:aws:states:us-east-1:317256447485:stateMachine:CID-DC-CrawlerExecution-StateMachine",
+                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
                 "Input": {
                   "crawlers": ${Crawlers}
                 }
