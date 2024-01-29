@@ -146,12 +146,12 @@ Resources:
       ExtendedS3DestinationConfiguration:
         BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
         RoleARN: !GetAtt DataCollectionKinesisFirehoseRole.Arn
-        Prefix: "DataCollection-data/!{partitionKeyFromQuery:source}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
+        Prefix: "!{partitionKeyFromQuery:source}/!{partitionKeyFromQuery:source}-data/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
         CompressionFormat: "UNCOMPRESSED"
         BufferingHints:
           IntervalInSeconds: 60
           SizeInMBs: 64
-        ErrorOutputPrefix: "DataCollection-error/"
+        ErrorOutputPrefix: "event-errors/"
         CloudWatchLoggingOptions:
           Enabled: true
           LogGroupName: "DataCollectionFirehoseLogs"
