@@ -134,6 +134,7 @@ Resources:
                   - iam:DeleteRolePolicy
                   - iam:GetRolePolicy
                   - iam:PutRolePolicy
+                  - iam:TagRole
                 Resource:
                   - !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ResourcePrefix}Compute-Optimizer-Replication-*'
                   - !Sub 'arn:aws:iam::${AWS::AccountId}:role/StackSet-${ResourcePrefix}ComputeOptimizer*' # For Compatibility with older versions: Shorter version of StackSetName
