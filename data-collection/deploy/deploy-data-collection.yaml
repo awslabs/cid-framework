@@ -599,7 +599,7 @@ Resources:
       Handler: index.lambda_handler
       MemorySize: 128
       Role: !GetAtt LambdaInitRole.Arn
-      Timeout: 300
+      Timeout: 15
       Environment:
         Variables:
           DATABASE_NAME: !Ref DatabaseName
@@ -675,7 +675,7 @@ Resources:
                       updated_by = table.get('Parameters', {}).get('UPDATED_BY_CRAWLER', '')
                       if not updated_by.startswith(resource_prefix):
                           glue_client.delete_table(DatabaseName=database_name, Name=table_name)
-                          print(f'table {table_name} was deleted to avoid crawler confusion')
+                          print('table {table_name} was deleted to avoid crawler confusion')
               return 'SUCCESS', 'success'
 
   InitExecutor:
