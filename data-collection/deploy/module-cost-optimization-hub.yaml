@@ -311,16 +311,12 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-summary-data/"
       Configuration: |
         {
-          "Version":1.0,
+          "Version": 1.0,
           "CrawlerOutput": {
             "Partitions": {
-              "AddOrUpdateBehavior":"InheritFromTable"
-            },
-            "Tables":{
-              "AddOrUpdateBehavior":"MergeNewColumns"
+              "AddOrUpdateBehavior": "InheritFromTable"
             }
-          },
-          "CreatePartitionIndex":true
+          }
         }
   CrawlerCostOptimizationHubDetail:
     Type: AWS::Glue::Crawler
@@ -333,16 +329,12 @@ Resources:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
       Configuration: |
         {
-          "Version":1.0,
+          "Version": 1.0,
           "CrawlerOutput": {
             "Partitions": {
-              "AddOrUpdateBehavior":"InheritFromTable"
-            },
-            "Tables":{
-              "AddOrUpdateBehavior":"MergeNewColumns"
+              "AddOrUpdateBehavior": "InheritFromTable"
             }
-          },
-          "CreatePartitionIndex":true
+          }
         }
 
   CostOptimizationHubDetailTable:
