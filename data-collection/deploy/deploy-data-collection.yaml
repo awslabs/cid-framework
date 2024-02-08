@@ -24,6 +24,7 @@ Metadata:
           - IncludeCostAnomalyModule
           - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
+          - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
           - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
@@ -72,7 +73,9 @@ Metadata:
       IncludeBackupModule:
         default: 'Include AWS Backup Collection Module'
       IncludeCostOptimizationHubModule:
-        default: 'Include CostOptimizationHub Module'
+        default: 'Include Cost Optimization Hub Module'
+      IncludeHealthEventsModule:
+        default: 'Include AWS Health Events Module'
 
 Mappings:
   RegionMap:
@@ -289,7 +292,13 @@ Parameters:
       - "no"
   IncludeCostOptimizationHubModule:
     Type: String
-    Description: Collects CostOptimizationHub data
+    Description: Collects Cost Optimization Hub data
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeHealthEventsModule:
+    Type: String
+    Description: Collects AWS Health Events data
     AllowedValues:
       - "yes"
       - "no"
@@ -318,6 +327,7 @@ Conditions:
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
   DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
+  DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -1134,6 +1144,28 @@ Resources:
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        RegionsInScope:
+          Fn::If:
+            - RegionsInScopeIsEmpty
+            - !Sub "${AWS::Region}"
+            - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+
+  HealthEventsModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployHealthEventsModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health-events.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"

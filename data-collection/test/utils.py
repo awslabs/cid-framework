@@ -193,6 +193,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
        ]
     )
 
@@ -216,6 +217,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
@@ -283,6 +285,7 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
     last_log_time = {lambda_arn: int(time.time()) * 1000 for lambda_arn in lambda_arns}
     execution_results = {execution_arn: None for execution_arn in execution_arns}
     running = True
+    time.sleep(20) # should refactor to base on waiting on crawlers
     while running:
         # check if there are running stepfunctions
         running = False
@@ -355,6 +358,7 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-optimization-hub-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []

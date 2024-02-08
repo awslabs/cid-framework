@@ -22,6 +22,7 @@ Metadata:
           - IncludeCostAnomalyModule
           - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
+          - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
@@ -64,6 +65,8 @@ Metadata:
         default: "Include AWS Backup Collection Module"
       IncludeCostOptimizationHubModule:
         default: "Include Cost Optimization Hub Module"
+      IncludeHealthEventsModule:
+        default: "Include AWS Health Events Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -156,7 +159,13 @@ Parameters:
       - "no"
   IncludeCostOptimizationHubModule:
     Type: String
-    Description: Collects CostOptimizationHub Recommendations from your accounts
+    Description: Collects Cost Optimization Hub Recommendations from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
+  IncludeHealthEventsModule:
+    Type: String
+    Description: Collects AWS Health Events from your accounts
     AllowedValues:
       - "yes"
       - "no"
@@ -165,7 +174,7 @@ Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
 
 Resources:
-  DataCollectorMgmtAccountReadStack:
+  DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
@@ -178,7 +187,8 @@ Resources:
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
-  DataCollectorMgmtAccountModulesReadStack:
+        IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
+  DataCollectorLinkedAccountsModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
     Properties:
