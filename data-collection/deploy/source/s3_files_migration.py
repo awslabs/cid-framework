@@ -20,6 +20,11 @@ import boto3
 
 logger = logging.getLogger(__name__)
 
+# Legacy/Unused objects (list of key patterns)
+unused_object_key_patterns = [
+    r"^organization/organization-data/payer_id=.+?ou-org.json$"
+]
+
 def migrate(bucket):
     s3 = boto3.client('s3')
     payer_id = get_payer()
@@ -73,13 +78,26 @@ def migrate(bucket):
         for content in contents:
             try:
                 key = content["Key"]
-                new_key = re.sub(old_prefix, new_prefix, key)
-                logger.info(f'  Moving {key} to {new_key}')
-                copy_source = {'Bucket': bucket, 'Key': key}
-                s3.copy_object(Bucket=bucket, CopySource=copy_source, Key=new_key)
-                s3.delete_object(Bucket=bucket, Key=key)
+                if not is_unused_object(key):
+                    new_key = re.sub(old_prefix, new_prefix, key)
+                    logger.info(f'  Moving {key} to {new_key}')
+                    copy_source = {'Bucket': bucket, 'Key': key}
+                    s3.copy_object(Bucket=bucket, CopySource=copy_source, Key=new_key)
+                    s3.delete_object(Bucket=bucket, Key=key)
+                else:
+                    logger.info(f"Removing object {key} as it is an unused object in newer versions of the data collection stack.")
+                    s3.delete_object(Bucket=bucket, Key=key)
             except Exception as e:
                 logger.warning(e)
+    
+
+def is_unused_object(key):
+    for key_pattern in unused_object_key_patterns:
+        if re.match(key_pattern, key) is not None:
+            return True
+        else:
+            return False
+
 
 def migrate_v2(source_bucket, dest_bucket):
     s3 = boto3.client("s3")
@@ -215,25 +233,32 @@ def migrate_v2(source_bucket, dest_bucket):
                 try:
                     is_mod = False
                     source_key = content["Key"]
-                    file_date = content["LastModified"]
-                    applicable_mods = get_applicable_mods(source_key, available_mods)
-                    new_key = source_key
-                    for old_prefix, new_prefix in applicable_mods.items():
-                        new_prefix = file_date.strftime(new_prefix)
-                        new_key = re.sub(
-                            old_prefix, new_prefix, source_key
-                        )  # Returns the same source_key string when no match exists for the given pattern
-                        if new_key != source_key:
-                            logger.info(f"Modifying source {source_key} to {new_key}")
-                            is_mod = True
-                            break #break the loop after the first matching pattern
-                    copy_source = {"Bucket": source_bucket, "Key": source_key}
-                    #s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
-                    f.write(f"{source_key},{new_key},{is_mod},{file_date}\n")
-                    logger.info(
-                        f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
-                    )
-                    # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
+                    if not is_unused_object(source_key):
+                        file_date = content["LastModified"]
+                        applicable_mods = get_applicable_mods(source_key, available_mods)
+                        new_key = source_key
+                        for old_prefix, new_prefix in applicable_mods.items():
+                            new_prefix = file_date.strftime(new_prefix)
+                            new_key = re.sub(
+                                old_prefix, new_prefix, source_key
+                            )  # Returns the same source_key string when no match exists for the given pattern
+                            if new_key != source_key:
+                                logger.info(f"Modifying source {source_key} to {new_key}")
+                                is_mod = True
+                                break #break the loop after the first matching pattern
+                        copy_source = {"Bucket": source_bucket, "Key": source_key}
+                        #s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
+                        f.write(f"{source_key},{new_key},{is_mod},{file_date}\n")
+                        logger.info(
+                            f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
+                        )
+                        # s3.delete_object(Bucket=source_bucket, Key=source_key) # Uncomment this line if you want to delete data from the source bucket as the objects are copied
+                    else:
+                        if source_bucket == dest_bucket:
+                            # s3.delete_object(Bucket=source_bucket, Key=key)
+                            logger.info(f"Removing object {source_key} as it is an unused object in newer versions of the data collection stack, and objects are being migrated into the same source bucket.")
+                        else:
+                            logger.info(f"Skipping object {source_key} as it is an unused object in newer versions of the data collection stack, and objects are being migrated to a different destination bucket.")
                 except Exception as e:
                     logger.warning(e)
 
