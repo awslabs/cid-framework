@@ -28,8 +28,8 @@ else:
 print(repo.git.execute(f"git checkout -b release/{new_ver}".split()))
 
 
-tx = open('data-collection/utils/_version.py').read()
-with open('data-collection/utils/_version.py', "w") as f:
+tx = open("data-collection/utils/version.json").read()
+with open("data-collection/utils/version.json", "w") as f:
 	f.write(tx.replace(old_ver,new_ver))
 
 
