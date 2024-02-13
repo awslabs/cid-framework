@@ -194,18 +194,28 @@ Resources:
               cur_date = date.today()
               # Each record will be a unique file named by the base64 recommendation id
               for count, record in enumerate(records, start=1):
+                  if record == None:
+                      continue
                   s3_key = cur_date.strftime(
                       f'{PREFIX}/{PREFIX}-detail-data/payer_id={payer_id}'
                       f'/year=%Y/month=%m/day=%d/{record["recommendationId"]}.json'
                   )
                   s3.put_object(Body=to_json(record), Bucket=BUCKET_NAME, Key=s3_key)
-
               return count
 
           def get_detailed_recommendation(hub, rec):
               time.sleep(.25)
-              res = hub.get_recommendation(recommendationId=rec['id'])
+              try:
+                  res = hub.get_recommendation(recommendationId=rec['id'])
+              except: #pylint: disable=bare-except
+                  # The recommendation id appears to be ephemeral with the same recommendation getting a new id upon a later data run
+                  logger.info(f"Error getting recommendation details for {rec['id']}")
+                  return None
               res.pop('ResponseMetadata', None)
+              res[f'currentResourceDetails_{res["currentResourceType"]}'] = res['currentResourceDetails']
+              res[f'recommendedResourceDetails_{res["recommendedResourceType"]}'] = res['recommendedResourceDetails']
+              res.pop('currentResourceDetails', None)
+              res.pop('recommendedResourceDetails', None)
               return res
 
           def iterate_paginated_results(client, function, search, params=None):
@@ -315,9 +325,6 @@ Resources:
           "CrawlerOutput": {
             "Partitions": {
               "AddOrUpdateBehavior":"InheritFromTable"
-            },
-            "Tables":{
-              "AddOrUpdateBehavior":"MergeNewColumns"
             }
           },
           "CreatePartitionIndex":true
@@ -335,97 +342,12 @@ Resources:
         {
           "Version":1.0,
           "CrawlerOutput": {
-            "Tables":{
-              "AddOrUpdateBehavior":"MergeNewColumns"
+            "Partitions": {
+              "AddOrUpdateBehavior":"InheritFromTable"
             }
           },
           "CreatePartitionIndex":true
         }
-
-  CostOptimizationHubDetailTable:[]
-    Type: AWS::Glue::Table
-    Properties:
-      CatalogId: !Ref "AWS::AccountId"
-      DatabaseName: !Ref DatabaseName
-      TableInput:
-        Name: !Join ['_', !Split [ '-', !Sub "${CFDataName}_detail_data" ]]
-        Owner: owner
-        Retention: 0
-        TableType: EXTERNAL_TABLE
-        Parameters:
-          EXTERNAL: 'TRUE'
-          UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
-          averageRecordSize: '26673'
-          classification: json
-          compressionType: none
-          typeOfData: file
-        PartitionKeys:
-          - Name: payer_id
-            Type: string
-          - Name: year
-            Type: string
-          - Name: month
-            Type: string
-          - Name: day
-            Type: string
-        StorageDescriptor:
-          BucketColumns: []
-          InputFormat: org.apache.hadoop.mapred.TextInputFormat
-          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
-          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
-          SerdeInfo:
-            Parameters:
-              paths: accountId,actionType,costCalculationLookbackPeriodInDays,currencyCode,currentResourceDetails,currentResourceType,estimatedMonthlyCost,estimatedMonthlySavings,estimatedSavingsOverCostCalculationLookbackPeriod,estimatedSavingsPercentage,implementationEffort,lastRefreshTimestamp,recommendationId,recommendationLookbackPeriodInDays,recommendedResourceDetails,recommendedResourceType,region,resourceArn,resourceId,restartNeeded,rollbackPossible,source,tags
-              serialization.format: '1'
-            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
-          StoredAsSubDirectories: false
-          Columns:
-          - Name: accountid
-            Type: string
-          - Name: actiontype
-            Type: string
-          - Name: costcalculationlookbackperiodindays
-            Type: int
-          - Name: currencycode
-            Type: string
-          - Name: currentresourcedetails
-            Type: string
-          - Name: currentresourcetype
-            Type: string
-          - Name: estimatedmonthlycost
-            Type: double
-          - Name: estimatedmonthlysavings
-            Type: double
-          - Name: estimatedsavingsovercostcalculationlookbackperiod
-            Type: double
-          - Name: estimatedsavingspercentage
-            Type: double
-          - Name: implementationeffort
-            Type: string
-          - Name: lastrefreshtimestamp
-            Type: string
-          - Name: recommendationid
-            Type: string
-          - Name: recommendationlookbackperiodindays
-            Type: int
-          - Name: recommendedresourcedetails
-            Type: string
-          - Name: recommendedresourcetype
-            Type: string
-          - Name: region
-            Type: string
-          - Name: resourcearn
-            Type: string
-          - Name: resourceid
-            Type: string
-          - Name: restartneeded
-            Type: string
-          - Name: rollbackpossible
-            Type: string
-          - Name: source
-            Type: string
-          - Name: tags
-            Type: array<struct<key:string,value:string>>
 
   StepFunctionCostOptimizationHub:
     Type: AWS::StepFunctions::StateMachine
