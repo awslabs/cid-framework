@@ -148,6 +148,9 @@ Resources:
               'statusCode': 'event.statusCode',
               'latestDescription': 'eventDescription.latestDescription',
               'eventMetadata': 'eventMetadata',
+              'deprecated_versions': 'deprecated_versions',
+              'entityStatusCode': 'entityStatusCode',
+              'entityLastUpdatedTime': 'entityLastUpdatedTime',
           }
 
           def to_json(obj):
@@ -231,6 +234,39 @@ Resources:
                       expression='entities',
                   ))
 
+              #>>>CUT
+              details[0]['eventMetadata'] = {
+                          'deprecated_versions': 'my-old-version'
+                      }
+
+              affected_entities.append({
+                      'entityArn': 'my-entityArn',
+                      'eventArn': event_arn,
+                      'entityValue': 'my-entityValue',
+                      'entityUrl': 'my-entityUrl',
+                      'awsAccountId': '317256447485',
+                      'lastUpdatedTime': datetime(2024, 2, 1),
+                      'statusCode': 'IMPAIRED',
+                      'tags': {
+                          'my-tag01': 'taggy'
+                      }
+                  }
+              )
+              affected_entities.append({
+                      'entityArn': 'my-entityArn2',
+                      'eventArn': event_arn,
+                      'entityValue': 'my-entityValue2',
+                      'entityUrl': 'my-entityUrl2',
+                      'awsAccountId': '317256447485',
+                      'lastUpdatedTime': datetime(2024, 2, 1),
+                      'statusCode': 'UNKNOWN',
+                      'tags': {
+                          'my-tag01': 'taggy2'
+                      }
+                  }
+              )
+              #<<<CUT
+
               # match affected and descriptions
               event_details_per_affected = []
               if len(affected_entities) == 0:
@@ -239,7 +275,12 @@ Resources:
               for affected_entity in affected_entities:
                   account = affected_entity['awsAccountId']
                   event_arn = affected_entity['eventArn']
+                  affected_entity['entityStatusCode'] = affected_entity.pop('statusCode', None)
+                  affected_entity['entityLastUpdatedTime'] = affected_entity.pop('lastUpdatedTime', None)
                   detail = jmespath.search(f"[?awsAccountId=='{account}']|[?event.arn=='{event_arn}']", details)
+                  for detail_rec in detail:
+                      metadata = detail_rec.get('eventMetadata') or {}
+                      detail_rec['deprecated_versions'] = metadata.pop('deprecated_versions', None)
                   merged_dict = {**event, **affected_entity}
                   merged_dict = {**merged_dict, **detail[0]}
                   if isinstance(merged_dict['event'].get('startTime'), int):
