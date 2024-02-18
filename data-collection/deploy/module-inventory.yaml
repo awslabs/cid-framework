@@ -39,6 +39,9 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
   StepFunctionTemplate:
     Type: String
     Description: JSON representation of common StepFunction template
@@ -351,7 +354,9 @@ Resources:
           StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-${AwsObject}-StateMachine'
           StateMachineType: STANDARD
           RoleArn: !Ref StepFunctionExecutionRoleARN
-          DefinitionString: !Ref StepFunctionTemplate
+          DefinitionS3Location:
+            Bucket: !Ref CodeBucket
+            Key: !Ref StepFunctionTemplate
           DefinitionSubstitutions:
             AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
             ModuleLambdaARN: !GetAtt LambdaFunction.Arn
