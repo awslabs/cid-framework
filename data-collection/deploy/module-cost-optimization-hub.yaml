@@ -40,7 +40,7 @@ Parameters:
     Description: Source code bucket
   StepFunctionTemplate:
     Type: String
-    Description: JSON representation of common StepFunction template
+    Description: S3 key to the JSON template for the StepFunction
   StepFunctionExecutionRoleARN:
     Type: String
     Description: Common role for Step Function execution
@@ -303,7 +303,7 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
 
-    CrawlerCostOptimizationHub:
+  CrawlerCostOptimizationHub:
     Type: AWS::Glue::Crawler
     Properties:
       Name: !Sub '${ResourcePrefix}${CFDataName}-summary-Crawler'
