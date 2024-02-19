@@ -35,6 +35,9 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
   StepFunctionTemplate:
     Type: String
     Description: JSON representation of common StepFunction template
@@ -44,6 +47,12 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  AthenaTableRepairLambdaARN:
+    Type: String
+    Description: Arn for the lambda to manually update the table partitions
+  AthenaWorkgroup:
+    Type: String
+    Description: Name of the Athena Workgroup
 
 Resources:
   LambdaRole:
@@ -318,24 +327,6 @@ Resources:
             }
           }
         }
-  CrawlerCostOptimizationHubDetail:
-    Type: AWS::Glue::Crawler
-    Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
-      Role: !Ref GlueRoleARN
-      DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
-      Configuration: |
-        {
-          "Version": 1.0,
-          "CrawlerOutput": {
-            "Partitions": {
-              "AddOrUpdateBehavior": "InheritFromTable"
-            }
-          }
-        }
 
   CostOptimizationHubDetailTable:
     Type: AWS::Glue::Table
@@ -349,8 +340,6 @@ Resources:
         TableType: EXTERNAL_TABLE
         Parameters:
           EXTERNAL: 'TRUE'
-          UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
-          averageRecordSize: '26673'
           classification: json
           compressionType: none
           typeOfData: file
@@ -384,7 +373,7 @@ Resources:
           - Name: currencycode
             Type: string
           - Name: currentresourcedetails
-            Type: struct<computesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ebsvolume:struct<configuration:struct<attachmentstate:string,performance:struct<iops:double,throughput:double>,storage:struct<sizeingb:double,type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2autoscalinggroup:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instance:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instancesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,instancefamily:string,paymentoption:string,savingsplansregion:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ec2reservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,offeringclass:string,paymentoption:string,platform:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,tenancy:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,ecsservice:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,elasticachereservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,lambdafunction:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,opensearchreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,rdsreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,databaseedition:string,databaseengine:string,deploymentoption:string,instancefamily:string,instancetype:string,licensemodel:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,redshiftreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,sagemakersavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>>
+            Type: string
           - Name: currentresourcetype
             Type: string
           - Name: estimatedmonthlycost
@@ -404,7 +393,7 @@ Resources:
           - Name: recommendationlookbackperiodindays
             Type: int
           - Name: recommendedresourcedetails
-            Type: struct<computesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ebsvolume:struct<configuration:struct<attachmentstate:string,performance:struct<iops:double,throughput:double>,storage:struct<sizeingb:double,type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2autoscalinggroup:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instance:struct<configuration:struct<instance:struct<type:string>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,ec2instancesavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,instancefamily:string,paymentoption:string,savingsplansregion:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>,ec2reservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,offeringclass:string,paymentoption:string,platform:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,tenancy:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,ecsservice:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,elasticachereservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,lambdafunction:struct<configuration:struct<compute:struct<architecture:string,memorysizeinmb:int,platform:string,vcpu:double>>,costcalculation:struct<pricing:struct<estimatedcostafterdiscounts:double,estimatedcostbeforediscounts:double,estimateddiscounts:struct<otherdiscount:double,reservedinstancesdiscount:double,savingsplansdiscount:double>,estimatednetunusedamortizedcommitments:double>,usages:array<struct<operation:string,productcode:string,unit:string,usageamount:double,usagetype:string>>>>,opensearchreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,rdsreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,databaseedition:string,databaseengine:string,deploymentoption:string,instancefamily:string,instancetype:string,licensemodel:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,redshiftreservedinstances:struct<configuration:struct<accountscope:string,currentgeneration:string,instancefamily:string,instancetype:string,monthlyrecurringcost:string,normalizedunitstopurchase:string,numberofinstancestopurchase:string,paymentoption:string,reservedinstancesregion:string,service:string,sizeflexeligible:string,term:string,upfrontcost:string>,costcalculation:struct<pricing:struct<estimatedmonthlyamortizedreservationcost:double,estimatedondemandcost:double,monthlyreservationeligiblecost:double,savingspercentage:double>>>,sagemakersavingsplans:struct<configuration:struct<accountscope:string,hourlycommitment:string,paymentoption:string,term:string>,costcalculation:struct<pricing:struct<estimatedmonthlycommitment:double,estimatedondemandcost:double,monthlysavingsplanseligiblecost:double,savingspercentage:double>>>>
+            Type: string
           - Name: recommendedresourcetype
             Type: string
           - Name: region
@@ -428,7 +417,9 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
@@ -517,39 +508,49 @@ Resources:
                   "account.$": "$.account"
                 }
               },
-              "Next": "CrawlerStepFunctionStartExecution"
+              "Next": "Manual Table Update"
             },
-            "CrawlerStepFunctionStartExecution": {
+            "Manual Table Update": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
               "Parameters": {
-                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
-                "Input": {
-                  "crawlers": ${Crawlers}
-                }
+                "Payload": {
+                  "table_name": "cost_optimization_hub_detail_data",
+                  "workgroup": "${AthenaWorkgroup}"
+                },
+                "FunctionName": "${AthenaTableRepairLambdaARN}"
               },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
               "End": true
             }
           },
           "TimeoutSeconds": 3600
         }
       DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
-        CollectionType: "Payers"
-        Params: ''
+        AthenaTableRepairLambdaARN: !Ref AthenaTableRepairLambdaARN
+        AthenaWorkgroup: !Ref AthenaWorkgroup
         Module: !Ref CFDataName
-        DeployRegion: !Ref AWS::Region
-        Account: !Ref AWS::AccountId
-        Prefix: !Ref ResourcePrefix
         ItemsPerBatch: 1000
         MaxConcurrentBatches: 10
     Metadata:
       cfn-lint:
         config:
           ignore_checks:
-            - E2532 #Passing a dynamic structure for crawlers input into the template as a DefinitionSubstitution
+            - E2532 #Passing a dynamic structures as input into the template as a DefinitionSubstitution
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
