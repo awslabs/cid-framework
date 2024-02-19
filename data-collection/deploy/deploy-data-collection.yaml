@@ -13,8 +13,6 @@ Metadata:
           - MultiAccountRoleName
           - DestinationBucket
           - DatabaseName
-          - AthenaWorkgroup
-          - AthenaQueryResultsBucket
           - Schedule
           - CFNSourceBucket
       - Label:
@@ -47,10 +45,6 @@ Metadata:
         default: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
       DatabaseName:
         default: "Name of the Athena database to be created to hold collected data"
-      AthenaWorkgroup:
-        default: "Athena Workgroup as defined in CUDOS dashboard setup or custom"
-      AthenaQueryResultsBucket:
-        default: "Athena query results bucket as defined in CUDOS dashboard setup or custom"
       ResourcePrefix:
         default: "Role Prefix"
       CFNSourceBucket:
@@ -132,14 +126,6 @@ Parameters:
     Description: Name of the Athena database to be created to hold lambda information
     AllowedPattern: ([a-z0-9_]*?$)
     Default: optimization_data
-  AthenaWorkgroup:
-    Type: String
-    Description: "Leave blank if you accepted the CUDOS default (i.e. left it blank). If you did not install CUDOS or have a custom Workgroup, specify it here"
-    Default: ""
-  AthenaQueryResultsBucket:
-    Type: String
-    Description: "Leave blank if you accepted the CUDOS default (i.e. left it blank). If you did not install CUDOS or have a custom bucket, specify it here"
-    Default: ""
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable (e.g. 'prefix-'). This parameter CANNOT BE UPDATED. Delete and re-create stack if needed an update.
@@ -267,8 +253,6 @@ Conditions:
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
   ProdCFNTemplateUsed: !Equals [ !Ref CFNSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
-  UseDefaultAthenaWorkgroup:  !Equals [ !Ref AthenaWorkgroup, "" ]
-  UseDefaultQueryResultsBucket:  !Equals [ !Ref AthenaQueryResultsBucket, "" ]
 
 Resources:
   S3Bucket:
@@ -704,109 +688,6 @@ Resources:
       Roles:
         - Ref: StepFunctionExecutionRole
 
-  AthenaTableRepairLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "${ResourcePrefix}AthenaTableRepair-LambdaRole"
-      AssumeRolePolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-            Action:
-              - sts:AssumeRole
-      ManagedPolicyArns:
-        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-      Path: /
-      Policies:
-        - PolicyName: "Athena-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - athena:StartQueryExecution
-                Resource:
-                  - Fn::If:
-                      - UseDefaultAthenaWorkgroup
-                      - !Sub "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/CID"
-                      - !Sub "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/${AthenaWorkgroup}"
-        - PolicyName: "S3-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - s3:GetBucketLocation
-                  - s3:GetObject
-                  - s3:ListBucket
-                  - s3:PutObject
-                  - s3:ListAllMyBuckets
-                Resource:
-                  - !GetAtt S3Bucket.Arn
-                  - Fn::If:
-                      - UseDefaultQueryResultsBucket
-                      - !Sub arn:${AWS::Partition}:s3:::aws-athena-query-results-cid-${AWS::AccountId}-${AWS::Region}
-                      - !Sub arn:${AWS::Partition}:s3:::${AthenaQueryResultsBucket}
-                  - Fn::If:
-                      - UseDefaultQueryResultsBucket
-                      - !Sub arn:${AWS::Partition}:s3:::aws-athena-query-results-cid-${AWS::AccountId}-${AWS::Region}/*
-                      - !Sub arn:${AWS::Partition}:s3:::${AthenaQueryResultsBucket}/*
-        - PolicyName: "Glue-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - glue:BatchCreatePartition
-                  - glue:GetDatabase
-                  - glue:RunStatement
-                  - glue:GetTable
-                  - glue:GetPartitions
-                Resource:
-                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
-                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/optimization_data
-                  - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/optimization_data/*
-
-  AthenaTableRepairLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      Runtime: python3.10
-      FunctionName: !Sub ${ResourcePrefix}AthenaTableRepair-Lambda
-      Description: "Lambda function to to update partitions where Crawlers are not used"
-      Handler: index.lambda_handler
-      MemorySize: 128
-      Role: !GetAtt AthenaTableRepairLambdaRole.Arn
-      Timeout: 15
-      Environment:
-        Variables:
-          DATABASE: !Ref DatabaseName
-      Code:
-        ZipFile: |
-          import os
-          import logging
-
-          import boto3
-
-          DATABASE = os.environ['DATABASE']
-
-          logger = logging.getLogger(__name__)
-          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-
-          def lambda_handler(event, context):
-              table_name = event['table_name']
-              workgroup = event['workgroup']
-              client = boto3.client('athena')
-
-              # Query Execution Parameters
-              sql = f'MSCK REPAIR TABLE `{DATABASE}.{table_name}`'
-              qe_context = {'Database': DATABASE}
-
-              response = client.start_query_execution(QueryString=sql, QueryExecutionContext=qe_context, WorkGroup=workgroup)
-              logger.info(f"Repair table command '{sql}' ran and returned QueryExecutionId: {response['QueryExecutionId']}")
-
   SchedulerExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -894,8 +775,6 @@ Resources:
         StepFunctionTemplate: cfn/data-collection/source/main_step_function.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        AthenaTableRepairLambdaARN: !GetAtt AthenaTableRepairLambda.Arn
-        AthenaWorkgroup: !If [ UseDefaultAthenaWorkgroup, "CID", !Ref AthenaWorkgroup ]
 
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack

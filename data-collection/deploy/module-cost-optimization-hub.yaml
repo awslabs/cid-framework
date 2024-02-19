@@ -47,12 +47,6 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  AthenaTableRepairLambdaARN:
-    Type: String
-    Description: Arn for the lambda to manually update the table partitions
-  AthenaWorkgroup:
-    Type: String
-    Description: Name of the Athena Workgroup
 
 Resources:
   LambdaRole:
@@ -508,49 +502,39 @@ Resources:
                   "account.$": "$.account"
                 }
               },
-              "Next": "Manual Table Update"
+              "Next": "CrawlerStepFunctionStartExecution"
             },
-            "Manual Table Update": {
+            "CrawlerStepFunctionStartExecution": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::lambda:invoke",
-              "OutputPath": "$.Payload",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
               "Parameters": {
-                "Payload": {
-                  "table_name": "cost_optimization_hub_detail_data",
-                  "workgroup": "${AthenaWorkgroup}"
-                },
-                "FunctionName": "${AthenaTableRepairLambdaARN}"
-              },
-              "Retry": [
-                {
-                  "ErrorEquals": [
-                    "Lambda.ServiceException",
-                    "Lambda.AWSLambdaException",
-                    "Lambda.SdkClientException",
-                    "Lambda.TooManyRequestsException"
-                  ],
-                  "IntervalSeconds": 1,
-                  "MaxAttempts": 3,
-                  "BackoffRate": 2
+                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "Input": {
+                  "crawlers": ${Crawlers}
                 }
-              ],
+              },
               "End": true
             }
           },
           "TimeoutSeconds": 3600
         }
       DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        AthenaTableRepairLambdaARN: !Ref AthenaTableRepairLambdaARN
-        AthenaWorkgroup: !Ref AthenaWorkgroup
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
         Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
         ItemsPerBatch: 1000
         MaxConcurrentBatches: 10
     Metadata:
       cfn-lint:
         config:
           ignore_checks:
-            - E2532 #Passing a dynamic structures as input into the template as a DefinitionSubstitution
+            - E2532 #Passing a dynamic structure for crawlers input into the template as a DefinitionSubstitution
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
