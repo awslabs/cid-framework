@@ -223,11 +223,8 @@ Resources:
               """
               field_data = record.get(field)
               record_type = list(field_data.keys())[0]
-              for schema_type in list(schema.keys()):
-                  if schema_type == record_type:
-                      schema[record_type] = field_data[record_type]
-                      record[field] = schema
-                      break
+              schema[record_type] = field_data[record_type]
+              record[field] = schema
               return record
 
           def iterate_paginated_results(client, function, search, params=None):
