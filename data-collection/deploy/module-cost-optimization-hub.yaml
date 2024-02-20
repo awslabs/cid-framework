@@ -203,10 +203,32 @@ Resources:
               return count
 
           def get_detailed_recommendation(hub, rec):
-              time.sleep(.25)
-              res = hub.get_recommendation(recommendationId=rec['id'])
-              res.pop('ResponseMetadata', None)
-              return res
+            time.sleep(.25)
+            try:
+                res = hub.get_recommendation(recommendationId=rec['id'])
+            except: #pylint: disable=bare-except
+                # Ignore: The recommendation id appears to be ephemeral with the same recommendation sometimes getting a new id upon a later data run
+                logger.info(f"Error getting recommendation details for {rec['id']}")
+                return None
+            res.pop('ResponseMetadata', None)
+            res = conform_to_schema(res, 'currentResourceDetails', RECORD_TYPE_SCHEMAS)
+            res = conform_to_schema(res, 'recommendedResourceDetails', RECORD_TYPE_SCHEMAS)
+            return res
+
+          def conform_to_schema(record, field, schema):
+              """
+              The API result for detail records will contain only a subset of the full potential schema for 2 resource-specific fields.
+              Need to use a blank template of the full schema, transpose the result into it and save that full schema to the file
+              to avoid potential issues with Hive when the bucket and partitions are rescanned to update the table in Athena.
+              """
+              field_data = record.get(field)
+              record_type = list(field_data.keys())[0]
+              for schema_type in list(schema.keys()):
+                  if schema_type == record_type:
+                      schema[record_type] = field_data[record_type]
+                      record[field] = schema
+                      break
+              return record
 
           def iterate_paginated_results(client, function, search, params=None):
               yield from client.get_paginator(function).paginate(**(params or {})).search(search)
@@ -274,6 +296,78 @@ Resources:
                   count = 0
 
               return {"status":"200","Recorded":f'"{count}"'}
+
+          RECORD_TYPE_SCHEMAS = {
+            "computeSavingsPlans": {
+                "configuration": {"accountScope": "", "hourlyCommitment": "", "paymentOption": "", "term": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyCommitment": 0, "estimatedOnDemandCost": 0, "monthlySavingsPlansEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "ebsVolume": {
+                "configuration": {"attachmentState": "", "performance": {"iops": 0, "throughput": 0}, "storage": {"sizeInGb": 0, "type": ""}},
+                "costCalculation": {
+                    "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0,"reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
+                    "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
+                }
+            },
+            "ec2AutoScalingGroup": {
+                "configuration": {"instance": {"type": ""}},
+                "costCalculation": {
+                    "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0, "reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
+                    "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
+                }
+            },
+            "ec2Instance": {
+                "configuration": {"instance": {"type": ""}},
+                "costCalculation": {
+                    "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0,"reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
+                    "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
+                }
+            },
+            "ec2InstanceSavingsPlans": {
+                "configuration": {"accountScope": "", "hourlyCommitment": "", "instanceFamily": "", "paymentOption": "", "savingsPlansRegion": "", "term": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyCommitment": 0, "estimatedOnDemandCost": 0, "monthlySavingsPlansEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "ec2ReservedInstances": {
+                "configuration": {"accountScope": "","currentGeneration": "","instanceFamily": "","instanceType": "","monthlyRecurringCost": "","normalizedUnitsToPurchase": "","numberOfInstancesToPurchase": "","offeringClass": "","paymentOption": "","platform": "","reservedInstancesRegion": "","service": "","sizeFlexEligible": "","tenancy": "","term": "","upfrontCost": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "ecsService": {
+                "configuration": {"compute": {"architecture": "", "memorySizeInMB": 123, "platform": "", "vCpu": 0}},
+                "costCalculation": {
+                    "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0,"reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
+                    "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
+                }
+            },
+            "elastiCacheReservedInstances": {
+                "configuration": {"accountScope": "","currentGeneration": "","instanceFamily": "","instanceType": "","monthlyRecurringCost": "",
+                    "normalizedUnitsToPurchase": "","numberOfInstancesToPurchase": "","paymentOption": "","reservedInstancesRegion": "","service": "",
+                    "sizeFlexEligible": "","term": "","upfrontCost": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "lambdaFunction": {
+                "configuration": {"compute": {"architecture": "", "memorySizeInMB": 123, "platform": "", "vCpu": 0}},
+                "costCalculation": {
+                    "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0, "reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
+                    "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
+                }
+            },
+            "openSearchReservedInstances": {
+                "configuration": {"accountScope": "","currentGeneration": "","instanceType": "","monthlyRecurringCost": "","normalizedUnitsToPurchase": "","numberOfInstancesToPurchase": "","paymentOption": "","reservedInstancesRegion": "","service": "","sizeFlexEligible": "","term": "","upfrontCost": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "rdsReservedInstances": {
+                "configuration": {"accountScope": "","currentGeneration": "","databaseEdition": "","databaseEngine": "","deploymentOption": "","instanceFamily": "","instanceType": "","licenseModel": "","monthlyRecurringCost": "","normalizedUnitsToPurchase": "","numberOfInstancesToPurchase": "","paymentOption": "","reservedInstancesRegion": "","service": "","sizeFlexEligible": "","term": "","upfrontCost": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "redshiftReservedInstances": {
+                "configuration": {"accountScope": "","currentGeneration": "","instanceFamily": "","instanceType": "","monthlyRecurringCost": "","normalizedUnitsToPurchase": "","numberOfInstancesToPurchase": "","paymentOption": "","reservedInstancesRegion": "","service": "","sizeFlexEligible": "","term": "","upfrontCost": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
+            },
+            "sageMakerSavingsPlans": {
+                "configuration": {"accountScope": "", "hourlyCommitment": "", "paymentOption": "", "term": ""},
+                "costCalculation": {"pricing": {"estimatedMonthlyCommitment": 0, "estimatedOnDemandCost": 0, "monthlySavingsPlansEligibleCost": 0, "savingsPercentage": 0}}
+            }
+          }
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 600
