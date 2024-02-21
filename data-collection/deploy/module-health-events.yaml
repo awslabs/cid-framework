@@ -234,39 +234,6 @@ Resources:
                       expression='entities',
                   ))
 
-              #>>>CUT
-              details[0]['eventMetadata'] = {
-                          'deprecated_versions': 'my-old-version'
-                      }
-
-              affected_entities.append({
-                      'entityArn': 'my-entityArn',
-                      'eventArn': event_arn,
-                      'entityValue': 'my-entityValue',
-                      'entityUrl': 'my-entityUrl',
-                      'awsAccountId': '317256447485',
-                      'lastUpdatedTime': datetime(2024, 2, 1),
-                      'statusCode': 'IMPAIRED',
-                      'tags': {
-                          'my-tag01': 'taggy'
-                      }
-                  }
-              )
-              affected_entities.append({
-                      'entityArn': 'my-entityArn2',
-                      'eventArn': event_arn,
-                      'entityValue': 'my-entityValue2',
-                      'entityUrl': 'my-entityUrl2',
-                      'awsAccountId': '317256447485',
-                      'lastUpdatedTime': datetime(2024, 2, 1),
-                      'statusCode': 'UNKNOWN',
-                      'tags': {
-                          'my-tag01': 'taggy2'
-                      }
-                  }
-              )
-              #<<<CUT
-
               # match affected and descriptions
               event_details_per_affected = []
               if len(affected_entities) == 0:
@@ -282,7 +249,8 @@ Resources:
                       metadata = detail_rec.get('eventMetadata') or {}
                       detail_rec['deprecated_versions'] = metadata.pop('deprecated_versions', None)
                   merged_dict = {**event, **affected_entity}
-                  merged_dict = {**merged_dict, **detail[0]}
+                  if len(detail) > 0:
+                      merged_dict = {**merged_dict, **detail[0]}
                   if isinstance(merged_dict['event'].get('startTime'), int):
                       merged_dict['event']['startTime'] =int_to_datetime(merged_dict['event']['startTime'])
                   if isinstance(merged_dict['event'].get('endTime'), int):
