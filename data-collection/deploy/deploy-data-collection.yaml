@@ -209,7 +209,7 @@ Parameters:
   ScheduleFrequent:
     Type: String
     Description: EventBridge schedule to trigger data collection for Cost Anomalies, and Budgets modules (see docs for tailoring the schedule for each module).
-    Default: "rate(7 days)"
+    Default: "rate(1 day)"
   RegionsInScope:
     Type: String
     Description: "Ex: us-east-1,us-east-2,us-west-1,us-west-2,eu-central-1,eu-west-1,eu-west-2,eu-west-3  if empty, the current region will be used. You can add regions later by updating the stack."
