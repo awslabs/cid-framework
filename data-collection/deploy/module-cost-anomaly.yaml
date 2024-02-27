@@ -121,7 +121,6 @@ Resources:
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-          logger.setLevel(logging.DEBUG)
 
           # Helper Exception classes
           class CidError(Exception):
@@ -292,7 +291,7 @@ Resources:
                       aws_secret_access_key=credentials['SecretAccessKey'],
                       aws_session_token=credentials['SessionToken'],
                   )
-                  logger.info("Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
                   return client
 
               except Exception as exc:
