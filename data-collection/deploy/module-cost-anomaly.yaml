@@ -234,7 +234,7 @@ Resources:
                   'TotalActualSpend': get_value_by_path(record, 'Impact/TotalActualSpend'),
                   'TotalExpectedSpend': get_value_by_path(record, 'Impact/TotalExpectedSpend'),
                   'TotalImpact': get_value_by_path(record, 'Impact/TotalImpact'),
-                  'TotalImpactpercentage': get_value_by_path(record, 'Impact/TotalImpactPercentage', 0.0),
+                  'TotalImpactpercentage': float(get_value_by_path(record, 'Impact/TotalImpactPercentage', 0.0)),
                   'MonitorArn': get_value_by_path(record, 'MonitorArn'),
                   'LinkedAccount': get_value_by_path(record, 'RootCauses/0/LinkedAccount'),
                   'LinkedAccountName': get_value_by_path(record, 'RootCauses/0/LinkedAccountName'),
