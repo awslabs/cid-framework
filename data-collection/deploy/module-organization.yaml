@@ -235,11 +235,11 @@ Resources:
                           account['HierarchyPath'] = ' > '.join([
                               lvl.get('Name', lvl.get('Id')) for lvl in account['Hierarchy']
                           ])
-                          account['HierarchyTags'] = self.get_hierarchy_tags(account['Id'])
+                          account['HierarchyTags'] = [ {'Key': key, 'Value': value} for key, value in self.get_hierarchy_tags(account['Id']).items()]
                           account['ManagementAccountId'] =  account['Arn'].split(':')[4]
                           account['Parent'] = account['Hierarchy'][-1].get('Name')
                           account['ParentId'] = account['Hierarchy'][-1].get('Id')
-                          account['ParentTags'] = self.get_tags(account['ParentId'])
+                          account['ParentTags'] = [ {'Key': key, 'Value': value} for key, value in self.get_tags(account['ParentId']).items()]
                           #account['Parent_Tags'] = self.get_tags(account['ParentId']) # Uncomment for Backward Compatibility
                           logger.debug(json.dumps(account, indent=2, default=json_converter))
                           yield account
