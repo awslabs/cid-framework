@@ -211,11 +211,9 @@ Resources:
               @lru_cache(maxsize=10000)
               def get_tags(self, id_, athena_friendly=False):
                   """returns a dict of tags"""
-                  def _process_key(key, athena_friendly):
-                      return re.sub('[^a-zA-Z0-9_]', '_', key) if athena_friendly else key
                   paginator = self.org.get_paginator("list_tags_for_resource")
                   tags = sum([resp['Tags'] for resp in paginator.paginate(ResourceId=id_)], [])
-                  return {_process_key(tag['Key'], athena_friendly): tag['Value'] for tag in tags}
+                  return {tag['Key']: tag['Value'] for tag in tags}
 
               @lru_cache(maxsize=10000)
               def get_hierarchy_tags(self, id_):
