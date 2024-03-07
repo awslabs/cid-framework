@@ -1008,7 +1008,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:

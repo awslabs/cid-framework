@@ -38,6 +38,9 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
   StepFunctionTemplate:
     Type: String
     Description: JSON representation of common StepFunction template
@@ -94,6 +97,13 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "${DestinationBucketARN}"
+        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "states:StartExecution"
+                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -219,59 +229,63 @@ Resources:
                   else:
                       break
 
-            def pull_event_details(event, health_client):
-                event_arn = event['arn']
-                if event['eventScopeCode'] == 'PUBLIC':
-                    accounts = [None]
-                else:
-                    accounts = list(search(
-                        function=health_client.describe_affected_accounts_for_organization,
-                        args={'event_arn': event_arn},
-                        expression='affectedAccounts',
-                    ))
+          def pull_event_details(event, health_client):
+              event_arn = event['arn']
+              if event['eventScopeCode'] == 'PUBLIC':
+                  accounts = [None]
+              else:
+                  accounts = list(search(
+                      function=health_client.describe_affected_accounts_for_organization,
+                      args={'eventArn': event_arn},
+                      expression='affectedAccounts',
+                  ))
 
-                # describe_event_details_for_organization only can get 10 per call
-                details = []
-                affected_entities = []
-                for account_chunk in list(chunks(accounts, 10)):
-                    details += list(search(
-                        function=health_client.describe_event_details_for_organization,
-                        args=dict(
-                            organization_event_detail_filters=[{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
-                        ),
-                        expression='successfulSet',
-                    ))
-                    affected_entities += list(search(
-                        function=health_client.describe_affected_entities_for_organization,
-                        args=dict(
-                            organization_entity_filters=[{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
-                        ),
-                        expression='entities',
-                    ))
+              # describe_event_details_for_organization only can get 10 per call
+              details = []
+              affected_entities = []
+              for account_chunk in list(chunks(accounts, 10)):
+                  if account_chunk[0]:
+                      filters = [{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
+                  else:
+                      filters = [{'eventArn':event_arn}]
+                  details += list(search(
+                      function=health_client.describe_event_details_for_organization,
+                      args=dict(
+                          organizationEventDetailFilters=filters
+                      ),
+                      expression='successfulSet',
+                  ))
+                  affected_entities += list(search(
+                      function=health_client.describe_affected_entities_for_organization,
+                      args=dict(
+                          organizationEntityFilters=filters
+                      ),
+                      expression='entities',
+                  ))
 
-                # merge with details and affected entities
-                event_details_per_affected = []
-                if len(affected_entities) == 0:
-                    event = {**event, **details[0]}
-                    event_details_per_affected.append(event)
-                for affected_entity in affected_entities:
-                    account = affected_entity['awsAccountId']
-                    event_arn = affected_entity['eventArn']
-                    affected_entity['entityStatusCode'] = affected_entity.pop('statusCode', None)
-                    affected_entity['entityLastUpdatedTime'] = affected_entity.pop('lastUpdatedTime', None)
-                    detail = jmespath.search(f"[?awsAccountId=='{account}']|[?event.arn=='{event_arn}']", details)
-                    for detail_rec in detail:
-                        metadata = detail_rec.get('eventMetadata') or {}
-                        deprecated_versions = metadata.pop('deprecated_versions', None)
-                        if deprecated_versions:
-                            event['deprecated_versions'] = deprecated_versions
-                        if len(metadata) == 0:
-                            event['eventMetadata'] = ""
-                    merged_dict = {**event, **affected_entity}
-                    if len(detail) > 0:
-                        merged_dict = {**merged_dict, **detail[0]}
-                    event_details_per_affected.append(merged_dict)
-                return event_details_per_affected
+              # merge with details and affected entities
+              event_details_per_affected = []
+              if len(affected_entities) == 0:
+                  event = {**event, **details[0]}
+                  event_details_per_affected.append(event)
+              for affected_entity in affected_entities:
+                  account = affected_entity['awsAccountId']
+                  event_arn = affected_entity['eventArn']
+                  affected_entity['entityStatusCode'] = affected_entity.pop('statusCode', None)
+                  affected_entity['entityLastUpdatedTime'] = affected_entity.pop('lastUpdatedTime', None)
+                  detail = jmespath.search(f"[?awsAccountId=='{account}']|[?event.arn=='{event_arn}']", details)
+                  for detail_rec in detail:
+                      metadata = detail_rec.get('eventMetadata') or {}
+                      deprecated_versions = metadata.pop('deprecated_versions', None)
+                      if deprecated_versions:
+                          event['deprecated_versions'] = deprecated_versions
+                      if len(metadata) == 0:
+                          event['eventMetadata'] = ""
+                  merged_dict = {**event, **affected_entity}
+                  if len(detail) > 0:
+                      merged_dict = {**merged_dict, **detail[0]}
+                  event_details_per_affected.append(merged_dict)
+              return event_details_per_affected
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects AWS Health Events data
@@ -323,8 +337,9 @@ Resources:
                           f.write('eventArn,eventScopeCode\n')
                           for _, h_event in enumerate(search(health_client.describe_events_for_organization, args, expression='events')):
                               f.write(f'{h_event["arn"]},{h_event["eventScopeCode"]}\n')
+                              count += 1
                       if count > 0:
-                          key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-summary-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S.csv")
+                          key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-summary-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.csv")
                           boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
                           logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
                           # clear any previous runs for the same day
@@ -370,14 +385,14 @@ Resources:
               return {"status":"200","Recorded":f'"{count}"'}
       Handler: "index.lambda_handler"
       MemorySize: 2688
-      Timeout: 1800
+      Timeout: 900
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref ManagementRoleName
-          REGIONS: !Ref RegionsInScope
+          #REGIONS: -- defining regions can miss events within the region list so default to global
           LOOKBACK: 90
           DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
@@ -397,7 +412,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -410,11 +425,13 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        Crawlers: '[]'
         CollectionType: "Payers"
         Params: ''
         Module: !Ref CFDataName
@@ -436,7 +453,7 @@ Resources:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
 
-  StepFunctionCostOptimizationHubDetail:
+  StepFunctionDetail:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
@@ -497,7 +514,8 @@ Resources:
               "ItemBatcher": {
                 "MaxItemsPerBatch": ${ItemsPerBatch},
                 "BatchInput": {
-                  "account.$": "$.account"
+                  "account.$": "$.account",
+                  "ingestion_time.$": "$.ingestion_time"
                 }
               },
               "Next": "CrawlerStepFunctionStartExecution"
