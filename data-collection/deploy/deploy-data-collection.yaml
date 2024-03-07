@@ -45,7 +45,7 @@ Metadata:
       RegionsInScope:
         default: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
       DatabaseName:
-        default: "Name of the Athena database to be created to hold lambda information"
+        default: "Name of the Athena database to be created to hold collected data"
       ResourcePrefix:
         default: "Role Prefix"
       CFNSourceBucket:
@@ -96,93 +96,6 @@ Mappings:
     us-east-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-east-2 }
     us-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-1 }
     us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
-
-  CodeTemplates:
-    StepFunction:
-      code: |
-        {
-          "Comment": "Orchestrate the collection of ${Module} data",
-          "StartAt": "AccountCollectorInvoke",
-          "States": {
-            "AccountCollectorInvoke": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::lambda:invoke",
-              "Parameters": {
-                "Payload": {
-                  "Type": "${CollectionType}"
-                },
-                "FunctionName": "${AccountCollectorLambdaARN}"
-              },
-              "Retry": [
-                {
-                  "ErrorEquals": [
-                    "Lambda.ServiceException",
-                    "Lambda.AWSLambdaException",
-                    "Lambda.SdkClientException",
-                    "Lambda.TooManyRequestsException"
-                  ],
-                  "IntervalSeconds": 2,
-                  "MaxAttempts": 6,
-                  "BackoffRate": 2
-                }
-              ],
-              "Next": "AccountMap",
-              "ResultPath": "$.accountLambdaOutput"
-            },
-            "AccountMap": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "INLINE"
-                },
-                "StartAt": "InvokeModuleLambda",
-                "States": {
-                  "InvokeModuleLambda": {
-                    "Type": "Task",
-                    "Resource": "arn:aws:states:${DeployRegion}:${Account}:lambda:invoke",
-                    "OutputPath": "$.Payload",
-                    "Parameters": {
-                      "Payload": {
-                        "account.$": "$.account",
-                        "params": "${Params}"
-                      },
-                      "FunctionName": "${ModuleLambdaARN}"
-                    },
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "Lambda.ServiceException",
-                          "Lambda.AWSLambdaException",
-                          "Lambda.SdkClientException",
-                          "Lambda.TooManyRequestsException"
-                        ],
-                        "IntervalSeconds": 2,
-                        "MaxAttempts": 6,
-                        "BackoffRate": 2
-                      }
-                    ],
-                    "End": true
-                  }
-                }
-              },
-              "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
-              "Next": "CrawlerStepFunctionStartExecution",
-              "MaxConcurrency": 60
-            },
-            "CrawlerStepFunctionStartExecution": {
-              "Type": "Task",
-              "Resource": "arn:aws:states:::states:startExecution.sync:2",
-              "Parameters": {
-                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
-                "Input": {
-                  "crawlers": ${Crawlers}
-                }
-              },
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 1200
-        }
 
 Parameters:
   DestinationBucket:
@@ -699,94 +612,9 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}CrawlerExecution-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !GetAtt StepFunctionExecutionRole.Arn
-      DefinitionString: |
-        {
-          "Comment": "Orchestrate the Glue Crawlers for the collected data",
-          "StartAt": "CrawlerMap",
-          "States": {
-            "CrawlerMap": {
-              "Type": "Map",
-              "ItemProcessor": {
-                "ProcessorConfig": {
-                  "Mode": "INLINE"
-                },
-                "StartAt": "GetCrawler",
-                "States": {
-                  "GetCrawler": {
-                    "Type": "Task",
-                    "Parameters": {
-                      "Name.$": "$"
-                    },
-                    "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "States.ALL"
-                        ],
-                        "BackoffRate": 2,
-                        "IntervalSeconds": 1,
-                        "MaxAttempts": 8,
-                        "JitterStrategy": "FULL"
-                      }
-                    ],
-                    "Next": "IsRunning?",
-                    "OutputPath": "$.Crawler"
-                  },
-                  "IsRunning?": {
-                    "Type": "Choice",
-                    "Choices": [
-                      {
-                        "Or": [
-                          {
-                            "Variable": "$.State",
-                            "StringEquals": "RUNNING"
-                          },
-                          {
-                            "Variable": "$.State",
-                            "StringEquals": "STOPPING"
-                          }
-                        ],
-                        "Next": "WaitForCrawler"
-                      }
-                    ],
-                    "Default": "StartCrawler",
-                    "OutputPath": "$"
-                  },
-                  "WaitForCrawler": {
-                    "Type": "Wait",
-                    "Seconds": 30,
-                    "Next": "GetCrawler",
-                    "OutputPath": "$.Name",
-                    "InputPath": "$"
-                  },
-                  "StartCrawler": {
-                    "Type": "Task",
-                    "Parameters": {
-                      "Name.$": "$"
-                    },
-                    "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
-                    "End": true,
-                    "InputPath": "$.Name",
-                    "Retry": [
-                      {
-                        "ErrorEquals": [
-                          "States.ALL"
-                        ],
-                        "BackoffRate": 2,
-                        "IntervalSeconds": 1,
-                        "MaxAttempts": 8,
-                        "JitterStrategy": "FULL"
-                      }
-                    ]
-                  }
-                }
-              },
-              "ItemsPath": "$.crawlers",
-              "End": true
-            }
-          },
-          "TimeoutSeconds": 1200
-        }
+      DefinitionS3Location:
+        Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        Key: cfn/data-collection/source/crawler_step_function_v1.json
 
   StepFunctionExecutionRole:
     Type: AWS::IAM::Role
@@ -854,7 +682,6 @@ Resources:
                   - "s3:GetObject"
                 Resource: !Sub '${S3Bucket.Arn}/*'
 
-
   StepFunctionExecutionRoleInvokeAccountCollectorPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: DeployAccountCollector
@@ -918,7 +745,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -935,7 +763,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -952,7 +781,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -969,7 +799,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -986,7 +817,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1003,7 +835,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1051,7 +884,8 @@ Resources:
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1068,7 +902,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1090,7 +925,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
@@ -1113,7 +949,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1130,7 +967,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1147,7 +985,8 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        StepFunctionTemplate: !FindInMap [CodeTemplates, StepFunction, code]
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: cfn/data-collection/source/main_step_function_v1.json
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
