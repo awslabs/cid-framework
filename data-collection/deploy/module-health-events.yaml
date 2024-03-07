@@ -111,6 +111,7 @@ Resources:
         ZipFile: |
           import os
           import json
+          import uuid
           import logging
           import jmespath
           from datetime import date, datetime, timedelta, timezone
@@ -127,31 +128,37 @@ Resources:
           if len(REGIONS) > 0:
               REGIONS.append('global')
           LOOKBACK = int(os.environ['LOOKBACK'])
+          DETAIL_SM_ARN = os.environ['DETAIL_SM_ARN']
           TMP_FILE = "/tmp/data.json"
 
           mapping = {
-              'payerAccountId': 'payerAccountId',
-              'awsAccountId': 'awsAccountId',
-              'entityValue': 'entityValue',
-              'entityUrl': 'entityUrl',
-              'tags': 'tags',
-              'eventArn': 'event.arn',
+              'payer_account_id': 'payer_account_id',
+              'account_id': 'awsAccountId',
+              'event_code': 'event.eventTypeCode',
+              'event_category': 'event.eventTypeCategory',
+              'event_scope': 'event.eventScopeCode',
+              'status_code': 'event.statusCode',
               'service': 'event.service',
-              'eventTypeCode': 'event.eventTypeCode',
-              'eventTypeCategory': 'event.eventTypeCategory',
               'region': 'event.region',
-              'availabilityZone': 'event.availabilityZone',
-              'eventScopeCode': 'eventScopeCode',
-              'startTime': 'event.startTime',
-              'endTime': 'event.endTime',
-              'lastUpdatedTime': 'event.lastUpdatedTime',
-              'statusCode': 'event.statusCode',
-              'latestDescription': 'eventDescription.latestDescription',
-              'eventMetadata': 'eventMetadata',
+              'event_description': 'eventDescription.latestDescription',
+              'affected_entity_value': 'entityValue',
+              'affected_entity_arn': 'entityArn',
+              'affected_entity_status_code': 'entityStatusCode',
+              'affected_entity_last_update': 'entityLastUpdatedTime',
+              'affected_entity_url': 'entityUrl',
+              'availability_zone': 'event.availabilityZone',
               'deprecated_versions': 'deprecated_versions',
-              'entityStatusCode': 'entityStatusCode',
-              'entityLastUpdatedTime': 'entityLastUpdatedTime',
+              'tags': 'tags',
+              'start_time': 'event.startTime',
+              'end_time': 'event.endTime',
+              'last_updated_time': 'event.lastUpdatedTime',
+              'event_metadata': 'eventMetadata',
+              'event_source': 'event_source',
+              'event_arn': 'event.arn',
+              'ingestion_time': 'ingestion_time',
           }
+
+          time_fields_to_convert = ['start_time', 'end_time', 'last_updated_time', 'affected_entity_last_update']
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -163,6 +170,12 @@ Resources:
               """Yield successive n-sized chunks from a list."""
               for i in range(0, len(lst), n):
                   yield lst[i:i + n]
+
+          def event_item_to_date(event, keys):
+              for key in keys:
+                  if isinstance(event.get(key), int):
+                      event[key] = int_to_datetime(event[key])
+              return event
 
           def int_to_datetime(int_time):
               return datetime.datetime.utcfromtimestamp(int_time/1000)
@@ -177,9 +190,9 @@ Resources:
               # Check the create time of objects in the S3 bucket
               paginator = boto3.client('s3').get_paginator('list_objects_v2')
               contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=bucket, Prefix=s3_path)], [])
-              last_modified_date = get_last_modified_date(contents)
-              if last_modified_date and last_modified_date >= start_date:
-                  start_date = last_modified_date
+              last_file_date = get_last_modified_date(contents)
+              if last_file_date and last_file_date >= start_date:
+                  start_date = last_file_date
               return start_date, end_date
 
           def get_last_modified_date(contents):
@@ -206,73 +219,77 @@ Resources:
                   else:
                       break
 
-          def pull_event_details(event):
-              event_arn = event['arn']
-              health_client = event['health_client']
-              accounts = list(search(
-                  function=health_client.describe_affected_accounts_for_organization,
-                  args={'eventArn': event_arn},
-                  expression='affectedAccounts',
-              ))
+            def pull_event_details(event, health_client):
+                event_arn = event['arn']
+                if event['eventScopeCode'] == 'PUBLIC':
+                    accounts = [None]
+                else:
+                    accounts = list(search(
+                        function=health_client.describe_affected_accounts_for_organization,
+                        args={'event_arn': event_arn},
+                        expression='affectedAccounts',
+                    ))
 
-              # describe_event_details_for_organization only can get 10 per call
-              details = []
-              affected_entities = []
-              for account_chunk in list(chunks(accounts, 10)):
-                  details += list(search(
-                      function=health_client.describe_event_details_for_organization,
-                      args=dict(
-                          organizationEventDetailFilters=[{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
-                      ),
-                      expression='successfulSet',
-                  ))
-                  affected_entities += list(search(
-                      function=health_client.describe_affected_entities_for_organization,
-                      args=dict(
-                          organizationEntityFilters=[{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
-                      ),
-                      expression='entities',
-                  ))
+                # describe_event_details_for_organization only can get 10 per call
+                details = []
+                affected_entities = []
+                for account_chunk in list(chunks(accounts, 10)):
+                    details += list(search(
+                        function=health_client.describe_event_details_for_organization,
+                        args=dict(
+                            organization_event_detail_filters=[{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
+                        ),
+                        expression='successfulSet',
+                    ))
+                    affected_entities += list(search(
+                        function=health_client.describe_affected_entities_for_organization,
+                        args=dict(
+                            organization_entity_filters=[{'eventArn':event_arn, 'awsAccountId': account} for account in account_chunk]
+                        ),
+                        expression='entities',
+                    ))
 
-              # match affected and descriptions
-              event_details_per_affected = []
-              if len(affected_entities) == 0:
-                  event['event'] = event
-                  event_details_per_affected.append(event)
-              for affected_entity in affected_entities:
-                  account = affected_entity['awsAccountId']
-                  event_arn = affected_entity['eventArn']
-                  affected_entity['entityStatusCode'] = affected_entity.pop('statusCode', None)
-                  affected_entity['entityLastUpdatedTime'] = affected_entity.pop('lastUpdatedTime', None)
-                  detail = jmespath.search(f"[?awsAccountId=='{account}']|[?event.arn=='{event_arn}']", details)
-                  for detail_rec in detail:
-                      metadata = detail_rec.get('eventMetadata') or {}
-                      detail_rec['deprecated_versions'] = metadata.pop('deprecated_versions', None)
-                  merged_dict = {**event, **affected_entity}
-                  if len(detail) > 0:
-                      merged_dict = {**merged_dict, **detail[0]}
-                  if isinstance(merged_dict['event'].get('startTime'), int):
-                      merged_dict['event']['startTime'] =int_to_datetime(merged_dict['event']['startTime'])
-                  if isinstance(merged_dict['event'].get('endTime'), int):
-                      merged_dict['event']['endTime'] =int_to_datetime(merged_dict['event']['endTime'])
-                  if isinstance(merged_dict['event'].get('lastUpdatedTime'), int):
-                      merged_dict['event']['lastUpdatedTime'] =int_to_datetime(merged_dict['event']['lastUpdatedTime'])
-                  event_details_per_affected.append(merged_dict)
-              return event_details_per_affected
+                # merge with details and affected entities
+                event_details_per_affected = []
+                if len(affected_entities) == 0:
+                    event = {**event, **details[0]}
+                    event_details_per_affected.append(event)
+                for affected_entity in affected_entities:
+                    account = affected_entity['awsAccountId']
+                    event_arn = affected_entity['eventArn']
+                    affected_entity['entityStatusCode'] = affected_entity.pop('statusCode', None)
+                    affected_entity['entityLastUpdatedTime'] = affected_entity.pop('lastUpdatedTime', None)
+                    detail = jmespath.search(f"[?awsAccountId=='{account}']|[?event.arn=='{event_arn}']", details)
+                    for detail_rec in detail:
+                        metadata = detail_rec.get('eventMetadata') or {}
+                        deprecated_versions = metadata.pop('deprecated_versions', None)
+                        if deprecated_versions:
+                            event['deprecated_versions'] = deprecated_versions
+                        if len(metadata) == 0:
+                            event['eventMetadata'] = ""
+                    merged_dict = {**event, **affected_entity}
+                    if len(detail) > 0:
+                        merged_dict = {**merged_dict, **detail[0]}
+                    event_details_per_affected.append(merged_dict)
+                return event_details_per_affected
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects AWS Health Events data
               and must be called from the corresponding Step Function to orchestrate
               """
               logger.info(f"Event data: {event}")
-              if 'account' not in event:
+              account = event.get('account')
+              batch_input = event.get('BatchInput')
+              items = event.get('Items')
+              if not (account or batch_input):
                   raise ValueError(
                       "Please do not trigger this Lambda manually."
                       "Find the corresponding state machine in Step Functions and Trigger from there."
                   )
-              account = json.loads(event["account"])
+              is_summary_mode = batch_input == None
+              logger.info(f"Executing in {'summary' if is_summary_mode else 'detail'} mode flow")
+              account = json.loads(account) if is_summary_mode else batch_input.get('account')
               account_id = account["account_id"]
-              payer_id = account["payer_id"]
 
               creds = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
@@ -284,50 +301,76 @@ Resources:
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
               )
-              start_from, start_to = calculate_dates(BUCKET_NAME, PREFIX)
-              logger.info(f"Collecting events from {start_from} to {start_to}")
-              args = {
-                  'maxResults':100,
-                  'filter': {
-                      'startTime': {
-                          'from': start_from.strftime('%Y-%m-%dT%H:%M:%S%z'),
-                          'to': start_to.strftime('%Y-%m-%dT%H:%M:%S%z'),
-                      },
-                  }
-              }
-              if len(REGIONS) > 0:
-                  args['filter']['regions'] = REGIONS
 
               count = 0
-              try:
+              if is_summary_mode:
+                  start_from, start_to = calculate_dates(BUCKET_NAME, PREFIX)
+                  logger.info(f"Collecting events from {start_from} to {start_to}")
+                  args = {
+                      'maxResults':100,
+                      'filter': {
+                          'lastUpdatedTime': {
+                              'from': start_from.strftime('%Y-%m-%dT%H:%M:%S%z'),
+                          },
+                      }
+                  }
+                  if len(REGIONS) > 0:
+                      args['filter']['regions'] = REGIONS
+
+                  ingestion_time = datetime.now(timezone.utc)
+                  try:
+                      with open(TMP_FILE, "w", encoding='utf-8') as f:
+                          f.write('eventArn,eventScopeCode\n')
+                          for _, h_event in enumerate(search(health_client.describe_events_for_organization, args, expression='events')):
+                              f.write(f'{h_event["arn"]},{h_event["eventScopeCode"]}\n')
+                      if count > 0:
+                          key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-summary-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S.csv")
+                          boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
+                          logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
+                          # clear any previous runs for the same day
+                          bucket = boto3.resource('s3').Bucket(BUCKET_NAME)
+                          bucket.objects.filter(Prefix=ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d")).delete()
+                          sf = boto3.client('stepfunctions')
+                          sf_input = {
+                              "bucket": BUCKET_NAME,
+                              "file": key,
+                              "account": account,
+                              "ingestion_time": int(round(ingestion_time.timestamp()))
+                          }
+                          sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
+                          sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
+                      else:
+                          logger.info(f"No records found")
+                  except Exception as exc:
+                      if 'Organizational View feature is not enabled' in str(exc):
+                          logger.error(f"Payer {account_id} does not have Organizational View. See https://docs.aws.amazon.com/health/latest/ug/enable-organizational-view-in-health-console.html")
+                      else:
+                          logger.error(f"Error: {exc}")
+
+              elif items:
+                  ingestion_time = datetime.fromtimestamp(int(batch_input.get('ingestion_time')))
+
                   with open(TMP_FILE, "w", encoding='utf-8') as f:
-                      for _, event in enumerate(search(health_client.describe_events_for_organization, args, expression='events')):
-                          #if event['eventTypeCode'] == 'AWS_VPN_REDUNDANCY_LOSS':
-                          #    continue # who cares?
-                          event['health_client'] = health_client
-                          event['payerAccountId'] = payer_id
-                          all_detailed_events = pull_event_details(event)
+                      for item in items:
+                          h_event = {'arn': item['eventArn'], 'eventScopeCode': item['eventScopeCode']}
+                          h_event['payer_account_id'] = account_id
+                          h_event['event_source'] = "aws.health"
+                          h_event['ingestion_time'] = ingestion_time
+                          all_detailed_events = pull_event_details(h_event, health_client)
                           flatten_events = jmespath.search("[].{"+', '.join([f'{k}: {v}' for k, v in mapping.items()]) + "}", all_detailed_events)
                           for flatten_event in flatten_events:
+                              flatten_event = event_item_to_date(flatten_event, time_fields_to_convert)
                               f.write(to_json(flatten_event) + '\n')
                               count += 1
                   if count > 0:
-                      r = open(TMP_FILE, 'r')
-                      key = datetime.now(timezone.utc).strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S.json")
+                      rand = uuid.uuid4()
+                      key = ingestion_time.strftime(f"{PREFIX}/{PREFIX}-detail-data/payer_id={account_id}/year=%Y/month=%m/day=%d/%Y-%m-%d-%H-%M-%S-{rand}.json")
                       boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
-                      logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
-                  else:
-                      logger.info(f"No records found")
-              except Exception as exc:
-                  if 'Organizational View feature is not enabled' in str(exc):
-                      logger.error(f"Payer {payer_id} do not have Organizational View. See https://docs.aws.amazon.com/health/latest/ug/enable-organizational-view-in-health-console.html")
-                  else:
-                      logger.error(f"Error: {exc}")
-
+                      logger.info(f'Uploaded {count} summary records to s3://{BUCKET_NAME}/{key}')
               return {"status":"200","Recorded":f'"{count}"'}
       Handler: "index.lambda_handler"
       MemorySize: 2688
-      Timeout: 600
+      Timeout: 1800
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
@@ -336,6 +379,7 @@ Resources:
           ROLENAME: !Ref ManagementRoleName
           REGIONS: !Ref RegionsInScope
           LOOKBACK: 90
+          DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -350,79 +394,6 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
 
-  HealthEventsTable:
-    Type: AWS::Glue::Table
-    Properties:
-      CatalogId: !Ref "AWS::AccountId"
-      DatabaseName: !Ref DatabaseName
-      TableInput:
-        Name: !Join ['_', !Split [ '-', !Sub "${CFDataName}_data" ]]
-        Owner: owner
-        Retention: 0
-        TableType: EXTERNAL_TABLE
-        Parameters:
-          EXTERNAL: 'TRUE'
-          UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
-          compressionType: none
-          typeOfData: file
-        PartitionKeys:
-          - Name: payer_id
-            Type: string
-          - Name: year
-            Type: string
-          - Name: month
-            Type: string
-          - Name: day
-            Type: string
-        StorageDescriptor:
-          BucketColumns: []
-          InputFormat: org.apache.hadoop.mapred.TextInputFormat
-          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
-          SerdeInfo:
-            Parameters:
-              paths: availabilityZone,awsAccountId,endTime,entityUrl,entityValue,eventArn,eventMetadata,eventScopeCode,eventTypeCategory,eventTypeCode,lastUpdatedTime,latestDescription,payerAccountId,region,service,startTime,statusCode,tags
-              serialization.format: '1'
-            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
-          StoredAsSubDirectories: false
-          Columns:
-            - Name: payeraccountid
-              Type: string
-            - Name: awsaccountid
-              Type: string
-            - Name: entityvalue
-              Type: string
-            - Name: entityurl
-              Type: string
-            - Name: tags
-              Type: string
-            - Name: eventarn
-              Type: string
-            - Name: service
-              Type: string
-            - Name: eventtypecode
-              Type: string
-            - Name: eventtypecategory
-              Type: string
-            - Name: region
-              Type: string
-            - Name: availabilityzone
-              Type: string
-            - Name: eventscopecode
-              Type: string
-            - Name: starttime
-              Type: string
-            - Name: endtime
-              Type: string
-            - Name: lastupdatedtime
-              Type: string
-            - Name: statuscode
-              Type: string
-            - Name: latestdescription
-              Type: string
-            - Name: eventmetadata
-              Type: string
-
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
@@ -431,17 +402,7 @@ Resources:
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
-      Configuration: |
-        {
-          "Version":1.0,
-          "CrawlerOutput": {
-            "Tables":{
-              "AddOrUpdateBehavior":"MergeNewColumns"
-            }
-          },
-          "CreatePartitionIndex":true
-        }
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -475,6 +436,102 @@ Resources:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
 
+  StepFunctionCostOptimizationHubDetail:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: |
+        {
+          "Comment": "Collects individual Cost Optimization Hub recommendations",
+          "StartAt": "DetailProcessor Map",
+          "States": {
+            "DetailProcessor Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "DISTRIBUTED",
+                  "ExecutionType": "STANDARD"
+                },
+                "StartAt": "DetailLambda Invoke",
+                "States": {
+                  "DetailLambda Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "Payload.$": "$",
+                      "FunctionName": "${ModuleLambdaARN}"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 3,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "Label": "DetailProcessorMap",
+              "MaxConcurrency": ${MaxConcurrentBatches},
+              "ItemReader": {
+                "Resource": "arn:aws:states:::s3:getObject",
+                "ReaderConfig": {
+                  "InputType": "CSV",
+                  "CSVHeaderLocation": "FIRST_ROW"
+                },
+                "Parameters": {
+                  "Bucket.$": "$.bucket",
+                  "Key.$": "$.file"
+                }
+              },
+              "ItemBatcher": {
+                "MaxItemsPerBatch": ${ItemsPerBatch},
+                "BatchInput": {
+                  "account.$": "$.account"
+                }
+              },
+              "Next": "CrawlerStepFunctionStartExecution"
+            },
+            "CrawlerStepFunctionStartExecution": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "Input": {
+                  "crawlers": ${Crawlers}
+                }
+              },
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 14400
+        }
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+        ItemsPerBatch: 50
+        MaxConcurrentBatches: 1
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E2532 #Passing a dynamic structure for crawlers input into the template as a DefinitionSubstitution
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
