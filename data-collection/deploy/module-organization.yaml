@@ -172,7 +172,7 @@ Resources:
           def json_converter(obj):
               """ Help json encode date"""
               if isinstance(obj, datetime.datetime):
-                  return obj.strftime("%Y-%d-%m %H:%M:%S")
+                  return obj.strftime("%Y-%m-%d %H:%M:%S")
               return obj
 
           class OrgController():
