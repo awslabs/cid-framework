@@ -247,7 +247,7 @@ def migrate_v2(source_bucket, dest_bucket):
                                 is_mod = True
                                 break #break the loop after the first matching pattern
                         copy_source = {"Bucket": source_bucket, "Key": source_key}
-                        #s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
+                        s3.copy_object(Bucket=dest_bucket, CopySource=copy_source, Key=new_key)
                         f.write(f"{source_key},{new_key},{is_mod},{file_date}\n")
                         logger.info(
                             f"Moving object source s3://{source_bucket}/{source_key} to s3://{dest_bucket}/{new_key}"
