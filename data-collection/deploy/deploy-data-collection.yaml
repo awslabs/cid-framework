@@ -97,8 +97,8 @@ Mappings:
     us-west-1:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-1 }
     us-west-2:      {CodeBucket: aws-managed-cost-intelligence-dashboards-us-west-2 }
   StepFunctionCode:
-    main-v1:        {TemplatePath: cfn/data-collection/source/main-step-function-v1.json}
-    crawler-v1:     {TemplatePath: cfn/data-collection/source/crawler-step-function-v1.json}
+    main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-step-function-v1.json}
+    crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-step-function-v1.json}
 
 Parameters:
   DestinationBucket:
