@@ -25,7 +25,7 @@ Parameters:
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
-    Default: "rate(7 days)"
+    Default: "rate(1 day)"
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
