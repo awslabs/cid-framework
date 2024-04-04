@@ -205,6 +205,8 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'RegionsInScope',                  'ParameterValue': REGIONS},
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
+            {'ParameterKey': 'Schedule',                        'ParameterValue': 'rate(1 day)'},
+            {'ParameterKey': 'ScheduleFrequent',                'ParameterValue': 'rate(1 day)'},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
