@@ -35,9 +35,12 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
   StepFunctionTemplate:
     Type: String
-    Description: JSON representation of common StepFunction template
+    Description: S3 key to the JSON template for the StepFunction
   StepFunctionExecutionRoleARN:
     Type: String
     Description: Common role for Step Function execution
@@ -172,7 +175,7 @@ Resources:
           def json_converter(obj):
               """ Help json encode date"""
               if isinstance(obj, datetime.datetime):
-                  return obj.strftime("%Y-%d-%m %H:%M:%S")
+                  return obj.strftime("%Y-%m-%d %H:%M:%S")
               return obj
 
           class OrgController():
@@ -211,11 +214,9 @@ Resources:
               @lru_cache(maxsize=10000)
               def get_tags(self, id_, athena_friendly=False):
                   """returns a dict of tags"""
-                  def _process_key(key, athena_friendly):
-                      return re.sub('[^a-zA-Z0-9_]', '_', key) if athena_friendly else key
                   paginator = self.org.get_paginator("list_tags_for_resource")
                   tags = sum([resp['Tags'] for resp in paginator.paginate(ResourceId=id_)], [])
-                  return {_process_key(tag['Key'], athena_friendly): tag['Value'] for tag in tags}
+                  return {tag['Key']: tag['Value'] for tag in tags}
 
               @lru_cache(maxsize=10000)
               def get_hierarchy_tags(self, id_):
@@ -235,11 +236,11 @@ Resources:
                           account['HierarchyPath'] = ' > '.join([
                               lvl.get('Name', lvl.get('Id')) for lvl in account['Hierarchy']
                           ])
-                          account['HierarchyTags'] = self.get_hierarchy_tags(account['Id'])
+                          account['HierarchyTags'] = [ {'Key': key, 'Value': value} for key, value in self.get_hierarchy_tags(account['Id']).items()]
                           account['ManagementAccountId'] =  account['Arn'].split(':')[4]
                           account['Parent'] = account['Hierarchy'][-1].get('Name')
                           account['ParentId'] = account['Hierarchy'][-1].get('Id')
-                          account['ParentTags'] = self.get_tags(account['ParentId'])
+                          account['ParentTags'] = [ {'Key': key, 'Value': value} for key, value in self.get_tags(account['ParentId']).items()]
                           #account['Parent_Tags'] = self.get_tags(account['ParentId']) # Uncomment for Backward Compatibility
                           logger.debug(json.dumps(account, indent=2, default=json_converter))
                           yield account
@@ -291,7 +292,9 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn

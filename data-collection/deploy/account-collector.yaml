@@ -63,6 +63,14 @@ Resources:
                 Action:
                   - "ssm:GetParameter"
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
+        - PolicyName: "Lambda"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "lambda:GetAccountSettings"
+                Resource: "*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -94,6 +102,15 @@ Resources:
 
             def lambda_handler(event, context): #pylint: disable=unused-argument
                 logger.info(f"Incoming event: {event}")
+                # need to confirm that the Lambda concurrency limit is sufficient to avoid throttling
+                lambda_limit = boto3.client('lambda').get_account_settings()['AccountLimit']['ConcurrentExecutions']
+                if lambda_limit < 500:
+                    message = (f'Lambda concurrent executions limit of {lambda_limit} is not sufficient to run the Data Collection framework. '
+                                'Please increase the limit to at least 500 (1000 is recommended). '
+                                'See https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html.')
+                    logger.error(message)
+                    raise Exception(message) #pylint: disable=broad-exception-raised
+
                 functions = { # keep keys same as boto3 services
                     'linked': iterate_linked_accounts,
                     'payers': partial(iterate_admins_accounts, None),

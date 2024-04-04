@@ -35,9 +35,12 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
   StepFunctionTemplate:
     Type: String
-    Description: JSON representation of common StepFunction template
+    Description: S3 key to the JSON template for the StepFunction
   StepFunctionExecutionRoleARN:
     Type: String
     Description: Common role for Step Function execution
@@ -235,6 +238,8 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+      Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
+
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -242,7 +247,9 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn

@@ -25,7 +25,7 @@ Parameters:
   Schedule:
     Type: String
     Description: EventBridge Schedule to trigger the data collection
-    Default: "rate(14 days)"
+    Default: "rate(1 day)"
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
@@ -35,9 +35,12 @@ Parameters:
   AccountCollectorLambdaARN:
     Type: String
     Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
   StepFunctionTemplate:
     Type: String
-    Description: JSON representation of common StepFunction template
+    Description: S3 key to the JSON template for the StepFunction
   StepFunctionExecutionRoleARN:
     Type: String
     Description: Common role for Step Function execution
@@ -121,7 +124,6 @@ Resources:
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-          logger.setLevel(logging.DEBUG)
 
           # Helper Exception classes
           class CidError(Exception):
@@ -234,7 +236,7 @@ Resources:
                   'TotalActualSpend': get_value_by_path(record, 'Impact/TotalActualSpend'),
                   'TotalExpectedSpend': get_value_by_path(record, 'Impact/TotalExpectedSpend'),
                   'TotalImpact': get_value_by_path(record, 'Impact/TotalImpact'),
-                  'TotalImpactpercentage': get_value_by_path(record, 'Impact/TotalImpactPercentage', 0.0),
+                  'TotalImpactpercentage': float(get_value_by_path(record, 'Impact/TotalImpactPercentage', 0.0)),
                   'MonitorArn': get_value_by_path(record, 'MonitorArn'),
                   'LinkedAccount': get_value_by_path(record, 'RootCauses/0/LinkedAccount'),
                   'LinkedAccountName': get_value_by_path(record, 'RootCauses/0/LinkedAccountName'),
@@ -292,7 +294,7 @@ Resources:
                       aws_secret_access_key=credentials['SecretAccessKey'],
                       aws_session_token=credentials['SessionToken'],
                   )
-                  logger.info("Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+                  logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
                   return client
 
               except Exception as exc:
@@ -362,7 +364,9 @@ Resources:
       StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
-      DefinitionString: !Ref StepFunctionTemplate
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
