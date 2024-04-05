@@ -119,23 +119,25 @@ Resources:
           from functools import partial
           from datetime import date, datetime
 
-          # update boto3 version
-          import sys
-          from pip._internal import main
-          main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
-          sys.path.insert(0,'/tmp/')
+          # When this API was launched the Lambda default boto3 version was not current and did not support it
+          # but it is now current. If you experience and API issue, uncomment the next 4 lines
+          # import sys
+          # from pip._internal import main
+          # main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
+          # sys.path.insert(0,'/tmp/')
 
           import boto3 #pylint: disable=wrong-import-position
           from botocore.config import Config
 
-          logger = logging.getLogger()
-          # Create a new handler here because downloading the updated boto3 affects the
-          # default Lambda logging handler such that only Warning and Error are logged.
-          for h in logger.handlers:
-            logger.removeHandler(h)
-          h = logging.StreamHandler(sys.stdout)
-          h.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
-          logger.addHandler(h)
+          logger = logging.getLogger(__name__)
+          # If you need to run the update to boto3, per above you also need to create a new handler here because downloading
+          # the updated boto3 affects the default Lambda logging handler such that only Warning and Error are logged.
+          # Uncomment the next 5 lines, if the boto3 update is needed
+          # for h in logger.handlers:
+          #   logger.removeHandler(h)
+          # h = logging.StreamHandler(sys.stdout)
+          # h.setFormatter(logging.Formatter('[%(levelname)s] %(message)s'))
+          # logger.addHandler(h)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
           BUCKET_NAME = os.environ['BUCKET_NAME']
@@ -197,6 +199,8 @@ Resources:
               cur_date = date.today()
               # Each record will be a unique file named by the base64 recommendation id
               for count, record in enumerate(records, start=1):
+                  if record == None:
+                      continue
                   s3_key = cur_date.strftime(
                       f'{PREFIX}/{PREFIX}-detail-data/payer_id={payer_id}'
                       f'/year=%Y/month=%m/day=%d/{record["recommendationId"]}.json'
@@ -206,17 +210,17 @@ Resources:
               return count
 
           def get_detailed_recommendation(hub, rec):
-            time.sleep(.25)
-            try:
-                res = hub.get_recommendation(recommendationId=rec['id'])
-            except: #pylint: disable=bare-except
-                # Ignore: The recommendation id appears to be ephemeral with the same recommendation sometimes getting a new id upon a later data run
-                logger.info(f"Error getting recommendation details for {rec['id']}")
-                return None
-            res.pop('ResponseMetadata', None)
-            res = conform_to_schema(res, 'currentResourceDetails', RECORD_TYPE_SCHEMAS)
-            res = conform_to_schema(res, 'recommendedResourceDetails', RECORD_TYPE_SCHEMAS)
-            return res
+              time.sleep(.25)
+              try:
+                  res = hub.get_recommendation(recommendationId=rec['id'])
+              except: #pylint: disable=bare-except
+                  # Ignore: The recommendation id appears to be ephemeral with the same recommendation sometimes getting a new id upon a later data run
+                  logger.info(f"Error getting recommendation details for {rec['id']}")
+                  return None
+              res.pop('ResponseMetadata', None)
+              res = conform_to_schema(res, 'currentResourceDetails', RECORD_TYPE_SCHEMAS)
+              res = conform_to_schema(res, 'recommendedResourceDetails', RECORD_TYPE_SCHEMAS)
+              return res
 
           def conform_to_schema(record, field, schema):
               """
@@ -225,9 +229,11 @@ Resources:
               to avoid potential issues with Hive when the bucket and partitions are rescanned to update the table in Athena.
               """
               field_data = record.get(field)
-              record_type = list(field_data.keys())[0]
-              schema[record_type] = field_data[record_type]
-              record[field] = schema
+              if field_data:
+                  record_type = list(field_data.keys())[0]
+                  schema[record_type] = field_data[record_type]
+                  record[field] = schema
+                  return record
               return record
 
           def iterate_paginated_results(client, function, search, params=None):
@@ -268,34 +274,36 @@ Resources:
                   config=BOTO_CONFIG,
               )
 
-              if is_summary_mode:
-                  data_iterator = iterate_paginated_results(
-                      client=hub,
-                      function='list_recommendations',
-                      search='items',
-                      params=dict( #pylint: disable=R1735
-                          includeAllRecommendations=True,
-                      ),
-                  )
-                  count, rec_key = store_summary_to_s3(data_iterator, account_id)
-                  sf = boto3.client('stepfunctions')
-                  sf_input = {
-                      "bucket": BUCKET_NAME,
-                      "file": rec_key,
-                      "account": account
-                  }
-                  sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
-                  sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
-              elif (items and NEED_DETAILED):
-                  data_iterator = map(
-                      partial(get_detailed_recommendation, hub),
-                      items.__iter__(),
-                  )
-                  count = store_detail_to_s3(data_iterator, account_id)
-              else:
-                  count = 0
-
-              return {"status":"200","Recorded":f'"{count}"'}
+              count = 0
+              try:
+                  if is_summary_mode:
+                      data_iterator = iterate_paginated_results(
+                          client=hub,
+                          function='list_recommendations',
+                          search='items',
+                          params=dict( #pylint: disable=R1735
+                              includeAllRecommendations=True,
+                          ),
+                      )
+                      count, rec_key = store_summary_to_s3(data_iterator, account_id)
+                      sf = boto3.client('stepfunctions')
+                      sf_input = {
+                          "bucket": BUCKET_NAME,
+                          "file": rec_key,
+                          "account": account
+                      }
+                      sf_input = json.dumps(sf_input).replace('"', '\"') #need to escape the json for SF
+                      sf.start_execution(stateMachineArn=DETAIL_SM_ARN, input=sf_input)
+                  elif (items and NEED_DETAILED):
+                      data_iterator = map(
+                          partial(get_detailed_recommendation, hub),
+                          items.__iter__(),
+                      )
+                      count = store_detail_to_s3(data_iterator, account_id)
+              except Exception as exc:
+                  logger.error(f"Account {account_id} is not enrolled in Cost Optimization Hub. Please see https://docs.aws.amazon.com/cost-management/latest/userguide/coh-getting-started.html?icmpid=docs_costmanagement_hp-coh-preferences")
+                  status = 500
+              return {"status":f'"{200 if status else status}"',"Recorded":f'"{count}"'}
 
           RECORD_TYPE_SCHEMAS = {
             "computeSavingsPlans": {
@@ -332,7 +340,7 @@ Resources:
                 "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
             },
             "ecsService": {
-                "configuration": {"compute": {"architecture": "", "memorySizeInMB": 123, "platform": "", "vCpu": 0}},
+                "configuration": {"compute": {"architecture": "", "memorySizeInMB": 0, "platform": "", "vCpu": 0}},
                 "costCalculation": {
                     "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0,"reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
                     "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
@@ -345,7 +353,7 @@ Resources:
                 "costCalculation": {"pricing": {"estimatedMonthlyAmortizedReservationCost": 0, "estimatedOnDemandCost": 0, "monthlyReservationEligibleCost": 0, "savingsPercentage": 0}}
             },
             "lambdaFunction": {
-                "configuration": {"compute": {"architecture": "", "memorySizeInMB": 123, "platform": "", "vCpu": 0}},
+                "configuration": {"compute": {"architecture": "", "memorySizeInMB": 0, "platform": "", "vCpu": 0}},
                 "costCalculation": {
                     "pricing": {"estimatedCostAfterDiscounts": 0,"estimatedCostBeforeDiscounts": 0,"estimatedDiscounts": {"otherDiscount": 0, "reservedInstancesDiscount": 0, "savingsPlansDiscount": 0},"estimatedNetUnusedAmortizedCommitments": 0},
                     "usages": [{"operation": "", "productCode": "", "unit": "", "usageAmount": 0, "usageType": ""}]
