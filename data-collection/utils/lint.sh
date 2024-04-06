@@ -39,12 +39,6 @@ for file in $yaml_files; do
         echo -e "checkov      ${GREEN}OK${NC}"  | awk '{ print "\t" $0 }'
     fi
 
-    if [ "$(basename $file)" == "${exclude_files[0]}" ] || [ "$(basename $file)" == "${exclude_files[1]}" ] || [ "$(basename $file)" == "${exclude_files[2]}" ]; then
-        echo -e "cfn-lint     ${YELLOW}SKIP${NC} For::Each breaks lint"  | awk '{ print "\t" $0 }'
-        echo -e "cfn_nag_scan ${YELLOW}SKIP${NC} For::Each breaks lint"  | awk '{ print "\t" $0 }'
-        continue
-    fi
-
     # cfn-lint
     output=$(eval cfn-lint -- "$file")
     if [ $? -ne 0 ]; then
@@ -54,6 +48,12 @@ for file in $yaml_files; do
     else
         echo -e "cfn-lint     ${GREEN}OK${NC}"  | awk '{ print "\t" $0 }'
     fi
+
+    if [ "$(basename $file)" == "${exclude_files[0]}" ] || [ "$(basename $file)" == "${exclude_files[1]}" ] || [ "$(basename $file)" == "${exclude_files[2]}" ]; then
+        echo -e "cfn_nag_scan ${YELLOW}SKIP${NC} For::Each breaks cfn_nag"  | awk '{ print "\t" $0 }'
+        continue
+    fi
+
 
     # cfn_nag_scan
     output=$(eval cfn_nag_scan --input-path "$file")
