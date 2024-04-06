@@ -245,29 +245,26 @@ Resources:
                   Effect: Allow
                   Principal:
                     Service: [s3.amazonaws.com]
-          RegionalBucketReplicaRolePolicy:
-            Type: AWS::IAM::Policy
-            Properties:
-              PolicyName: Replication
-              PolicyDocument:
-                Statement:
-                - Action:
-                  - s3:GetReplicationConfiguration
-                  - s3:ListBucket
-                  Resource: !Sub arn:aws:s3:::${Name}.${AWS::Region}
-                  Effect: 'Allow'
-                - Action:
-                  - s3:GetObjectVersionForReplication
-                  - s3:GetObjectVersionAcl
-                  Resource: !Sub arn:aws:s3:::${Name}.${AWS::Region}/*
-                  Effect: 'Allow'
-                - Action:
-                  - s3:ReplicateObject
-                  - s3:ReplicateTags
-                  - s3:GetObjectVersionTagging
-                  Effect: 'Allow'
-                  Resource: !Sub arn:aws:s3:::${DestinationBucket}/*
-              Roles: [!Ref 'RegionalBucketReplicaRole']
+              Policies:
+              - PolicyName: Replication
+                PolicyDocument:
+                  Statement:
+                  - Action:
+                    - s3:GetReplicationConfiguration
+                    - s3:ListBucket
+                    Resource: !Sub arn:aws:s3:::${Name}.${AWS::Region}
+                    Effect: 'Allow'
+                  - Action:
+                    - s3:GetObjectVersionForReplication
+                    - s3:GetObjectVersionAcl
+                    Resource: !Sub arn:aws:s3:::${Name}.${AWS::Region}/*
+                    Effect: 'Allow'
+                  - Action:
+                    - s3:ReplicateObject
+                    - s3:ReplicateTags
+                    - s3:GetObjectVersionTagging
+                    Effect: 'Allow'
+                    Resource: !Sub arn:aws:s3:::${DestinationBucket}/*
           S3Bucket:
             Type: AWS::S3::Bucket
             DeletionPolicy: Delete

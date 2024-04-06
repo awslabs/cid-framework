@@ -51,6 +51,9 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
     Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots
@@ -60,22 +63,696 @@ Mappings:
   ServicesMap:
     OpensearchDomains:
       path: opensearch-domains
+      table:
+        - Name: inventory_opensearch_domains_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: domainname
+              Type: string
+            - Name: domainid
+              Type: string
+            - Name: engineversion
+              Type: string
+            - Name: instancetype
+              Type: string
+            - Name: instancecount
+              Type: int
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-opensearch-domains-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: DomainId,DomainName,EngineVersion,InstanceCount,InstanceType,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
     ElasticacheClusters:
       path: elasticache-clusters
+      table:
+        - Name: inventory_elasticache_clusters_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: cacheclusterid
+              Type: string
+            - Name: clientdownloadlandingpage
+              Type: string
+            - Name: cachenodetype
+              Type: string
+            - Name: engine
+              Type: string
+            - Name: engineversion
+              Type: string
+            - Name: cacheclusterstatus
+              Type: string
+            - Name: numcachenodes
+              Type: int
+            - Name: preferredavailabilityzone
+              Type: string
+            - Name: cacheclustercreatetime
+              Type: string
+            - Name: preferredmaintenancewindow
+              Type: string
+            - Name: pendingmodifiedvalues
+              Type: string
+            - Name: cachesecuritygroups
+              Type: array<string>
+            - Name: cacheparametergroup
+              Type: struct<CacheParameterGroupName:string,ParameterApplyStatus:string,CacheNodeIdsToReboot:array<string>>
+            - Name: cachesubnetgroupname
+              Type: string
+            - Name: autominorversionupgrade
+              Type: boolean
+            - Name: securitygroups
+              Type: array<struct<SecurityGroupId:string,Status:string>>
+            - Name: replicationgroupid
+              Type: string
+            - Name: snapshotretentionlimit
+              Type: int
+            - Name: snapshotwindow
+              Type: string
+            - Name: authtokenenabled
+              Type: boolean
+            - Name: transitencryptionenabled
+              Type: boolean
+            - Name: atrestencryptionenabled
+              Type: boolean
+            - Name: arn
+              Type: string
+            - Name: replicationgrouplogdeliveryenabled
+              Type: boolean
+            - Name: logdeliveryconfigurations
+              Type: array<string>
+            - Name: networktype
+              Type: string
+            - Name: ipdiscovery
+              Type: string
+            - Name: transitencryptionmode
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-elasticache-clusters-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: ARN,AtRestEncryptionEnabled,AuthTokenEnabled,AutoMinorVersionUpgrade,CacheClusterCreateTime,CacheClusterId,CacheClusterStatus,CacheNodeType,CacheParameterGroup,CacheSecurityGroups,CacheSubnetGroupName,ClientDownloadLandingPage,Engine,EngineVersion,IpDiscovery,LogDeliveryConfigurations,NetworkType,NumCacheNodes,PendingModifiedValues,PreferredAvailabilityZone,PreferredMaintenanceWindow,ReplicationGroupId,ReplicationGroupLogDeliveryEnabled,SecurityGroups,SnapshotRetentionLimit,SnapshotWindow,TransitEncryptionEnabled,TransitEncryptionMode,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
     RdsDbInstances:
       path: rds-db-instances
+      table:
+        - Name: inventory_rds_db_instances_data
+          TableType: EXTERNAL_TABLE
+
+          PartitionKeys:
+          - { Name: payer_id, Type: string }
+          - { Name: year, Type: string }
+          - { Name: month, Type: string }
+          - { Name: day, Type: string }
+          StorageDescriptor:
+            Columns:
+            - Name: dbinstanceidentifier
+              Type: string
+            - Name: dbinstanceclass
+              Type: string
+            - Name: engine
+              Type: string
+            - Name: dbinstancestatus
+              Type: string
+            - Name: masterusername
+              Type: string
+            - Name: endpoint
+              Type: struct<Address:string,Port:int,HostedZoneId:string>
+            - Name: allocatedstorage
+              Type: int
+            - Name: instancecreatetime
+              Type: string
+            - Name: preferredbackupwindow
+              Type: string
+            - Name: backupretentionperiod
+              Type: int
+            - Name: dbsecuritygroups
+              Type: array<string>
+            - Name: vpcsecuritygroups
+              Type: array<struct<VpcSecurityGroupId:string,Status:string>>
+            - Name: dbparametergroups
+              Type: array<struct<DBParameterGroupName:string,ParameterApplyStatus:string>>
+            - Name: availabilityzone
+              Type: string
+            - Name: dbsubnetgroup
+              Type: struct<DBSubnetGroupName:string,DBSubnetGroupDescription:string,VpcId:string,SubnetGroupStatus:string,Subnets:array<struct<SubnetIdentifier:string,SubnetAvailabilityZone:struct<Name:string>,SubnetOutpost:string,SubnetStatus:string>>>
+            - Name: preferredmaintenancewindow
+              Type: string
+            - Name: pendingmodifiedvalues
+              Type: string
+            - Name: latestrestorabletime
+              Type: string
+            - Name: multiaz
+              Type: boolean
+            - Name: engineversion
+              Type: string
+            - Name: autominorversionupgrade
+              Type: boolean
+            - Name: readreplicadbinstanceidentifiers
+              Type: array<string>
+            - Name: licensemodel
+              Type: string
+            - Name: iops
+              Type: int
+            - Name: optiongroupmemberships
+              Type: array<struct<OptionGroupName:string,Status:string>>
+            - Name: secondaryavailabilityzone
+              Type: string
+            - Name: publiclyaccessible
+              Type: boolean
+            - Name: storagetype
+              Type: string
+            - Name: dbinstanceport
+              Type: int
+            - Name: storageencrypted
+              Type: boolean
+            - Name: kmskeyid
+              Type: string
+            - Name: dbiresourceid
+              Type: string
+            - Name: cacertificateidentifier
+              Type: string
+            - Name: domainmemberships
+              Type: array<string>
+            - Name: copytagstosnapshot
+              Type: boolean
+            - Name: monitoringinterval
+              Type: int
+            - Name: enhancedmonitoringresourcearn
+              Type: string
+            - Name: monitoringrolearn
+              Type: string
+            - Name: dbinstancearn
+              Type: string
+            - Name: iamdatabaseauthenticationenabled
+              Type: boolean
+            - Name: performanceinsightsenabled
+              Type: boolean
+            - Name: performanceinsightskmskeyid
+              Type: string
+            - Name: performanceinsightsretentionperiod
+              Type: int
+            - Name: deletionprotection
+              Type: boolean
+            - Name: associatedroles
+              Type: array<string>
+            - Name: maxallocatedstorage
+              Type: int
+            - Name: taglist
+              Type: array<string>
+            - Name: customerownedipenabled
+              Type: boolean
+            - Name: activitystreamstatus
+              Type: string
+            - Name: backuptarget
+              Type: string
+            - Name: networktype
+              Type: string
+            - Name: storagethroughput
+              Type: int
+            - Name: certificatedetails
+              Type: struct<CAIdentifier:string,ValidTill:string>
+            - Name: dedicatedlogvolume
+              Type: boolean
+            - Name: isstorageconfigupgradeavailable
+              Type: boolean
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            - Name: dbclusteridentifier
+              Type: string
+            - Name: promotiontier
+              Type: int
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-rds-db-instances-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            Parameters:
+              UPDATED_BY_CRAWLER: !Sub ${ResourcePrefix}inventory-RdsDbInstances-Crawler
+            SerdeInfo:
+              Parameters:
+                paths: ActivityStreamStatus,AllocatedStorage,AssociatedRoles,AutoMinorVersionUpgrade,AvailabilityZone,BackupRetentionPeriod,BackupTarget,CACertificateIdentifier,CertificateDetails,CopyTagsToSnapshot,CustomerOwnedIpEnabled,DBClusterIdentifier,DBInstanceArn,DBInstanceClass,DBInstanceIdentifier,DBInstanceStatus,DBParameterGroups,DBSecurityGroups,DBSubnetGroup,DbInstancePort,DbiResourceId,DedicatedLogVolume,DeletionProtection,DomainMemberships,Endpoint,Engine,EngineVersion,EnhancedMonitoringResourceArn,IAMDatabaseAuthenticationEnabled,InstanceCreateTime,Iops,IsStorageConfigUpgradeAvailable,KmsKeyId,LatestRestorableTime,LicenseModel,MasterUsername,MaxAllocatedStorage,MonitoringInterval,MonitoringRoleArn,MultiAZ,NetworkType,OptionGroupMemberships,PendingModifiedValues,PerformanceInsightsEnabled,PerformanceInsightsKMSKeyId,PerformanceInsightsRetentionPeriod,PreferredBackupWindow,PreferredMaintenanceWindow,PromotionTier,PubliclyAccessible,ReadReplicaDBInstanceIdentifiers,SecondaryAvailabilityZone,StorageEncrypted,StorageThroughput,StorageType,TagList,VpcSecurityGroups,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+
     RdsDbSnapshots:
       path: rds-db-snapshots
+      table:
+        - Name: inventory_rds_db_snapshots_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: dbsnapshotidentifier
+              Type: string
+            - Name: dbinstanceidentifier
+              Type: string
+            - Name: snapshotcreatetime
+              Type: string
+            - Name: engine
+              Type: string
+            - Name: allocatedstorage
+              Type: int
+            - Name: status
+              Type: string
+            - Name: port
+              Type: int
+            - Name: availabilityzone
+              Type: string
+            - Name: vpcid
+              Type: string
+            - Name: instancecreatetime
+              Type: string
+            - Name: masterusername
+              Type: string
+            - Name: engineversion
+              Type: string
+            - Name: licensemodel
+              Type: string
+            - Name: snapshottype
+              Type: string
+            - Name: iops
+              Type: int
+            - Name: optiongroupname
+              Type: string
+            - Name: percentprogress
+              Type: int
+            - Name: storagetype
+              Type: string
+            - Name: encrypted
+              Type: boolean
+            - Name: kmskeyid
+              Type: string
+            - Name: dbsnapshotarn
+              Type: string
+            - Name: iamdatabaseauthenticationenabled
+              Type: boolean
+            - Name: processorfeatures
+              Type: array<string>
+            - Name: dbiresourceid
+              Type: string
+            - Name: taglist
+              Type: array<string>
+            - Name: originalsnapshotcreatetime
+              Type: string
+            - Name: snapshottarget
+              Type: string
+            - Name: storagethroughput
+              Type: int
+            - Name: dedicatedlogvolume
+              Type: boolean
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-rds-db-snapshots-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: AllocatedStorage,AvailabilityZone,DBInstanceIdentifier,DBSnapshotArn,DBSnapshotIdentifier,DbiResourceId,DedicatedLogVolume,Encrypted,Engine,EngineVersion,IAMDatabaseAuthenticationEnabled,InstanceCreateTime,Iops,KmsKeyId,LicenseModel,MasterUsername,OptionGroupName,OriginalSnapshotCreateTime,PercentProgress,Port,ProcessorFeatures,SnapshotCreateTime,SnapshotTarget,SnapshotType,Status,StorageThroughput,StorageType,TagList,VpcId,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
     EBS:
       path: ebs
+      table:
+        - Name: inventory_ebs_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: attachments
+              Type: array<struct<AttachTime:string,Device:string,InstanceId:string,State:string,VolumeId:string,DeleteOnTermination:boolean>>
+            - Name: availabilityzone
+              Type: string
+            - Name: createtime
+              Type: string
+            - Name: encrypted
+              Type: boolean
+            - Name: size
+              Type: int
+            - Name: snapshotid
+              Type: string
+            - Name: state
+              Type: string
+            - Name: volumeid
+              Type: string
+            - Name: iops
+              Type: int
+            - Name: volumetype
+              Type: string
+            - Name: multiattachenabled
+              Type: boolean
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            - Name: tags
+              Type: array<struct<Key:string,Value:string>>
+            - Name: throughput
+              Type: int
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-ebs-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: Attachments,AvailabilityZone,CreateTime,Encrypted,Iops,MultiAttachEnabled,Size,SnapshotId,State,Tags,Throughput,VolumeId,VolumeType,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
     AMI:
       path: ami
+      table:
+        - Name: inventory_ami_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: architecture
+              Type: string
+            - Name: creationdate
+              Type: string
+            - Name: imageid
+              Type: string
+            - Name: imagelocation
+              Type: string
+            - Name: imagetype
+              Type: string
+            - Name: public
+              Type: boolean
+            - Name: ownerid
+              Type: string
+            - Name: platformdetails
+              Type: string
+            - Name: usageoperation
+              Type: string
+            - Name: state
+              Type: string
+            - Name: blockdevicemappings
+              Type: array<struct<DeviceName:string,Ebs:struct<DeleteOnTermination:boolean,SnapshotId:string,VolumeSize:int,VolumeType:string,Encrypted:boolean>>>
+            - Name: description
+              Type: string
+            - Name: enasupport
+              Type: boolean
+            - Name: hypervisor
+              Type: string
+            - Name: name
+              Type: string
+            - Name: rootdevicename
+              Type: string
+            - Name: rootdevicetype
+              Type: string
+            - Name: sriovnetsupport
+              Type: string
+            - Name: tags
+              Type: array<struct<Key:string,Value:string>>
+            - Name: virtualizationtype
+              Type: string
+            - Name: sourceinstanceid
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-ami-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: Architecture,BlockDeviceMappings,CreationDate,Description,EnaSupport,Hypervisor,ImageId,ImageLocation,ImageType,Name,OwnerId,PlatformDetails,Public,RootDeviceName,RootDeviceType,SourceInstanceId,SriovNetSupport,State,Tags,UsageOperation,VirtualizationType,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
     Snapshot:
       path: snapshot
+      table:
+        - Name: inventory_snapshot_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: description
+              Type: string
+            - Name: encrypted
+              Type: boolean
+            - Name: ownerid
+              Type: string
+            - Name: progress
+              Type: string
+            - Name: snapshotid
+              Type: string
+            - Name: starttime
+              Type: string
+            - Name: state
+              Type: string
+            - Name: volumeid
+              Type: string
+            - Name: volumesize
+              Type: int
+            - Name: tags
+              Type: array<struct<Key:string,Value:string>>
+            - Name: storagetier
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-snapshot-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: Description,Encrypted,OwnerId,Progress,SnapshotId,StartTime,State,StorageTier,Tags,VolumeId,VolumeSize,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
     Ec2Instances:
       path: ec2-instances
+      table:
+        - Name: inventory_ec2_instances_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: amilaunchindex
+              Type: int
+            - Name: imageid
+              Type: string
+            - Name: instanceid
+              Type: string
+            - Name: instancetype
+              Type: string
+            - Name: launchtime
+              Type: string
+            - Name: monitoring
+              Type: struct<State:string>
+            - Name: placement
+              Type: struct<AvailabilityZone:string,GroupName:string,Tenancy:string>
+            - Name: privatednsname
+              Type: string
+            - Name: privateipaddress
+              Type: string
+            - Name: productcodes
+              Type: array<string>
+            - Name: publicdnsname
+              Type: string
+            - Name: publicipaddress
+              Type: string
+            - Name: state
+              Type: struct<Code:int,Name:string>
+            - Name: statetransitionreason
+              Type: string
+            - Name: subnetid
+              Type: string
+            - Name: vpcid
+              Type: string
+            - Name: architecture
+              Type: string
+            - Name: blockdevicemappings
+              Type: array<struct<DeviceName:string,Ebs:struct<AttachTime:string,DeleteOnTermination:boolean,Status:string,VolumeId:string>>>
+            - Name: clienttoken
+              Type: string
+            - Name: ebsoptimized
+              Type: boolean
+            - Name: enasupport
+              Type: boolean
+            - Name: hypervisor
+              Type: string
+            - Name: iaminstanceprofile
+              Type: struct<Arn:string,Id:string>
+            - Name: networkinterfaces
+              Type: array<struct<Association:struct<IpOwnerId:string,PublicDnsName:string,PublicIp:string>,Attachment:struct<AttachTime:string,AttachmentId:string,DeleteOnTermination:boolean,DeviceIndex:int,Status:string,NetworkCardIndex:int>,Description:string,Groups:array<struct<GroupName:string,GroupId:string>>,Ipv6Addresses:array<string>,MacAddress:string,NetworkInterfaceId:string,OwnerId:string,PrivateDnsName:string,PrivateIpAddress:string,PrivateIpAddresses:array<struct<Association:struct<IpOwnerId:string,PublicDnsName:string,PublicIp:string>,Primary:boolean,PrivateDnsName:string,PrivateIpAddress:string>>,SourceDestCheck:boolean,Status:string,SubnetId:string,VpcId:string,InterfaceType:string>>
+            - Name: rootdevicename
+              Type: string
+            - Name: rootdevicetype
+              Type: string
+            - Name: securitygroups
+              Type: array<struct<GroupName:string,GroupId:string>>
+            - Name: sourcedestcheck
+              Type: boolean
+            - Name: tags
+              Type: array<struct<Key:string,Value:string>>
+            - Name: virtualizationtype
+              Type: string
+            - Name: cpuoptions
+              Type: struct<CoreCount:int,ThreadsPerCore:int>
+            - Name: capacityreservationspecification
+              Type: struct<CapacityReservationPreference:string>
+            - Name: hibernationoptions
+              Type: struct<Configured:boolean>
+            - Name: metadataoptions
+              Type: struct<State:string,HttpTokens:string,HttpPutResponseHopLimit:int,HttpEndpoint:string,HttpProtocolIpv6:string,InstanceMetadataTags:string>
+            - Name: enclaveoptions
+              Type: struct<Enabled:boolean>
+            - Name: platformdetails
+              Type: string
+            - Name: usageoperation
+              Type: string
+            - Name: urivatednsnameoptions
+              Type: struct<HostnameType:string,EnableResourceNameDnsARecord:boolean,EnableResourceNameDnsAAAARecord:boolean>
+            - Name: maintenanceoptions
+              Type: struct<AutoRecovery:string>
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            - Name: currentinstancebootmode
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-ec2-instances-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: AmiLaunchIndex,Architecture,BlockDeviceMappings,CapacityReservationSpecification,ClientToken,CpuOptions,CurrentInstanceBootMode,EbsOptimized,EnaSupport,EnclaveOptions,HibernationOptions,Hypervisor,IamInstanceProfile,ImageId,InstanceId,InstanceType,LaunchTime,MaintenanceOptions,MetadataOptions,Monitoring,NetworkInterfaces,Placement,PlatformDetails,PrivateDnsName,PrivateDnsNameOptions,PrivateIpAddress,ProductCodes,PublicDnsName,PublicIpAddress,RootDeviceName,RootDeviceType,SecurityGroups,SourceDestCheck,State,StateTransitionReason,SubnetId,Tags,UsageOperation,UsageOperationUpdateTime,VirtualizationType,VpcId,accountid,collection_date,region
+          TableType: EXTERNAL_TABLE
+
     VpcInstances:
       path: vpc
+      table:
+        - Name: inventory_vpc_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: cidrblock
+              Type: string
+            - Name: dhcpoptionsid
+              Type: string
+            - Name: state
+              Type: string
+            - Name: vpcid
+              Type: string
+            - Name: ownerid
+              Type: string
+            - Name: instancetenancy
+              Type: string
+            - Name: cidrblockassociationset
+              Type: array<struct<AssociationId:string,CidrBlock:string,CidrBlockState:struct<State:string>>>
+            - Name: isdefault
+              Type: boolean
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-vpc-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: CidrBlock,CidrBlockAssociationSet,DhcpOptionsId,InstanceTenancy,IsDefault,OwnerId,State,VpcId,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
+
 
 Resources:
   LambdaRole:
@@ -337,8 +1014,8 @@ Resources:
             S3Targets:
               - Path:
                   Fn::Sub:
-                    - "s3://${DestinationBucket}/inventory/inventory-${path}-data/"
-                    - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
+                  - "s3://${DestinationBucket}/inventory/inventory-${path}-data/"
+                  - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
           Configuration: |
             {
               "Version": 1.0,
@@ -348,6 +1025,12 @@ Resources:
                 }
               }
             }
+      'Table${AwsObject}':
+        Type: Custom::ManageGlueTable
+        Properties:
+          ServiceToken: !Ref LambdaManageGlueTableARN
+          TableInput: !Select [0, !FindInMap [ServicesMap, !Ref AwsObject, table]]
+
       'StepFunction${AwsObject}':
         Type: AWS::StepFunctions::StateMachine
         Properties:
@@ -470,7 +1153,7 @@ Resources:
             , ownerid
             , (CASE WHEN ("substr"(Description, 1, 22) = 'Created by CreateImage') THEN "split_part"(Description, ' ', 5) WHEN ("substr"(Description, 2, 11) = 'Copied snap') THEN "split_part"(Description, ' ', 9) WHEN ("substr"(Description, 1, 22) = 'Copied for Destination') THEN "split_part"(Description, ' ', 4) ELSE '' END) snap_ami_id
             FROM
-              ${DatabaseName}.inventory_snapshot_data)
+              ${database}.inventory_snapshot_data)
           as   snapshots
           LEFT JOIN (
             SELECT
@@ -481,7 +1164,7 @@ Resources:
             , rootdevicetype
             , virtualizationtype
             FROM
-              ${DatabaseName}.inventory_ami_data
+              ${database}.inventory_ami_data
           )  ami ON (snapshots.snap_ami_id = ami.imageid)
           left join
           (SELECT
