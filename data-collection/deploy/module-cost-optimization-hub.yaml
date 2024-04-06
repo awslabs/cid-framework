@@ -275,6 +275,7 @@ Resources:
               )
 
               count = 0
+              status = 200
               try:
                   if is_summary_mode:
                       data_iterator = iterate_paginated_results(
