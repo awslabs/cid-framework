@@ -299,7 +299,7 @@ Resources:
             Action: s3:*
             Effect: Deny
             Principal: "*"
-            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Resource: !Sub "${S3Bucket.Arn}/*"
             Condition:
               Bool:
                 aws:SecureTransport: false
@@ -307,7 +307,7 @@ Resources:
             Action: s3:*
             Effect: Deny
             Principal: "*"
-            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Resource: !Sub "${S3Bucket.Arn}/*"
             Condition:
               NumericLessThan:
                 s3:TlsVersion: 1.2
