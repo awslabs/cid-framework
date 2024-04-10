@@ -1,5 +1,7 @@
 # Change Log
 
+Starting from release v3.0.4 all release notes are captured in https://github.com/awslabs/cid-framework/releases
+
 ## v3.0.2
 Bug fixes
 
