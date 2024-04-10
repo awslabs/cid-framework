@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.0.4
+Description: CID Data Collection Stack v3.0.5
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -309,7 +309,7 @@ Resources:
             Action: s3:*
             Effect: Deny
             Principal: "*"
-            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Resource: !Sub "${S3Bucket.Arn}/*"
             Condition:
               Bool:
                 aws:SecureTransport: false
@@ -317,7 +317,7 @@ Resources:
             Action: s3:*
             Effect: Deny
             Principal: "*"
-            Resource: !Join ["", [!GetAtt S3Bucket.Arn, "/*"]]
+            Resource: !Sub "${S3Bucket.Arn}/*"
             Condition:
               NumericLessThan:
                 s3:TlsVersion: 1.2
@@ -584,7 +584,7 @@ Resources:
                   print("Failed sending PUT to CFN: " + str(exc))
 
           def create():
-              create_glue_table()
+              create_glue_database()
               return  'SUCCESS', 'success'
 
           def update():
@@ -593,7 +593,7 @@ Resources:
           def delete():
               return  'SUCCESS', 'nothing to do'
 
-          def create_glue_table():
+          def create_glue_database():
               glue_client = boto3.client('glue')
               try:
                   glue_client.get_database(Name=database_name)
@@ -610,6 +610,119 @@ Resources:
                           glue_client.delete_table(DatabaseName=database_name, Name=table_name)
                           print(f'table {table_name} was deleted to avoid crawler confusion')
               return 'SUCCESS', 'success'
+
+  LambdaManageGlueTableRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path:
+        Fn::Sub: /${ResourcePrefix}/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Policies:
+        - PolicyName: "Glue"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:CreateDatabase
+                  - glue:DeleteDatabase
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:CreateTable
+                  - glue:DeleteTable
+                  - glue:TagResource
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+  LambdaManageGlueTable:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.10
+      FunctionName: !Sub ${ResourcePrefix}ManageGlueTable-Lambda
+      Description: "Lambda function to manage glue tables"
+      Handler: index.lambda_handler
+      MemorySize: 128
+      Role: !GetAtt LambdaManageGlueTableRole.Arn
+      Timeout: 300
+      Environment:
+        Variables:
+          DATABASE_NAME: !Ref DatabaseName
+          RESOURCE_PREFIX: !Ref ResourcePrefix
+          BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import uuid
+          import urllib3
+          import boto3
+
+          database_name = os.environ['DATABASE_NAME']
+          resource_prefix = os.environ['RESOURCE_PREFIX']
+          glue_client = boto3.client('glue')
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              print(json.dumps(event))
+              try:
+                  action = event.get('RequestType').upper()
+                  if action not in ['CREATE', 'UPDATE', 'DELETE']:
+                      raise Exception(f"Unknown RequestType {action}") #pylint: disable=broad-exception-raised
+                  func = {'CREATE': create_or_update, 'DELETE': delete, 'UPDATE': create_or_update}.get(action)
+                  table_input = event['ResourceProperties']['TableInput']
+                  res, reason = func(table_input)
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  if 'Insufficient Lake Formation permission' in str(exc):
+                      res, reason = 'FAILED', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
+                  else:
+                      res, reason = 'FAILED', str(exc)
+              body = {
+                  'Status': res,
+                  'Reason': reason,
+                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
+                  'StackId': event.get('StackId'),
+                  'RequestId': event.get('RequestId'),
+                  'LogicalResourceId': event.get('LogicalResourceId'),
+                  'NoEcho': False,
+                  'Data':  {'Reason': reason},
+              }
+              json_body=json.dumps(body)
+              print(json_body)
+              url = event.get('ResponseURL')
+              if not url:
+                  return
+              try:
+                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
+                  print(f"Status code: {response}")
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  print("Failed sending PUT to CFN: " + str(exc))
+
+          def create_or_update(table_input):
+              try:
+                  glue_client.create_table(DatabaseName=database_name, TableInput=table_input)
+                  return  'SUCCESS', 'created'
+              except glue_client.exceptions.AlreadyExistsException:
+                  glue_client.update_table(DatabaseName=database_name, TableInput=table_input)
+                  return  'SUCCESS', 'updated'
+
+          def delete(table_input):
+              try:
+                  glue_client.delete_table(DatabaseName=database_name, Name=table_input['Name'])
+                  return  'SUCCESS', 'deleted'
+              except glue_client.exceptions.EntityNotFoundException:
+                  return  'SUCCESS', 'not found'
+
 
   InitExecutor:
     Type: Custom::LambdaAnalyticsExecutor
@@ -854,6 +967,7 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v1, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
         RegionsInScope:
           Fn::If:

@@ -623,6 +623,11 @@ Resources:
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
+        Metadata:
+          cfn-lint:
+            config:
+              ignore_checks:
+                - E2532 # State Machine Definition needs to be formatted as JSON - in this case it is not as crawler can be a list
 
       'PricingCrawler${AwsService}':
         Type: AWS::Glue::Crawler
