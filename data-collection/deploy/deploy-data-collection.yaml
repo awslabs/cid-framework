@@ -99,6 +99,10 @@ Mappings:
   StepFunctionCode:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
+  LambdaCode:
+    lambda-analytics:           {CodePath: cfn/data-collection/source/lambda/lambda-analytics.zip}
+    lambda-init:                {CodePath: cfn/data-collection/source/lambda/lambda-init.zip}
+    lambda-managed-glue-table:  {CodePath: cfn/data-collection/source/lambda/lambda-managed-glue-table.zip}
 
 Parameters:
   DestinationBucket:
@@ -431,52 +435,8 @@ Resources:
         Variables:
           CID_ANALYTICS_ENDPOINT: https://cid.workshops.aws.dev/adoption-tracking
       Code:
-        ZipFile: |
-          import os
-          import json
-          import uuid
-          import urllib3
-          import boto3
-
-          endpoint = os.environ['CID_ANALYTICS_ENDPOINT']
-          account_id = boto3.client("sts").get_caller_identity()["Account"]
-
-          def lambda_handler(event, context):  #pylint: disable=unused-argument
-              print(json.dumps(event))
-              try:
-                  if event['RequestType'].upper() not in ['CREATE', 'UPDATE', 'DELETE']:
-                      raise Exception(f"Unknown RequestType {event['RequestType']}") #pylint: disable=broad-exception-raised
-                  action = event['RequestType'].upper()
-                  name = event['ResourceProperties']['Name']
-                  method = {'CREATE':'PUT', 'UPDATE': 'PATCH', 'DELETE': 'DELETE'}.get(action)
-                  via_key = {'CREATE':'created_via', 'UPDATE': 'updated_via', 'DELETE': 'deleted_via'}.get(action)
-                  payload = {'id': 'data-collection-lab/' + name, 'account_id': account_id, via_key: 'CFN'}
-                  r =  urllib3.PoolManager().request(method, endpoint, body=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json'})
-                  if r.status != 200:
-                      raise Exception(f"There has been an issue logging action, server did not respond with a 200 response, actual status: {r.status}, response data {r.data.decode('utf-8')}. This issue will be ignored") #pylint: disable=broad-exception-raised
-                  res, reason = 'SUCCESS', 'success'
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  res, reason = 'SUCCESS', f"{exc} . This issue will be ignored"
-              body = {
-                  'Status': res,
-                  'Reason': reason,
-                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
-                  'StackId': event.get('StackId'),
-                  'RequestId': event.get('RequestId'),
-                  'LogicalResourceId': event.get('LogicalResourceId'),
-                  'NoEcho': False,
-                  'Data':  {'Reason': reason},
-              }
-              json_body=json.dumps(body)
-              print(json_body)
-              url = event.get('ResponseURL')
-              if not url:
-                  return
-              try:
-                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  print(f"Status code: {response}")
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  print("Failed sending PUT to CFN: " + str(exc))
+        S3Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        S3Key: !FindInMap [LambdaCode, lambda-analytics, CodePath]
 
   LambdaInitRole: #Execution role for the custom resource for Init Lambda
     Type: AWS::IAM::Role
@@ -529,77 +489,8 @@ Resources:
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
       Code:
-        ZipFile: |
-          import os
-          import json
-          import uuid
-          import urllib3
-          import boto3
-
-          database_name = os.environ['DATABASE_NAME']
-          resource_prefix = os.environ['RESOURCE_PREFIX']
-
-          def lambda_handler(event, context): #pylint: disable=unused-argument
-              print(json.dumps(event))
-              try:
-                  action = event.get('RequestType').upper()
-                  if action not in ['CREATE', 'UPDATE', 'DELETE']:
-                      raise Exception(f"Unknown RequestType {action}") #pylint: disable=broad-exception-raised
-                  func = {'CREATE': create, 'DELETE': delete, 'UPDATE': update}.get(action)
-                  res, reason = func()
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  if 'Insufficient Lake Formation permission' in str(exc):
-                      res, reason = 'FAILED', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
-                  else:
-                      res, reason = 'FAILED', str(exc)
-              body = {
-                  'Status': res,
-                  'Reason': reason,
-                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
-                  'StackId': event.get('StackId'),
-                  'RequestId': event.get('RequestId'),
-                  'LogicalResourceId': event.get('LogicalResourceId'),
-                  'NoEcho': False,
-                  'Data':  {'Reason': reason},
-              }
-              json_body=json.dumps(body)
-              print(json_body)
-              url = event.get('ResponseURL')
-              if not url:
-                  return
-              try:
-                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  print(f"Status code: {response}")
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  print("Failed sending PUT to CFN: " + str(exc))
-
-          def create():
-              create_glue_database()
-              return  'SUCCESS', 'success'
-
-          def update():
-              return  'SUCCESS', 'nothing to do'
-
-          def delete():
-              return  'SUCCESS', 'nothing to do'
-
-          def create_glue_database():
-              glue_client = boto3.client('glue')
-              try:
-                  glue_client.get_database(Name=database_name)
-              except glue_client.exceptions.EntityNotFoundException:
-                  glue_client.create_database(DatabaseInput={'Name': database_name})
-                  print(f"Created database '{database_name}'")
-              else:
-                  # Delete all tables updated by previous versions of crawlers.
-                  # If not crawler will not be able to update the table and will create a new one with a random name.
-                  for table in glue_client.get_paginator('get_tables').paginate(DatabaseName=database_name).search('TableList'):
-                      table_name = table.get('Name')
-                      updated_by = table.get('Parameters', {}).get('UPDATED_BY_CRAWLER', '')
-                      if not updated_by.startswith(resource_prefix):
-                          glue_client.delete_table(DatabaseName=database_name, Name=table_name)
-                          print(f'table {table_name} was deleted to avoid crawler confusion')
-              return 'SUCCESS', 'success'
+        S3Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        S3Key: !FindInMap [LambdaCode, lambda-init, CodePath]
 
   LambdaManageGlueTableRole:
     Type: AWS::IAM::Role
@@ -652,67 +543,8 @@ Resources:
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
       Code:
-        ZipFile: |
-          import os
-          import json
-          import uuid
-          import urllib3
-          import boto3
-
-          database_name = os.environ['DATABASE_NAME']
-          resource_prefix = os.environ['RESOURCE_PREFIX']
-          glue_client = boto3.client('glue')
-
-          def lambda_handler(event, context): #pylint: disable=unused-argument
-              print(json.dumps(event))
-              try:
-                  action = event.get('RequestType').upper()
-                  if action not in ['CREATE', 'UPDATE', 'DELETE']:
-                      raise Exception(f"Unknown RequestType {action}") #pylint: disable=broad-exception-raised
-                  func = {'CREATE': create_or_update, 'DELETE': delete, 'UPDATE': create_or_update}.get(action)
-                  table_input = event['ResourceProperties']['TableInput']
-                  res, reason = func(table_input)
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  if 'Insufficient Lake Formation permission' in str(exc):
-                      res, reason = 'FAILED', 'Lake Formation is not supported yet. Please use account without Lake Formation.'
-                  else:
-                      res, reason = 'FAILED', str(exc)
-              body = {
-                  'Status': res,
-                  'Reason': reason,
-                  'PhysicalResourceId': event.get('PhysicalResourceId', str(uuid.uuid1())),
-                  'StackId': event.get('StackId'),
-                  'RequestId': event.get('RequestId'),
-                  'LogicalResourceId': event.get('LogicalResourceId'),
-                  'NoEcho': False,
-                  'Data':  {'Reason': reason},
-              }
-              json_body=json.dumps(body)
-              print(json_body)
-              url = event.get('ResponseURL')
-              if not url:
-                  return
-              try:
-                  response = urllib3.PoolManager().request('PUT', url, body=json_body, headers={'content-type' : '', 'content-length' : str(len(json_body))}, retries=False)
-                  print(f"Status code: {response}")
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  print("Failed sending PUT to CFN: " + str(exc))
-
-          def create_or_update(table_input):
-              try:
-                  glue_client.create_table(DatabaseName=database_name, TableInput=table_input)
-                  return  'SUCCESS', 'created'
-              except glue_client.exceptions.AlreadyExistsException:
-                  glue_client.update_table(DatabaseName=database_name, TableInput=table_input)
-                  return  'SUCCESS', 'updated'
-
-          def delete(table_input):
-              try:
-                  glue_client.delete_table(DatabaseName=database_name, Name=table_input['Name'])
-                  return  'SUCCESS', 'deleted'
-              except glue_client.exceptions.EntityNotFoundException:
-                  return  'SUCCESS', 'not found'
-
+        S3Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        S3Key: !FindInMap [LambdaCode, lambda-managed-glue-table, CodePath]
 
   InitExecutor:
     Type: Custom::LambdaAnalyticsExecutor
