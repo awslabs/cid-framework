@@ -12,6 +12,14 @@ else
 fi
 code_path=$(git rev-parse --show-toplevel)/data-collection/deploy
 
+# Create zip file for each lambda function
+lambda_path=$code_path/source/lambda
+for file in $lambda_path/*.py; do
+  filename=$(basename "$file")
+  zipfilename="${filename%.*}.zip"
+  zip -u $lambda_path/$directory/$zipfilename $file
+done
+
 echo "Sync to $bucket"
 aws s3 sync $code_path/       s3://$bucket/cfn/data-collection/
 echo 'Done'

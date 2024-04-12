@@ -166,6 +166,9 @@ cython_debug/
 fof.zip
 ecs.zip
 ta.zip
+lambda-analytics.zip
+lambda-init.zip
+lambda-managed-glue-table.zip
 
 # Local sandbox
 sandbox/
