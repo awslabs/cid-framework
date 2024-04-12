@@ -9,11 +9,11 @@ export CENTRAL_BUCKET=aws-managed-cost-intelligence-dashboards
 code_path=$(git rev-parse --show-toplevel)/data-collection/deploy
 
 # Create zip file for each lambda function
-lambda_path=$code_path/source/lambda
-for file in $lambda_path/*.py; do
+lambda_path="$code_path"/source/lambda
+for file in "$lambda_path"/*.py; do
   filename=$(basename "$file")
   zipfilename="${filename%.*}.zip"
-  zip -u $lambda_path/$directory/$zipfilename $file
+  zip -qu "$lambda_path/$directory/$zipfilename" "$file"
 done
 
 echo "sync to central bucket"
