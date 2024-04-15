@@ -195,6 +195,8 @@ Resources:
               - "es:DescribeDomain"
               - "es:DescribeElasticsearchDomains"
               - "elasticache:DescribeCacheClusters"
+              - "eks:ListClusters"
+              - "eks:DescribeCluster"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
