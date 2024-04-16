@@ -100,9 +100,9 @@ Mappings:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
   LambdaCode:
-    lambda-analytics:           {CodePath: cfn/data-collection/source/lambda/lambda-analytics.zip}
-    lambda-init:                {CodePath: cfn/data-collection/source/lambda/lambda-init.zip}
-    lambda-managed-glue-table:  {CodePath: cfn/data-collection/source/lambda/lambda-managed-glue-table.zip}
+    lambda-analytics-v1:           {CodePath: cfn/data-collection/source/lambda/lambda-analytics-v1.zip}
+    lambda-init-v1:                {CodePath: cfn/data-collection/source/lambda/lambda-init-v1.zip}
+    lambda-managed-glue-table-v1:  {CodePath: cfn/data-collection/source/lambda/lambda-managed-glue-table-v1.zip}
 
 Parameters:
   DestinationBucket:
@@ -436,7 +436,7 @@ Resources:
           CID_ANALYTICS_ENDPOINT: https://cid.workshops.aws.dev/adoption-tracking
       Code:
         S3Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        S3Key: !FindInMap [LambdaCode, lambda-analytics, CodePath]
+        S3Key: !FindInMap [LambdaCode, lambda-analytics-v1, CodePath]
 
   LambdaInitRole: #Execution role for the custom resource for Init Lambda
     Type: AWS::IAM::Role
@@ -490,7 +490,7 @@ Resources:
           BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
       Code:
         S3Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        S3Key: !FindInMap [LambdaCode, lambda-init, CodePath]
+        S3Key: !FindInMap [LambdaCode, lambda-init-v1, CodePath]
 
   LambdaManageGlueTableRole:
     Type: AWS::IAM::Role
@@ -544,7 +544,7 @@ Resources:
           BUCKET_NAME: !Sub "${DestinationBucket}${AWS::AccountId}"
       Code:
         S3Bucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        S3Key: !FindInMap [LambdaCode, lambda-managed-glue-table, CodePath]
+        S3Key: !FindInMap [LambdaCode, lambda-managed-glue-table-v1, CodePath]
 
   InitExecutor:
     Type: Custom::LambdaAnalyticsExecutor
