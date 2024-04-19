@@ -225,7 +225,7 @@ Resources:
                       # Yield result directly if it is not a list.
                       yield results
                   if 'nextToken' in page and page['nextToken']:
-                      args['next_token'] = page['nextToken']
+                      args['nextToken'] = page['nextToken']
                   else:
                       break
 
