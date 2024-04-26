@@ -11,6 +11,13 @@ Parameters:
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold data information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
 Outputs:
   LambdaFunctionName:
     Value: !Ref LambdaFunction
@@ -71,6 +78,15 @@ Resources:
                 Action:
                   - "lambda:GetAccountSettings"
                 Resource: "*"
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:GetObject"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -96,6 +112,8 @@ Resources:
             ROLE_NAME = os.environ['ROLE_NAME']
             RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
+            BUCKET = os.environ['BUCKET_NAME']
+            ACCOUNT_LIST_KEY = os.environ['ACCOUNT_LIST_KEY']
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -121,6 +139,7 @@ Resources:
                 account_type = event.get("Type", '').lower()
                 if account_type not in functions:
                     raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
+
                 account_iterator = functions[account_type]
                 accounts = list(account_iterator())
                 if not accounts:
@@ -144,29 +163,40 @@ Resources:
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
 
             def iterate_linked_accounts():
-                for org_account_data in iterate_admins_accounts('organizations'):
-                    org_account = json.loads(org_account_data['account'])
-                    try:
-                        organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
-                        for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
-                            yield {
-                                "account": json.dumps({
-                                    'account_id': account.get('Id'),
-                                    'account_name': account.get('Name'),
-                                    'payer_id': org_account['payer_id'],
-                                })
-                            }
-                    except Exception as exc: #pylint: disable=broad-exception-caught
-                        logger.error(f'{org_account}: {exc}')
+                defined_accounts = get_defined_list(ACCOUNT_LIST_KEY)
+                try:
+                    if defined_accounts:
+                        logger.info(f'Using defined account list instead of payer organization')
+                        for account_data in defined_accounts:
+                            account = json.loads(account_data)
+                            yield format_account(account['account_id'], account['account_name'], account['payer_id'])
+                    else:
+                        logger.info(f'Using payer organization for the account list')
+                        for org_account_data in iterate_admins_accounts('organizations'):
+                            org_account = json.loads(org_account_data['account'])
+                            organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
+                            for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
+                                yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
+                except Exception as exc: #pylint: disable=broad-exception-caught
+                    logger.error(f'{org_account}: {exc}')
 
-            def dummy_iterate_linked_accounts():
-                # use this function if you have no access to payer or delegated admin at all
-                hardcoded_accounts = [
-                    {'account_id': '111222333444', 'account_name': 'replaceme', 'payer_id': '666777888999'},
-                    {'account_id': '555666777888', 'account_name': 'replaceme', 'payer_id': '666777888999'},
-                ]
-                for account_data in hardcoded_accounts:
-                    yield {"account": json.dumps(account_data)}
+            def get_defined_list(key):
+                s3 = boto3.client("s3")
+                try:
+                    accts = s3.get_object(Bucket=BUCKET, Key=key)
+                    return accts['Body'].read().decode('utf-8').strip('\n').split('\n')
+                except Exception as exc: #pylint: disable=broad-exception-caught
+                    logger.debug(f'Predefined account list not retrieved or not being used {exc}')
+                    return None
+
+            def format_account(account_id, account_name, payer_id):
+                return {
+                    "account": json.dumps({
+                        'account_id': account_id,
+                        'account_name': account_name,
+                        'payer_id': payer_id,
+                    })
+                }
 
             def get_client_with_role(account_id, service, region):
                 credentials = boto3.client('sts').assume_role(
@@ -190,6 +220,8 @@ Resources:
           ROLE_NAME: !Ref ManagementRoleName
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           RESOURCE_PREFIX: !Ref ResourcePrefix
+          BUCKET_NAME: !Ref DestinationBucket
+          ACCOUNT_LIST_KEY: "account-list/account-list.json"
     Metadata:
       cfn_nag:
         rules_to_suppress:
