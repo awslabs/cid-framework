@@ -82,7 +82,7 @@ Resources:
   LambdaFunctionWhatsNew:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-Whats-New'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName} What's New"
       Runtime: python3.12
       Architectures: [arm64]
@@ -182,7 +182,7 @@ Resources:
   LambdaFunctionBlogPost:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-Blog-Post'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName} Blog Posts"
       Runtime: python3.12
       Architectures: [arm64]
@@ -274,7 +274,7 @@ Resources:
   LambdaFunctionYouTube:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-YouTube'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-YouTube-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName} AWS YouTube Videos"
       Runtime: python3.12
       Architectures: [arm64]
@@ -377,7 +377,7 @@ Resources:
   LambdaFunctionSecurityBulletin:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-SecurityBulletin'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-SecurityBulletin-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName} AWS Security Bulletin"
       Runtime: python3.12
       Architectures: [arm64]
@@ -480,7 +480,7 @@ Resources:
   CrawlerWhatsNew:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler-Whats-New'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -491,7 +491,7 @@ Resources:
   CrawlerBlogPost:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler-Blog-Post'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -502,7 +502,7 @@ Resources:
   CrawlerYoutTube:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler-YouTube'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-YouTube-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -513,7 +513,7 @@ Resources:
   CrawlerSecurityBulletin:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler-Security-Bulletin'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
@@ -524,7 +524,7 @@ Resources:
   ModuleStepFunctionWhatsNew:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine-Whats-New'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:
@@ -533,7 +533,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionWhatsNew.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler-Whats-New"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Whats-New-Crawler"]'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -544,7 +544,7 @@ Resources:
   ModuleStepFunctionBlogPost:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine-Blog-Post'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:
@@ -553,7 +553,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionBlogPost.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler-Blog-Post"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Blog-Post-Crawler"]'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -564,7 +564,7 @@ Resources:
   ModuleStepFunctionYouTube:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine-YouTube'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-YouTube-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:
@@ -573,7 +573,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionYouTube.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler-YouTube"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-YouTube-Crawler"]'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -584,7 +584,7 @@ Resources:
   ModuleStepFunctionSecurityBulletin:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine-Security-Bulletin'
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-StateMachine'
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:
@@ -593,7 +593,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionSecurityBulletin.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler-Security-Bulletin"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler"]'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -605,7 +605,7 @@ Resources:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} Whats New module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule-Whats-New'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
@@ -619,7 +619,7 @@ Resources:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} Blog Post module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule-Blog-Post'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
@@ -633,7 +633,7 @@ Resources:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} AWS YouTube module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule-YouTube'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-YouTube-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
@@ -647,7 +647,7 @@ Resources:
     Type: 'AWS::Scheduler::Schedule'
     Properties:
       Description: !Sub 'Scheduler for the ODC ${CFDataName} AWS Security Bulletin module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule-Security-Bulletin'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-RefreshSchedule'
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
