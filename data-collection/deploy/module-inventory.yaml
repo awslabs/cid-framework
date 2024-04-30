@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters
     Description: Services for pulling price data
 
 Mappings:
@@ -752,6 +752,43 @@ Mappings:
                 paths: CidrBlock,CidrBlockAssociationSet,DhcpOptionsId,InstanceTenancy,IsDefault,OwnerId,State,VpcId,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
+    EKSClusters:
+      path: eks
+      table:
+        - Name: inventory_eks_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: arn
+              Type: string
+            - Name: name
+              Type: string
+            - Name: creationdate
+              Type: string
+            - Name: version
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-eks-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: Arn,Name,CreatedAt,Version,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
 
 
 Resources:
@@ -810,7 +847,7 @@ Resources:
           import json
           import logging
           from functools import partial, lru_cache
-          from datetime import datetime, date
+          from datetime import datetime, date, timezone
 
           import boto3
           from botocore.client import Config
@@ -878,6 +915,34 @@ Resources:
               except Exception as exc:  #pylint: disable=broad-exception-caught
                   logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
+          def eks_clusters_scan(account_id, region):
+            """special function to scan EKS clusters"""
+            service = "eks"
+            session = assume_session(account_id, region)
+            client = session.client(service, region_name=region)
+            try:
+                for cluster_name in (
+                    client.get_paginator("list_clusters")
+                    .paginate(
+                        PaginationConfig={
+                            "PageSize": 100,
+                        }
+                    )
+                    .search("clusters")
+                ):
+                    cluster = client.describe_cluster(name=cluster_name)
+                    yield {
+                            "Arn": cluster["cluster"]["arn"],
+                            "Name": cluster["cluster"]["name"],
+                            "CreatedAt": datetime.strftime(
+                                cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+                            ),
+                            "Version": cluster["cluster"]["version"],
+                    }
+            except Exception as exc:
+                logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
+                return []
+
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
               and must be called from the corresponding Step Function to orchestrate
@@ -939,7 +1004,8 @@ Resources:
                       paginated_scan,
                       service='ec2',
                       function_name='describe_vpcs'
-                  )
+                  ),
+                  'eks': eks_clusters_scan
               }
 
               account = json.loads(event["account"])

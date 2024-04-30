@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.0.5
+Description: CID Data Collection Stack v3.0.6
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -642,6 +642,7 @@ Resources:
                   - glue:CreateTable
                   - glue:DeleteTable
                   - glue:TagResource
+                  - glue:UpdateTable
                 Resource:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
