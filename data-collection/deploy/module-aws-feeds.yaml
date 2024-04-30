@@ -79,6 +79,17 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
+  LambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub '${ResourcePrefix}${CFDataName}-Dependencies-Layer'
+      Description: Layer containing the required dependencies
+      Content:
+        S3Bucket: !Ref CodeBucket
+        S3Key: cfn/data-collection/lambda-layers/layer.zip
+      CompatibleRuntimes:
+        - python3.12
+
   LambdaFunctionWhatsNew:
     Type: AWS::Lambda::Function
     Properties:
@@ -93,17 +104,18 @@ Resources:
           from datetime import datetime
           import html
           import boto3
-          import urllib.request
-          import xml.etree.ElementTree as ET
+          import requests
+          from defusedxml import ElementTree as ET
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
               bucket_name = os.environ['BUCKET_NAME']
-              bucket_path = os.environ.get('BUCKET_PATH', '') 
+              bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  with urllib.request.urlopen(feed_url) as response:
-                      feed_data = response.read()
+                  response = requests.get(feed_url, timeout=10)
+                  response.raise_for_status()
+                  feed_data = response.text
 
                   s3 = boto3.client('s3')
                   root = ET.fromstring(feed_data)
@@ -157,6 +169,16 @@ Resources:
                       'body': f'Feed downloaded and grouped by date then uploaded to S3 bucket {bucket_name}'
                   }
 
+              except requests.exceptions.RequestException as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error downloading feed: {str(e)}'
+                  }
+              except ET.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error parsing XML: {str(e)}'
+                  }
               except Exception as e:
                   return {
                       'statusCode': 500,
@@ -171,6 +193,8 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/whats_new"
           FEED_URL: "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
+      Layers:
+        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -190,10 +214,10 @@ Resources:
         ZipFile: |
           import os
           import json
-          import urllib.request
-          import xml.etree.ElementTree as ET
-          import boto3
           from datetime import datetime
+          import boto3
+          import requests
+          from defusedxml import ElementTree as ET
 
           def lambda_handler(event, context):
               url = os.environ['FEED_URL']
@@ -201,8 +225,9 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  with urllib.request.urlopen(url) as response:
-                      xml_data = response.read()
+                  response = requests.get(url, timeout=10)
+                  response.raise_for_status()
+                  xml_data = response.text
 
                   root = ET.fromstring(xml_data)
 
@@ -249,6 +274,16 @@ Resources:
                       'body': json.dumps('XML data successfully stored in S3.')
                   }
 
+              except requests.exceptions.RequestException as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error fetching XML data: {str(e)}')
+                  }
+              except ET.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error parsing XML data: {str(e)}')
+                  }
               except Exception as e:
                   return {
                       'statusCode': 500,
@@ -263,6 +298,8 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/blog_post"
           FEED_URL: "http://feeds.feedburner.com/AmazonWebServicesBlog"
+      Layers:
+        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -282,81 +319,99 @@ Resources:
         ZipFile: |
           import os
           import json
-          import urllib.request
-          from xml.etree import ElementTree
           from datetime import datetime
           import boto3
+          import requests
+          from defusedxml import ElementTree
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
               destination_bucket = os.environ['BUCKET_NAME']
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
-              with urllib.request.urlopen(feed_url) as response:
-                  xml_content = response.read().decode('utf-8')
+              try:
+                  response = requests.get(feed_url, timeout=10)
+                  response.raise_for_status()
+                  xml_content = response.text
 
-              root = ElementTree.fromstring(xml_content)
-              
-              ns = {
-                  'atom': 'http://www.w3.org/2005/Atom',
-                  'yt': 'http://www.youtube.com/xml/schemas/2015',
-                  'media': 'http://search.yahoo.com/mrss/'
-              }
-
-              youtube_video_base_url = "https://www.youtube.com/watch?v="
-
-              date_grouped_records = {}
-              for entry in root.findall('atom:entry', ns):
-                  video_id_value = entry.find('yt:videoId', ns).text
-                  video_url = youtube_video_base_url + video_id_value
-                  title = entry.find('atom:title', ns).text
-                  published = entry.find('atom:published', ns).text
-                  published_datetime = datetime.fromisoformat(published)
-                  formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
-
-                  year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
-                  date_key = f"{year}-{month}-{day}"
-
-                  description = entry.find('media:group/media:description', ns).text if entry.find('media:group/media:description', ns) is not None else 'No description available'
+                  root = ElementTree.fromstring(xml_content)
                   
-                  star_rating_element = entry.find('media:group/media:community/media:starRating', ns)
-                  statistics_element = entry.find('media:group/media:community/media:statistics', ns)
-                  
-                  star_rating_count = star_rating_element.get('count') if star_rating_element is not None else '0'
-                  star_rating_average = star_rating_element.get('average') if star_rating_element is not None else '0.0'
-                  star_rating_min = star_rating_element.get('min') if star_rating_element is not None else '0'
-                  star_rating_max = star_rating_element.get('max') if star_rating_element is not None else '0'
-                  
-                  views = statistics_element.get('views') if statistics_element is not None else '0'
-                  
-                  json_entry = {
-                      'video_url': video_url,
-                      'title': title,
-                      'published': formatted_published,
-                      'description': description,
-                      'star_rating_count': star_rating_count,
-                      'star_rating_average': star_rating_average,
-                      'star_rating_min': star_rating_min,
-                      'star_rating_max': star_rating_max,
-                      'views': views
+                  ns = {
+                      'atom': 'http://www.w3.org/2005/Atom',
+                      'yt': 'http://www.youtube.com/xml/schemas/2015',
+                      'media': 'http://search.yahoo.com/mrss/'
                   }
 
-                  if date_key not in date_grouped_records:
-                      date_grouped_records[date_key] = []
-                  date_grouped_records[date_key].append(json_entry)
+                  youtube_video_base_url = "https://www.youtube.com/watch?v="
 
-              s3_client = boto3.client('s3')
+                  date_grouped_records = {}
+                  for entry in root.findall('atom:entry', ns):
+                      video_id_value = entry.find('yt:videoId', ns).text
+                      video_url = youtube_video_base_url + video_id_value
+                      title = entry.find('atom:title', ns).text
+                      published = entry.find('atom:published', ns).text
+                      published_datetime = datetime.fromisoformat(published)
+                      formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-              for date_key, records in date_grouped_records.items():
-                  year, month, day = date_key.split('-')
-                  json_lines = '\n'.join(json.dumps(record) for record in records)
-                  s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/youtube.jsonl'
-                  s3_client.put_object(Body=json_lines, Bucket=destination_bucket, Key=s3_key)
+                      year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
+                      date_key = f"{year}-{month}-{day}"
 
-              return {
-                  'statusCode': 200,
-                  'body': 'XML parsed and JSON lines stored successfully'
-              }
+                      description = entry.find('media:group/media:description', ns).text if entry.find('media:group/media:description', ns) is not None else 'No description available'
+                      
+                      star_rating_element = entry.find('media:group/media:community/media:starRating', ns)
+                      statistics_element = entry.find('media:group/media:community/media:statistics', ns)
+                      
+                      star_rating_count = star_rating_element.get('count') if star_rating_element is not None else '0'
+                      star_rating_average = star_rating_element.get('average') if star_rating_element is not None else '0.0'
+                      star_rating_min = star_rating_element.get('min') if star_rating_element is not None else '0'
+                      star_rating_max = star_rating_element.get('max') if star_rating_element is not None else '0'
+                      
+                      views = statistics_element.get('views') if statistics_element is not None else '0'
+                      
+                      json_entry = {
+                          'video_url': video_url,
+                          'title': title,
+                          'published': formatted_published,
+                          'description': description,
+                          'star_rating_count': star_rating_count,
+                          'star_rating_average': star_rating_average,
+                          'star_rating_min': star_rating_min,
+                          'star_rating_max': star_rating_max,
+                          'views': views
+                      }
+
+                      if date_key not in date_grouped_records:
+                          date_grouped_records[date_key] = []
+                      date_grouped_records[date_key].append(json_entry)
+
+                  s3_client = boto3.client('s3')
+
+                  for date_key, records in date_grouped_records.items():
+                      year, month, day = date_key.split('-')
+                      json_lines = '\n'.join(json.dumps(record) for record in records)
+                      s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/youtube.jsonl'
+                      s3_client.put_object(Body=json_lines, Bucket=destination_bucket, Key=s3_key)
+
+                  return {
+                      'statusCode': 200,
+                      'body': 'XML parsed and JSON lines stored successfully'
+                  }
+
+              except requests.exceptions.RequestException as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error fetching XML data: {str(e)}'
+                  }
+              except ElementTree.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error parsing XML data: {str(e)}'
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error: {str(e)}'
+                  }
       Handler: 'index.lambda_handler'
       MemorySize: 256
       Timeout: 60
@@ -366,6 +421,8 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/youtube"
           FEED_URL: "https://www.youtube.com/feeds/videos.xml?channel_id=UCd6MoB9NC6uYN2grvUNT-Zg"
+      Layers:
+        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -385,57 +442,75 @@ Resources:
         ZipFile: |
           import os
           import json
-          import urllib.request
-          from xml.etree import ElementTree
           from datetime import datetime
           import boto3
+          import requests
+          from defusedxml import ElementTree
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
               destination_bucket = os.environ['BUCKET_NAME']
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
-              with urllib.request.urlopen(feed_url) as response:
-                  xml_content = response.read().decode('utf-8')
+              try:
+                  response = requests.get(feed_url, timeout=10)
+                  response.raise_for_status()
+                  xml_content = response.text
 
-              root = ElementTree.fromstring(xml_content)
+                  root = ElementTree.fromstring(xml_content)
 
-              date_grouped_records = {}
-              for item in root.findall('./channel/item'):
-                  link = item.find('link').text
-                  title = item.find('title').text
-                  description = item.find('description').text.strip()
-                  published = item.find('pubDate').text
+                  date_grouped_records = {}
+                  for item in root.findall('./channel/item'):
+                      link = item.find('link').text
+                      title = item.find('title').text
+                      description = item.find('description').text.strip()
+                      published = item.find('pubDate').text
 
-                  published_datetime = datetime.strptime(published, '%a, %d %b %Y %H:%M:%S %z')
-                  formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                      published_datetime = datetime.strptime(published, '%a, %d %b %Y %H:%M:%S %z')
+                      formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-                  year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
-                  date_key = f"{year}-{month}-{day}"
+                      year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
+                      date_key = f"{year}-{month}-{day}"
 
-                  json_entry = {
-                      'link': link,
-                      'title': title,
-                      'published': formatted_published,
-                      'description': description
+                      json_entry = {
+                          'link': link,
+                          'title': title,
+                          'published': formatted_published,
+                          'description': description
+                      }
+
+                      if date_key not in date_grouped_records:
+                          date_grouped_records[date_key] = []
+                      date_grouped_records[date_key].append(json_entry)
+
+                  s3_client = boto3.client('s3')
+
+                  for date_key, records in date_grouped_records.items():
+                      year, month, day = date_key.split('-')
+                      json_lines = '\n'.join(json.dumps(record) for record in records)
+                      s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/security_bulletins.jsonl'
+                      s3_client.put_object(Body=json_lines, Bucket=destination_bucket, Key=s3_key)
+
+                  return {
+                      'statusCode': 200,
+                      'body': 'XML parsed and JSON lines stored successfully'
                   }
 
-                  if date_key not in date_grouped_records:
-                      date_grouped_records[date_key] = []
-                  date_grouped_records[date_key].append(json_entry)
-
-              s3_client = boto3.client('s3')
-
-              for date_key, records in date_grouped_records.items():
-                  year, month, day = date_key.split('-')
-                  json_lines = '\n'.join(json.dumps(record) for record in records)
-                  s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/security_bulletins.jsonl'
-                  s3_client.put_object(Body=json_lines, Bucket=destination_bucket, Key=s3_key)
-
-              return {
-                  'statusCode': 200,
-                  'body': 'XML parsed and JSON lines stored successfully'
-              }
+              except requests.exceptions.RequestException as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error fetching XML data: {str(e)}'
+                  }
+              except ElementTree.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error parsing XML data: {str(e)}'
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error: {str(e)}'
+                  }
       Handler: 'index.lambda_handler'
       MemorySize: 256
       Timeout: 60
@@ -445,6 +520,8 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/security-bulletin"
           FEED_URL: "	https://aws.amazon.com/security/security-bulletins/rss/feed/"
+      Layers:
+        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
