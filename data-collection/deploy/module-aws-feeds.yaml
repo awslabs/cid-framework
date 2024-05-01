@@ -79,17 +79,6 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  LambdaLayer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: !Sub '${ResourcePrefix}${CFDataName}-Dependencies-Layer'
-      Description: Layer containing the required dependencies
-      Content:
-        S3Bucket: !Ref CodeBucket
-        S3Key: cfn/data-collection/lambda-layers/layer.zip
-      CompatibleRuntimes:
-        - python3.12
-
   LambdaFunctionWhatsNew:
     Type: AWS::Lambda::Function
     Properties:
@@ -103,9 +92,44 @@ Resources:
           import json
           from datetime import datetime
           import html
+          import urllib.request
+          import xml.etree.ElementTree as ET  #nosec
+          from html.parser import HTMLParser
           import boto3
-          import requests
-          from defusedxml import ElementTree as ET
+
+          def clean_html(html):
+              result = ""
+              urls = []
+              ref_index = [1]
+
+              class SimpleHTMLParser(HTMLParser):
+                  def handle_starttag(self, tag, attrs):
+                      nonlocal result
+                      if tag == 'a':
+                          href = next((value for attr, value in attrs if attr == 'href'), None)
+                          if href:
+                              if href.startswith('/'):
+                                  href = f"https://aws.amazon.com{href}"
+                              urls.append(href)
+                              self.last_href_index = len(result)
+
+                  def handle_endtag(self, tag):
+                      nonlocal result
+                      if tag == 'a':
+                          result = result[:self.last_href_index] + f"[{ref_index[0]}] " + result[self.last_href_index:]
+                          ref_index[0] += 1
+
+                  def handle_data(self, data):
+                      nonlocal result
+                      result += data
+
+              parser = SimpleHTMLParser()
+              parser.feed(html)
+
+              for i, url in enumerate(urls, start=1):
+                  result += f"\n[{i}] {url}"
+              
+              return result
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
@@ -113,12 +137,19 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  response = requests.get(feed_url, timeout=10)
-                  response.raise_for_status()
-                  feed_data = response.text
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  #nosec
+                      feed_data = response.read().decode('utf-8')
+
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in feed_data:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
 
                   s3 = boto3.client('s3')
-                  root = ET.fromstring(feed_data)
+                  root = ET.fromstring(feed_data)  #nosec
 
                   date_grouped_records = {}
 
@@ -132,7 +163,7 @@ Resources:
                       pubDate_datetime = datetime.strptime(pubDate, '%a, %d %b %Y %H:%M:%S %z')
                       year, month, day = pubDate_datetime.strftime('%Y'), pubDate_datetime.strftime('%m'), pubDate_datetime.strftime('%d')
                       date_key = f"{year}-{month}-{day}"
-                      description_unescaped = html.unescape(description)
+                      description_cleaned = clean_html(description)
 
                       categories = category.split(',')
                       services = []
@@ -149,7 +180,7 @@ Resources:
                               json_record = {
                                   'link': link,
                                   'title': title,
-                                  'description': description_unescaped,
+                                  'description': description_cleaned,
                                   'date': pubDate_datetime.strftime('%Y-%m-%d %H:%M:%S'),
                                   'service': service,
                                   'category': category_value
@@ -169,7 +200,7 @@ Resources:
                       'body': f'Feed downloaded and grouped by date then uploaded to S3 bucket {bucket_name}'
                   }
 
-              except requests.exceptions.RequestException as e:
+              except urllib.error.URLError as e:
                   return {
                       'statusCode': 500,
                       'body': f'Error downloading feed: {str(e)}'
@@ -179,10 +210,15 @@ Resources:
                       'statusCode': 500,
                       'body': f'Error parsing XML: {str(e)}'
                   }
-              except Exception as e:
+              except boto3.exceptions.S3UploadFailedError as e:
                   return {
                       'statusCode': 500,
                       'body': f'Error uploading to S3: {str(e)}'
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error processing feed: {str(e)}'
                   }
       Handler: 'index.lambda_handler'
       MemorySize: 256
@@ -193,8 +229,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/whats_new"
           FEED_URL: "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
-      Layers:
-        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -215,9 +249,9 @@ Resources:
           import os
           import json
           from datetime import datetime
+          import urllib.request
+          import xml.etree.ElementTree as ET  #nosec
           import boto3
-          import requests
-          from defusedxml import ElementTree as ET
 
           def lambda_handler(event, context):
               url = os.environ['FEED_URL']
@@ -225,11 +259,18 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  response = requests.get(url, timeout=10)
-                  response.raise_for_status()
-                  xml_data = response.text
+                  with urllib.request.urlopen(url, timeout=10) as response:  #nosec
+                      xml_data = response.read().decode('utf-8')
 
-                  root = ET.fromstring(xml_data)
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in xml_data:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  root = ET.fromstring(xml_data)  #nosec
 
                   date_grouped_records = {}
 
@@ -243,9 +284,8 @@ Resources:
                       year, month, day = pubDate_datetime.strftime('%Y'), pubDate_datetime.strftime('%m'), pubDate_datetime.strftime('%d')
                       date_key = f"{year}-{month}-{day}"
 
-                      creator = item.find('{http://purl.org/dc/elements/1.1/}creator')
-                      if creator is not None:
-                          creator = creator.text.strip()
+                      creator_element = item.find('{http://purl.org/dc/elements/1.1/}creator')
+                      creator = creator_element.text.strip() if creator_element is not None else None
 
                       categories = item.findall('category')
                       for category in categories:
@@ -274,7 +314,7 @@ Resources:
                       'body': json.dumps('XML data successfully stored in S3.')
                   }
 
-              except requests.exceptions.RequestException as e:
+              except urllib.error.URLError as e:
                   return {
                       'statusCode': 500,
                       'body': json.dumps(f'Error fetching XML data: {str(e)}')
@@ -283,6 +323,11 @@ Resources:
                   return {
                       'statusCode': 500,
                       'body': json.dumps(f'Error parsing XML data: {str(e)}')
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error uploading to S3: {str(e)}')
                   }
               except Exception as e:
                   return {
@@ -298,8 +343,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/blog_post"
           FEED_URL: "http://feeds.feedburner.com/AmazonWebServicesBlog"
-      Layers:
-        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -320,9 +363,9 @@ Resources:
           import os
           import json
           from datetime import datetime
+          import urllib.request
+          import xml.etree.ElementTree as ET  #nosec
           import boto3
-          import requests
-          from defusedxml import ElementTree
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
@@ -330,12 +373,19 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  response = requests.get(feed_url, timeout=10)
-                  response.raise_for_status()
-                  xml_content = response.text
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  #nosec
+                      xml_content = response.read().decode('utf-8')
 
-                  root = ElementTree.fromstring(xml_content)
-                  
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in xml_content:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  root = ET.fromstring(xml_content)  #nosec
+
                   ns = {
                       'atom': 'http://www.w3.org/2005/Atom',
                       'yt': 'http://www.youtube.com/xml/schemas/2015',
@@ -356,18 +406,19 @@ Resources:
                       year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
                       date_key = f"{year}-{month}-{day}"
 
-                      description = entry.find('media:group/media:description', ns).text if entry.find('media:group/media:description', ns) is not None else 'No description available'
-                      
+                      description_element = entry.find('media:group/media:description', ns)
+                      description = description_element.text if description_element is not None else 'No description available'
+
                       star_rating_element = entry.find('media:group/media:community/media:starRating', ns)
                       statistics_element = entry.find('media:group/media:community/media:statistics', ns)
-                      
+
                       star_rating_count = star_rating_element.get('count') if star_rating_element is not None else '0'
                       star_rating_average = star_rating_element.get('average') if star_rating_element is not None else '0.0'
                       star_rating_min = star_rating_element.get('min') if star_rating_element is not None else '0'
                       star_rating_max = star_rating_element.get('max') if star_rating_element is not None else '0'
-                      
+
                       views = statistics_element.get('views') if statistics_element is not None else '0'
-                      
+
                       json_entry = {
                           'video_url': video_url,
                           'title': title,
@@ -397,15 +448,20 @@ Resources:
                       'body': 'XML parsed and JSON lines stored successfully'
                   }
 
-              except requests.exceptions.RequestException as e:
+              except urllib.error.URLError as e:
                   return {
                       'statusCode': 500,
                       'body': f'Error fetching XML data: {str(e)}'
                   }
-              except ElementTree.ParseError as e:
+              except ET.ParseError as e:
                   return {
                       'statusCode': 500,
                       'body': f'Error parsing XML data: {str(e)}'
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error uploading to S3: {str(e)}'
                   }
               except Exception as e:
                   return {
@@ -421,8 +477,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/youtube"
           FEED_URL: "https://www.youtube.com/feeds/videos.xml?channel_id=UCd6MoB9NC6uYN2grvUNT-Zg"
-      Layers:
-        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -443,9 +497,44 @@ Resources:
           import os
           import json
           from datetime import datetime
+          import urllib.request
+          import xml.etree.ElementTree as ET  #nosec
+          from html.parser import HTMLParser
           import boto3
-          import requests
-          from defusedxml import ElementTree
+
+          def clean_html(html):
+              result = ""
+              urls = []
+              ref_index = [1]
+
+              class SimpleHTMLParser(HTMLParser):
+                  def handle_starttag(self, tag, attrs):
+                      nonlocal result
+                      if tag == 'a':
+                          href = next((value for attr, value in attrs if attr == 'href'), None)
+                          if href:
+                              if href.startswith('/'):
+                                  href = f"https://aws.amazon.com{href}"
+                              urls.append(href)
+                              self.last_href_index = len(result)
+
+                  def handle_endtag(self, tag):
+                      nonlocal result
+                      if tag == 'a':
+                          result = result[:self.last_href_index] + f"[{ref_index[0]}] " + result[self.last_href_index:]
+                          ref_index[0] += 1
+
+                  def handle_data(self, data):
+                      nonlocal result
+                      result += data
+
+              parser = SimpleHTMLParser()
+              parser.feed(html)
+
+              for i, url in enumerate(urls, start=1):
+                  result += f"\n[{i}] {url}"
+              
+              return result
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
@@ -453,11 +542,18 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  response = requests.get(feed_url, timeout=10)
-                  response.raise_for_status()
-                  xml_content = response.text
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  #nosec
+                      xml_content = response.read().decode('utf-8')
 
-                  root = ElementTree.fromstring(xml_content)
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in xml_content:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  root = ET.fromstring(xml_content)  #nosec
 
                   date_grouped_records = {}
                   for item in root.findall('./channel/item'):
@@ -472,11 +568,13 @@ Resources:
                       year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
                       date_key = f"{year}-{month}-{day}"
 
+                      description_cleaned = clean_html(description)
+
                       json_entry = {
                           'link': link,
                           'title': title,
                           'published': formatted_published,
-                          'description': description
+                          'description': description_cleaned
                       }
 
                       if date_key not in date_grouped_records:
@@ -496,15 +594,20 @@ Resources:
                       'body': 'XML parsed and JSON lines stored successfully'
                   }
 
-              except requests.exceptions.RequestException as e:
+              except urllib.error.URLError as e:
                   return {
                       'statusCode': 500,
                       'body': f'Error fetching XML data: {str(e)}'
                   }
-              except ElementTree.ParseError as e:
+              except ET.ParseError as e:
                   return {
                       'statusCode': 500,
                       'body': f'Error parsing XML data: {str(e)}'
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error uploading to S3: {str(e)}'
                   }
               except Exception as e:
                   return {
@@ -520,8 +623,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "feeds/security-bulletin"
           FEED_URL: "	https://aws.amazon.com/security/security-bulletins/rss/feed/"
-      Layers:
-        - !Ref LambdaLayer
     Metadata:
       cfn_nag:
         rules_to_suppress:
