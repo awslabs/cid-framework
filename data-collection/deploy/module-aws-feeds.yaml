@@ -89,11 +89,11 @@ Resources:
       Code:
         ZipFile: |
           import os
-          import json
           from datetime import datetime
-          import html
+          import json
           import urllib.request
-          import xml.etree.ElementTree as ET  #nosec
+          import xml.etree.ElementTree as ET  # nosec
+          import html
           from html.parser import HTMLParser
           import boto3
 
@@ -160,8 +160,11 @@ Resources:
                       pubDate = item.find('pubDate').text
                       category = item.find('category').text
 
+                      # Parsing and formatting pubDate to ISO 8601 format
                       pubDate_datetime = datetime.strptime(pubDate, '%a, %d %b %Y %H:%M:%S %z')
-                      year, month, day = pubDate_datetime.strftime('%Y'), pubDate_datetime.strftime('%m'), pubDate_datetime.strftime('%d')
+                      formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+                      year, month, day = formatted_date[:10].split('-')
                       date_key = f"{year}-{month}-{day}"
                       description_cleaned = clean_html(description)
 
@@ -181,7 +184,7 @@ Resources:
                                   'link': link,
                                   'title': title,
                                   'description': description_cleaned,
-                                  'date': pubDate_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+                                  'date': formatted_date,
                                   'service': service,
                                   'category': category_value
                               }
@@ -250,7 +253,7 @@ Resources:
           import json
           from datetime import datetime
           import urllib.request
-          import xml.etree.ElementTree as ET  #nosec
+          import xml.etree.ElementTree as ET  # nosec
           import boto3
 
           def lambda_handler(event, context):
@@ -280,8 +283,11 @@ Resources:
                       description = item.find('description').text
                       pubDate = item.find('pubDate').text
 
+                      # Parsing and formatting pubDate to ISO 8601 format
                       pubDate_datetime = datetime.strptime(pubDate, '%a, %d %b %Y %H:%M:%S %z')
-                      year, month, day = pubDate_datetime.strftime('%Y'), pubDate_datetime.strftime('%m'), pubDate_datetime.strftime('%d')
+                      formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+                      year, month, day = formatted_date[:10].split('-')
                       date_key = f"{year}-{month}-{day}"
 
                       creator_element = item.find('{http://purl.org/dc/elements/1.1/}creator')
@@ -293,7 +299,7 @@ Resources:
                               'title': title,
                               'link': link,
                               'description': description,
-                              'pubDate': pubDate_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+                              'date': formatted_date,  # Using the formatted date
                               'creator': creator,
                               'category': category.text.strip()
                           }
@@ -364,7 +370,7 @@ Resources:
           import json
           from datetime import datetime
           import urllib.request
-          import xml.etree.ElementTree as ET  #nosec
+          import xml.etree.ElementTree as ET  # nosec
           import boto3
 
           def lambda_handler(event, context):
@@ -401,9 +407,9 @@ Resources:
                       title = entry.find('atom:title', ns).text
                       published = entry.find('atom:published', ns).text
                       published_datetime = datetime.fromisoformat(published)
-                      formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                      formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Ensure ISO 8601 format
 
-                      year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
+                      year, month, day = formatted_published[:10].split('-')
                       date_key = f"{year}-{month}-{day}"
 
                       description_element = entry.find('media:group/media:description', ns)
@@ -422,7 +428,7 @@ Resources:
                       json_entry = {
                           'video_url': video_url,
                           'title': title,
-                          'published': formatted_published,
+                          'published': formatted_published,  # Correctly formatted date
                           'description': description,
                           'star_rating_count': star_rating_count,
                           'star_rating_average': star_rating_average,
@@ -834,6 +840,78 @@ Resources:
       Target:
         Arn: !GetAtt ModuleStepFunctionSecurityBulletin.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
+
+  AWSFeedsAthenaNamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Name: !Sub '${ResourcePrefix}${CFDataName}-AWSFeedsAthenaNamedQuery'
+      QueryString: |
+        CREATE OR REPLACE VIEW aws_feeds AS
+        SELECT
+          date as published,
+          'blog_post' AS feed_type,
+          title,
+          link as url
+        FROM blog_post
+
+        UNION
+
+        SELECT
+          published,
+          'security_bulletin' AS feed_type,
+          title,
+          link as url
+        FROM security_bulletin
+
+        UNION
+
+        SELECT
+          date as published,
+          'whats_new' AS feed_type,
+          title,
+          link as url
+        FROM whats_new
+
+        UNION
+
+        SELECT
+          published,
+          'youtube' AS feed_type,
+          title,
+          video_url AS url
+        FROM youtube
+
+  CategoryCountsAthenaNamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Name: !Sub '${ResourcePrefix}${CFDataName}-CategoryCountsAthenaNamedQuery'
+      QueryString: |
+        CREATE OR REPLACE VIEW category_counts AS
+        SELECT
+          category,
+          COUNT(*) AS count
+        FROM blog_post
+        GROUP BY category
+        UNION ALL
+        SELECT
+          'security_bulletins' AS category,
+          COUNT(*) AS count
+        FROM security_bulletin
+        GROUP BY 'security_bulletins'
+        UNION ALL
+        SELECT
+          category,
+          COUNT(*) AS count
+        FROM whats_new
+        GROUP BY category
+        UNION ALL
+        SELECT
+          'video' AS category,
+          COUNT(*) AS count
+        FROM youtube
+        GROUP BY 'video'
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
