@@ -166,7 +166,7 @@ Resources:
                 defined_accounts, ext = get_defined_list(BUCKET, ACCOUNT_LIST_KEY)
                 try:
                     if defined_accounts:
-                        logger.info(f'Using defined account list instead of payer organization')
+                        logger.info(f'Using defined account list {ACCOUNT_LIST_KEY}.{ext} instead of payer organization')
                         for account_data in defined_accounts:
                             if ext == "json":
                                 account = json.loads(account_data)
