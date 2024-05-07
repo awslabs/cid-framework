@@ -163,13 +163,17 @@ Resources:
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
 
             def iterate_linked_accounts():
-                defined_accounts = get_defined_list(ACCOUNT_LIST_KEY)
+                defined_accounts, ext = get_defined_list(BUCKET, ACCOUNT_LIST_KEY)
                 try:
                     if defined_accounts:
                         logger.info(f'Using defined account list instead of payer organization')
                         for account_data in defined_accounts:
-                            account = json.loads(account_data)
-                            yield format_account(account['account_id'], account['account_name'], account['payer_id'])
+                            if ext == "json":
+                                account = json.loads(account_data)
+                                yield format_account(account['account_id'], account['account_name'], account['payer_id'])
+                            else:
+                                account = account_data.split(',')
+                                yield format_account(account[0], account[1], account[2])
                     else:
                         logger.info(f'Using payer organization for the account list')
                         for org_account_data in iterate_admins_accounts('organizations'):
@@ -180,14 +184,17 @@ Resources:
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     logger.error(f'{org_account}: {exc}')
 
-            def get_defined_list(key):
+            def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
-                try:
-                    accts = s3.get_object(Bucket=BUCKET, Key=key)
-                    return accts['Body'].read().decode('utf-8').strip('\n').split('\n')
-                except Exception as exc: #pylint: disable=broad-exception-caught
-                    logger.debug(f'Predefined account list not retrieved or not being used {exc}')
-                    return None
+                exts = ["json", "csv"]
+                for ext in exts:
+                    try:
+                        accts = s3.get_object(Bucket=bucket, Key=f"{key}.{ext}")
+                        return accts['Body'].read().decode('utf-8').strip('\n').split('\n'), ext
+                    except Exception as exc: #pylint: disable=broad-exception-caught
+                        continue
+                logger.debug(f'Predefined account list not retrieved or not being used')
+                return None, None
 
             def format_account(account_id, account_name, payer_id):
                 return {
@@ -221,7 +228,7 @@ Resources:
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Ref DestinationBucket
-          ACCOUNT_LIST_KEY: "account-list/account-list.json"
+          ACCOUNT_LIST_KEY: "account-list/account-list"
     Metadata:
       cfn_nag:
         rules_to_suppress:
