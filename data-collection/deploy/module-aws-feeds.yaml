@@ -852,7 +852,8 @@ Resources:
           date as published,
           'blog_post' AS feed_type,
           title,
-          link as url
+          link as url,
+          category
         FROM blog_post
 
         UNION
@@ -861,7 +862,8 @@ Resources:
           published,
           'security_bulletin' AS feed_type,
           title,
-          link as url
+          link as url,
+          'security_bulletins' AS category
         FROM security_bulletin
 
         UNION
@@ -870,7 +872,8 @@ Resources:
           date as published,
           'whats_new' AS feed_type,
           title,
-          link as url
+          link as url,
+          category
         FROM whats_new
 
         UNION
@@ -879,39 +882,9 @@ Resources:
           published,
           'youtube' AS feed_type,
           title,
-          video_url AS url
+          video_url AS url,
+          'video' AS category
         FROM youtube
-
-  CategoryCountsAthenaNamedQuery:
-    Type: AWS::Athena::NamedQuery
-    Properties:
-      Database: !Ref DatabaseName
-      Name: !Sub '${ResourcePrefix}${CFDataName}-CategoryCountsAthenaNamedQuery'
-      QueryString: |
-        CREATE OR REPLACE VIEW category_counts AS
-        SELECT
-          category,
-          COUNT(*) AS count
-        FROM blog_post
-        GROUP BY category
-        UNION ALL
-        SELECT
-          'security_bulletins' AS category,
-          COUNT(*) AS count
-        FROM security_bulletin
-        GROUP BY 'security_bulletins'
-        UNION ALL
-        SELECT
-          category,
-          COUNT(*) AS count
-        FROM whats_new
-        GROUP BY category
-        UNION ALL
-        SELECT
-          'video' AS category,
-          COUNT(*) AS count
-        FROM youtube
-        GROUP BY 'video'
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
