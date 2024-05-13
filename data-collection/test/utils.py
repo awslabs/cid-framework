@@ -140,6 +140,8 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
         Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
+        # This allows us to deploy via a bucket and avoid the more limited max template length issue
+        #TemplateBody=file.open().read(),
         TemplateURL=file,
         Parameters=parameters,
     )
@@ -173,6 +175,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
     deploy_stack(
         cloudformation=cloudformation,
         stack_name=f'{PREFIX}OptimizationDataReadPermissionsStack',
+        # This allows us to deploy via a bucket and avoid the more limited max template length issue
         #file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
         file=f"https://{bucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-read-permissions.yaml",
         parameters=[
@@ -201,6 +204,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
     deploy_stack(
         cloudformation=cloudformation,
         stack_name=f'{PREFIX}OptimizationDataCollectionStack',
+        # This allows us to deploy via a bucket and avoid the more limited max template length issue
         #file=root / 'deploy' / 'deploy-data-collection.yaml',
         file=f"https://{bucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml",
         parameters=[

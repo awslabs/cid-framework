@@ -326,16 +326,7 @@ Resources:
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/rds-usage-data/"
-      Configuration: |
-        {
-          "Version":1.0,
-          "CrawlerOutput": {
-            "Tables":{
-              "AddOrUpdateBehavior":"MergeNewColumns"
-            }
-          },
-          "CreatePartitionIndex":true
-        }
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

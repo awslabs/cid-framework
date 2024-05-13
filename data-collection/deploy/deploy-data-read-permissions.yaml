@@ -174,7 +174,7 @@ Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
 
 Resources:
-  DataCollectorMgmtAccountModulesReadStack:
+  DataCollectorMgmtAccountReadStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
@@ -188,7 +188,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
-  DataCollectorLinkedAccountsModulesReadStack:
+  DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
     Properties:
