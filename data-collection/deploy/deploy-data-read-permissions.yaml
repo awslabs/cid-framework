@@ -159,7 +159,7 @@ Parameters:
       - "no"
   IncludeCostOptimizationHubModule:
     Type: String
-    Description: Collects Cost Optimization Hub Recommendations from your accounts
+    Description: Collects CostOptimizationHub Recommendations from your accounts
     AllowedValues:
       - "yes"
       - "no"
