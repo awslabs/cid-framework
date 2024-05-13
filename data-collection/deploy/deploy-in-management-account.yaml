@@ -34,7 +34,7 @@ Metadata:
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
       IncludeCostOptimizationHubModule:
-        default: "Include Cost Optimization Hub Module"
+        default: "Include EnableCostOptimizationHub Module"
       IncludeHealthEventsModule:
         default: "Include Health Events Module"
 Parameters:
@@ -75,7 +75,7 @@ Parameters:
       - "no"
   IncludeCostOptimizationHubModule:
     Type: String
-    Description: Collects Cost Optimization Hub Recommendations from your accounts
+    Description: Collects CostOptimizationHub Recommendations from your accounts
     AllowedValues:
       - "yes"
       - "no"
