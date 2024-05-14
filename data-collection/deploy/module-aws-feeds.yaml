@@ -89,15 +89,14 @@ Resources:
       Code:
         ZipFile: |
           import os
-          from datetime import datetime
           import json
           import urllib.request
           import xml.etree.ElementTree as ET  # nosec
-          import html
           from html.parser import HTMLParser
+          from dateutil.parser import parse
           import boto3
 
-          def clean_html(html):
+          def clean_html(html_content):
               result = ""
               urls = []
               ref_index = [1]
@@ -124,7 +123,7 @@ Resources:
                       result += data
 
               parser = SimpleHTMLParser()
-              parser.feed(html)
+              parser.feed(html_content)
 
               for i, url in enumerate(urls, start=1):
                   result += f"\n[{i}] {url}"
@@ -137,7 +136,7 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  with urllib.request.urlopen(feed_url, timeout=10) as response:  #nosec
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
                       feed_data = response.read().decode('utf-8')
 
                   malicious_strings = ['!ENTITY', ':include']
@@ -149,48 +148,52 @@ Resources:
                           }
 
                   s3 = boto3.client('s3')
-                  root = ET.fromstring(feed_data)  #nosec
+                  root = ET.fromstring(feed_data)  # nosec
 
                   date_grouped_records = {}
 
                   for item in root.findall('.//item'):
-                      link = item.find('link').text
-                      title = item.find('title').text
-                      description = item.find('description').text
-                      pubDate = item.find('pubDate').text
-                      category = item.find('category').text
+                      try:
+                          link = item.find('link').text
+                          title = item.find('title').text
+                          description = item.find('description').text
+                          pubDate = item.find('pubDate').text
+                          category = item.find('category').text
 
-                      # Parsing and formatting pubDate to ISO 8601 format
-                      pubDate_datetime = datetime.strptime(pubDate, '%a, %d %b %Y %H:%M:%S %z')
-                      formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          # Parsing and formatting pubDate to ISO 8601 format
+                          pubDate_datetime = parse(pubDate)
+                          formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
 
-                      year, month, day = formatted_date[:10].split('-')
-                      date_key = f"{year}-{month}-{day}"
-                      description_cleaned = clean_html(description)
+                          year, month, day = formatted_date[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
+                          description_cleaned = clean_html(description)
 
-                      categories = category.split(',')
-                      services = []
-                      category_values = []
+                          categories = category.split(',')
+                          services = []
+                          category_values = []
 
-                      for cat in categories:
-                          if cat.startswith('general:products/'):
-                              services.append(cat.replace('general:products/', ''))
-                          elif cat.startswith('marketing:marchitecture/'):
-                              category_values.append(cat.replace('marketing:marchitecture/', ''))
+                          for cat in categories:
+                              if cat.startswith('general:products/'):
+                                  services.append(cat.replace('general:products/', ''))
+                              elif cat.startswith('marketing:marchitecture/'):
+                                  category_values.append(cat.replace('marketing:marchitecture/', ''))
 
-                      for service in services:
-                          for category_value in category_values:
-                              json_record = {
-                                  'link': link,
-                                  'title': title,
-                                  'description': description_cleaned,
-                                  'date': formatted_date,
-                                  'service': service,
-                                  'category': category_value
-                              }
-                              if date_key not in date_grouped_records:
-                                  date_grouped_records[date_key] = []
-                              date_grouped_records[date_key].append(json_record)
+                          for service in services:
+                              for category_value in category_values:
+                                  json_record = {
+                                      'link': link,
+                                      'title': title,
+                                      'description': description_cleaned,
+                                      'date': formatted_date,
+                                      'service': service,
+                                      'category': category_value
+                                  }
+                                  if date_key not in date_grouped_records:
+                                      date_grouped_records[date_key] = []
+                                  date_grouped_records[date_key].append(json_record)
+                      
+                      except Exception as e:
+                          print(f"Error processing item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
 
                   for date_key, records in date_grouped_records.items():
                       year, month, day = date_key.split('-')
@@ -251,10 +254,10 @@ Resources:
         ZipFile: |
           import os
           import json
-          from datetime import datetime
           import urllib.request
           import xml.etree.ElementTree as ET  # nosec
           import boto3
+          from dateutil.parser import parse, ParserError
 
           def lambda_handler(event, context):
               url = os.environ['FEED_URL']
@@ -262,7 +265,7 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  with urllib.request.urlopen(url, timeout=10) as response:  #nosec
+                  with urllib.request.urlopen(url, timeout=10) as response:  # nosec
                       xml_data = response.read().decode('utf-8')
 
                   malicious_strings = ['!ENTITY', ':include']
@@ -273,39 +276,49 @@ Resources:
                               'body': f'Malicious content detected in the XML feed: {string}'
                           }
 
-                  root = ET.fromstring(xml_data)  #nosec
+                  root = ET.fromstring(xml_data)  # nosec
 
                   date_grouped_records = {}
 
                   for item in root.findall('.//item'):
-                      title = item.find('title').text
-                      link = item.find('link').text
-                      description = item.find('description').text
-                      pubDate = item.find('pubDate').text
+                      try:
+                          title = item.find('title').text
+                          link = item.find('link').text
+                          description = item.find('description').text
+                          pubDate = item.find('pubDate').text
 
-                      # Parsing and formatting pubDate to ISO 8601 format
-                      pubDate_datetime = datetime.strptime(pubDate, '%a, %d %b %Y %H:%M:%S %z')
-                      formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          # Parsing and formatting pubDate to ISO 8601 format
+                          try:
+                              pubDate_datetime = parse(pubDate)
+                              formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          except ParserError as e:
+                              print(f"Error parsing date: {pubDate}. Exception: {str(e)}")
+                              continue
 
-                      year, month, day = formatted_date[:10].split('-')
-                      date_key = f"{year}-{month}-{day}"
+                          year, month, day = formatted_date[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
 
-                      creator_element = item.find('{http://purl.org/dc/elements/1.1/}creator')
-                      creator = creator_element.text.strip() if creator_element is not None else None
+                          creator_element = item.find('{http://purl.org/dc/elements/1.1/}creator')
+                          creator = creator_element.text.strip() if creator_element is not None else None
 
-                      categories = item.findall('category')
-                      for category in categories:
-                          json_data = {
-                              'title': title,
-                              'link': link,
-                              'description': description,
-                              'date': formatted_date,  # Using the formatted date
-                              'creator': creator,
-                              'category': category.text.strip()
-                          }
-                          if date_key not in date_grouped_records:
-                              date_grouped_records[date_key] = []
-                          date_grouped_records[date_key].append(json_data)
+                          categories = item.findall('category')
+                          for category in categories:
+                              json_data = {
+                                  'title': title,
+                                  'link': link,
+                                  'description': description,
+                                  'date': formatted_date,  # Using the formatted date
+                                  'creator': creator,
+                                  'category': category.text.strip()
+                              }
+                              if date_key not in date_grouped_records:
+                                  date_grouped_records[date_key] = []
+                              date_grouped_records[date_key].append(json_data)
+
+                      except AttributeError as e:
+                          print(f"Missing expected element in item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+                      except Exception as e:
+                          print(f"General error processing item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
 
                   s3_client = boto3.client('s3')
 
@@ -340,6 +353,7 @@ Resources:
                       'statusCode': 500,
                       'body': json.dumps(f'Error: {str(e)}')
                   }
+
       Handler: 'index.lambda_handler'
       MemorySize: 256
       Timeout: 60
@@ -368,10 +382,10 @@ Resources:
         ZipFile: |
           import os
           import json
-          from datetime import datetime
           import urllib.request
           import xml.etree.ElementTree as ET  # nosec
           import boto3
+          from dateutil.parser import parse, ParserError
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
@@ -379,7 +393,7 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  with urllib.request.urlopen(feed_url, timeout=10) as response:  #nosec
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
                       xml_content = response.read().decode('utf-8')
 
                   malicious_strings = ['!ENTITY', ':include']
@@ -390,7 +404,7 @@ Resources:
                               'body': f'Malicious content detected in the XML feed: {string}'
                           }
 
-                  root = ET.fromstring(xml_content)  #nosec
+                  root = ET.fromstring(xml_content)  # nosec
 
                   ns = {
                       'atom': 'http://www.w3.org/2005/Atom',
@@ -402,44 +416,56 @@ Resources:
 
                   date_grouped_records = {}
                   for entry in root.findall('atom:entry', ns):
-                      video_id_value = entry.find('yt:videoId', ns).text
-                      video_url = youtube_video_base_url + video_id_value
-                      title = entry.find('atom:title', ns).text
-                      published = entry.find('atom:published', ns).text
-                      published_datetime = datetime.fromisoformat(published)
-                      formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')  # Ensure ISO 8601 format
+                      try:
+                          video_id_value = entry.find('yt:videoId', ns).text
+                          video_url = youtube_video_base_url + video_id_value
+                          title = entry.find('atom:title', ns).text
+                          published = entry.find('atom:published', ns).text
 
-                      year, month, day = formatted_published[:10].split('-')
-                      date_key = f"{year}-{month}-{day}"
+                          # Parsing and formatting published date to ISO 8601 format
+                          try:
+                              published_datetime = parse(published)
+                              formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          except ParserError as e:
+                              print(f"Error parsing date: {published}. Exception: {str(e)}")
+                              continue
 
-                      description_element = entry.find('media:group/media:description', ns)
-                      description = description_element.text if description_element is not None else 'No description available'
+                          year, month, day = formatted_published[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
 
-                      star_rating_element = entry.find('media:group/media:community/media:starRating', ns)
-                      statistics_element = entry.find('media:group/media:community/media:statistics', ns)
+                          description_element = entry.find('media:group/media:description', ns)
+                          description = description_element.text if description_element is not None else 'No description available'
 
-                      star_rating_count = star_rating_element.get('count') if star_rating_element is not None else '0'
-                      star_rating_average = star_rating_element.get('average') if star_rating_element is not None else '0.0'
-                      star_rating_min = star_rating_element.get('min') if star_rating_element is not None else '0'
-                      star_rating_max = star_rating_element.get('max') if star_rating_element is not None else '0'
+                          star_rating_element = entry.find('media:group/media:community/media:starRating', ns)
+                          statistics_element = entry.find('media:group/media:community/media:statistics', ns)
 
-                      views = statistics_element.get('views') if statistics_element is not None else '0'
+                          star_rating_count = star_rating_element.get('count') if star_rating_element is not None else '0'
+                          star_rating_average = star_rating_element.get('average') if star_rating_element is not None else '0.0'
+                          star_rating_min = star_rating_element.get('min') if star_rating_element is not None else '0'
+                          star_rating_max = star_rating_element.get('max') if star_rating_element is not None else '0'
 
-                      json_entry = {
-                          'video_url': video_url,
-                          'title': title,
-                          'published': formatted_published,  # Correctly formatted date
-                          'description': description,
-                          'star_rating_count': star_rating_count,
-                          'star_rating_average': star_rating_average,
-                          'star_rating_min': star_rating_min,
-                          'star_rating_max': star_rating_max,
-                          'views': views
-                      }
+                          views = statistics_element.get('views') if statistics_element is not None else '0'
 
-                      if date_key not in date_grouped_records:
-                          date_grouped_records[date_key] = []
-                      date_grouped_records[date_key].append(json_entry)
+                          json_entry = {
+                              'video_url': video_url,
+                              'title': title,
+                              'published': formatted_published,  # Correctly formatted date
+                              'description': description,
+                              'star_rating_count': star_rating_count,
+                              'star_rating_average': star_rating_average,
+                              'star_rating_min': star_rating_min,
+                              'star_rating_max': star_rating_max,
+                              'views': views
+                          }
+
+                          if date_key not in date_grouped_records:
+                              date_grouped_records[date_key] = []
+                          date_grouped_records[date_key].append(json_entry)
+
+                      except AttributeError as e:
+                          print(f"Missing expected element in entry: {ET.tostring(entry, encoding='unicode')}. Exception: {str(e)}")
+                      except Exception as e:
+                          print(f"General error processing entry: {ET.tostring(entry, encoding='unicode')}. Exception: {str(e)}")
 
                   s3_client = boto3.client('s3')
 
@@ -502,13 +528,13 @@ Resources:
         ZipFile: |
           import os
           import json
-          from datetime import datetime
           import urllib.request
-          import xml.etree.ElementTree as ET  #nosec
+          import xml.etree.ElementTree as ET  # nosec
           from html.parser import HTMLParser
           import boto3
+          from dateutil.parser import parse, ParserError
 
-          def clean_html(html):
+          def clean_html(html_content):
               result = ""
               urls = []
               ref_index = [1]
@@ -535,7 +561,7 @@ Resources:
                       result += data
 
               parser = SimpleHTMLParser()
-              parser.feed(html)
+              parser.feed(html_content)
 
               for i, url in enumerate(urls, start=1):
                   result += f"\n[{i}] {url}"
@@ -548,7 +574,7 @@ Resources:
               bucket_path = os.environ.get('BUCKET_PATH', '')
 
               try:
-                  with urllib.request.urlopen(feed_url, timeout=10) as response:  #nosec
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
                       xml_content = response.read().decode('utf-8')
 
                   malicious_strings = ['!ENTITY', ':include']
@@ -559,33 +585,44 @@ Resources:
                               'body': f'Malicious content detected in the XML feed: {string}'
                           }
 
-                  root = ET.fromstring(xml_content)  #nosec
+                  root = ET.fromstring(xml_content)  # nosec
 
                   date_grouped_records = {}
                   for item in root.findall('./channel/item'):
-                      link = item.find('link').text
-                      title = item.find('title').text
-                      description = item.find('description').text.strip()
-                      published = item.find('pubDate').text
+                      try:
+                          link = item.find('link').text
+                          title = item.find('title').text
+                          description = item.find('description').text.strip()
+                          published = item.find('pubDate').text
 
-                      published_datetime = datetime.strptime(published, '%a, %d %b %Y %H:%M:%S %z')
-                      formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          # Parsing and formatting published date to ISO 8601 format
+                          try:
+                              published_datetime = parse(published)
+                              formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          except ParserError as e:
+                              print(f"Error parsing date: {published}. Exception: {str(e)}")
+                              continue
 
-                      year, month, day = published_datetime.strftime('%Y'), published_datetime.strftime('%m'), published_datetime.strftime('%d')
-                      date_key = f"{year}-{month}-{day}"
+                          year, month, day = formatted_published[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
 
-                      description_cleaned = clean_html(description)
+                          description_cleaned = clean_html(description)
 
-                      json_entry = {
-                          'link': link,
-                          'title': title,
-                          'published': formatted_published,
-                          'description': description_cleaned
-                      }
+                          json_entry = {
+                              'link': link,
+                              'title': title,
+                              'published': formatted_published,
+                              'description': description_cleaned
+                          }
 
-                      if date_key not in date_grouped_records:
-                          date_grouped_records[date_key] = []
-                      date_grouped_records[date_key].append(json_entry)
+                          if date_key not in date_grouped_records:
+                              date_grouped_records[date_key] = []
+                          date_grouped_records[date_key].append(json_entry)
+
+                      except AttributeError as e:
+                          print(f"Missing expected element in item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+                      except Exception as e:
+                          print(f"General error processing item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
 
                   s3_client = boto3.client('s3')
 
