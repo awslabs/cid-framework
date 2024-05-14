@@ -269,6 +269,7 @@ Conditions:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
       - !Condition DeployCostOptimizationHubModule
+      - !Condition DeployHealthEventsModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -1148,11 +1149,6 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v1, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-        RegionsInScope:
-          Fn::If:
-            - RegionsInScopeIsEmpty
-            - !Sub "${AWS::Region}"
-            - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
 
   AccountCollector:
     Type: AWS::CloudFormation::Stack
