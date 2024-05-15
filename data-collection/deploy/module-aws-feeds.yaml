@@ -35,9 +35,6 @@ Parameters:
   CodeBucket:
     Type: String
     Description: Source code bucket
-  AccountCollectorLambdaARN:
-    Type: String
-    Description: Arn of the Account Collector Lambda
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
@@ -752,7 +749,6 @@ Resources:
         Bucket: !Ref CodeBucket
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionWhatsNew.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Whats-New-Crawler"]'
         CollectionType: "LINKED"
@@ -772,7 +768,6 @@ Resources:
         Bucket: !Ref CodeBucket
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionBlogPost.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Blog-Post-Crawler"]'
         CollectionType: "LINKED"
@@ -792,7 +787,6 @@ Resources:
         Bucket: !Ref CodeBucket
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionYouTube.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-YouTube-Crawler"]'
         CollectionType: "LINKED"
@@ -812,7 +806,6 @@ Resources:
         Bucket: !Ref CodeBucket
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
-        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunctionSecurityBulletin.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler"]'
         CollectionType: "LINKED"

@@ -1,0 +1,43 @@
+{
+    "Comment": "Orchestrate the collection of ${Module} data",
+    "StartAt": "AWSFeedsLambdaInvoke",
+    "States": {
+      "AWSFeedsLambdaInvoke": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "Payload": {
+            "Type": "${CollectionType}"
+          },
+          "FunctionName": "${ModuleLambdaARN}"
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException",
+              "Lambda.TooManyRequestsException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "Next": "CrawlerStepFunctionStartExecution",
+        "ResultPath": "$.accountLambdaOutput"
+      },
+      "CrawlerStepFunctionStartExecution": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::states:startExecution.sync:2",
+        "Parameters": {
+          "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+          "Input": {
+            "crawlers": ${Crawlers}
+          }
+        },
+        "End": true
+      }
+    },
+    "TimeoutSeconds": 1200
+  }

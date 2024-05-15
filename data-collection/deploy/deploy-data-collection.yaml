@@ -102,6 +102,7 @@ Mappings:
   StepFunctionCode:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
+    awsfeeds:       {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine.json}
 
 Parameters:
   DestinationBucket:
@@ -269,7 +270,6 @@ Conditions:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
       - !Condition DeployCostOptimizationHubModule
-    - !Condition DeployAWSFeedsModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -1144,9 +1144,8 @@ Resources:
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v1, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
