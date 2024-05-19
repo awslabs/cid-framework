@@ -44,7 +44,8 @@ def clean_bucket(s3, s3client, account_id, full=True):
                     logger.info(f"{age_mins} mins old. deleting {obj['Key']}")
                     s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
-        logger.exception(exc)
+        if 'NoSuchBucket' not in str(exc):
+            logger.exception(exc)
 
     for region in REGIONS.split(','):
         try:
