@@ -358,6 +358,10 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-optimization-hub-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Blog-Post-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Whats-New-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []
