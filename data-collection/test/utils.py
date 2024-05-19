@@ -2,7 +2,6 @@
 import json
 import time
 import logging
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -133,14 +132,14 @@ def watch_stacks(cloudformation, stack_names = None):
         time.sleep(5)
 
 
-def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[dict]):
+def deploy_stack(cloudformation, stack_name: str, url: str, parameters: list[dict]):
 
     options = dict(
         StackName=stack_name,
         Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
-        TemplateBody=file.open().read(),
+        TemplateURL=url,
         Parameters=parameters,
     )
 
@@ -167,13 +166,13 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
         logger.error(exc)
         raise
 
-def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket):
+def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
 
     deploy_stack(
         cloudformation=cloudformation,
         stack_name=f'{PREFIX}OptimizationDataReadPermissionsStack',
-        file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
+        url=f'https://{bucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-read-permissions.yaml',
         parameters=[
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'DataCollectionAccountID',         'ParameterValue': account_id},
@@ -199,7 +198,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
     deploy_stack(
         cloudformation=cloudformation,
         stack_name=f'{PREFIX}OptimizationDataCollectionStack',
-        file=root / 'deploy' / 'deploy-data-collection.yaml',
+        url=f'https://{bucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'RegionsInScope',                  'ParameterValue': REGIONS},
@@ -218,6 +217,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
@@ -403,7 +403,6 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
         pass
 
 def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
-    root = Path(__file__).parent.parent
-    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, root=root, bucket=bucket)
+    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
     clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)
