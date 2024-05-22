@@ -750,7 +750,7 @@ Resources:
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunctionWhatsNew.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Whats-New-Crawler"]'
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-Crawler'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -769,7 +769,7 @@ Resources:
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunctionBlogPost.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Blog-Post-Crawler"]'
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-Crawler'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -788,7 +788,7 @@ Resources:
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunctionYouTube.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-YouTube-Crawler"]'
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-YouTube-Crawler'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName
@@ -807,7 +807,7 @@ Resources:
         Key: !Ref StepFunctionTemplate
       DefinitionSubstitutions:
         ModuleLambdaARN: !GetAtt LambdaFunctionSecurityBulletin.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler"]'
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler'
         CollectionType: "LINKED"
         Params: ''
         Module: !Ref CFDataName

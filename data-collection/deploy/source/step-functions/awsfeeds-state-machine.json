@@ -1,43 +1,94 @@
 {
-    "Comment": "Orchestrate the collection of ${Module} data",
-    "StartAt": "AWSFeedsLambdaInvoke",
-    "States": {
-      "AWSFeedsLambdaInvoke": {
-        "Type": "Task",
-        "Resource": "arn:aws:states:::lambda:invoke",
-        "Parameters": {
-          "Payload": {
-            "Type": "${CollectionType}"
-          },
-          "FunctionName": "${ModuleLambdaARN}"
-        },
-        "Retry": [
-          {
-            "ErrorEquals": [
-              "Lambda.ServiceException",
-              "Lambda.AWSLambdaException",
-              "Lambda.SdkClientException",
-              "Lambda.TooManyRequestsException"
-            ],
-            "IntervalSeconds": 2,
-            "MaxAttempts": 6,
-            "BackoffRate": 2
-          }
-        ],
-        "Next": "CrawlerStepFunctionStartExecution",
-        "ResultPath": "$.accountLambdaOutput"
+  "Comment": "A description of my state machine",
+  "StartAt": "Lambda Invoke",
+  "States": {
+    "Lambda Invoke": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "FunctionName": "${ModuleLambdaARN}"
       },
-      "CrawlerStepFunctionStartExecution": {
-        "Type": "Task",
-        "Resource": "arn:aws:states:::states:startExecution.sync:2",
-        "Parameters": {
-          "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
-          "Input": {
-            "crawlers": ${Crawlers}
-          }
-        },
-        "End": true
-      }
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "GetCrawler1"
     },
-    "TimeoutSeconds": 1200
+    "GetCrawler1": {
+      "Type": "Task",
+      "Parameters": {
+        "Name": "${Crawler}"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+      "Next": "Choice1",
+      "OutputPath": "$.Crawler"
+    },
+    "Choice1": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Not": {
+            "Variable": "$.State",
+            "StringEquals": "READY"
+          },
+          "Next": "Wait for Crawler to be ready"
+        }
+      ],
+      "Default": "StartCrawler"
+    },
+    "Wait for Crawler to be ready": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "GetCrawler1"
+    },
+    "StartCrawler": {
+      "Type": "Task",
+      "Parameters": {
+        "Name": "${Crawler}"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "Next": "Wait for Crawler Execution"
+    },
+    "Wait for Crawler Execution": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "GetCrawler2"
+    },
+    "GetCrawler2": {
+      "Type": "Task",
+      "Parameters": {
+        "Name": "${Crawler}"
+      },
+      "Resource": "arn:aws:states:::aws-sdk:glue:getCrawler",
+      "Next": "Choice2",
+      "OutputPath": "$.Crawler"
+    },
+    "Choice2": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Not": {
+            "Variable": "$.State",
+            "StringEquals": "READY"
+          },
+          "Next": "Wait for Crawler Execution"
+        }
+      ],
+      "Default": "Completed"
+    },
+    "Completed": {
+      "Type": "Pass",
+      "End": true
+    }
   }
+}
