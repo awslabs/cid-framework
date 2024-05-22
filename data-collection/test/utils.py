@@ -2,7 +2,6 @@
 import json
 import time
 import logging
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -45,7 +44,8 @@ def clean_bucket(s3, s3client, account_id, full=True):
                     logger.info(f"{age_mins} mins old. deleting {obj['Key']}")
                     s3client.delete_object(Bucket=bucket_name, Key=obj['Key'])
     except Exception as exc:
-        logger.exception(exc)
+        if 'NoSuchBucket' not in str(exc):
+            logger.exception(exc)
 
     for region in REGIONS.split(','):
         try:
@@ -133,14 +133,14 @@ def watch_stacks(cloudformation, stack_names = None):
         time.sleep(5)
 
 
-def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[dict]):
+def deploy_stack(cloudformation, stack_name: str, url: str, parameters: list[dict]):
 
     options = dict(
         StackName=stack_name,
         Capabilities=['CAPABILITY_IAM', 'CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         Tags=[ {'Key': 'branch', 'Value': 'branch'},],
         NotificationARNs=[],
-        TemplateBody=file.open().read(),
+        TemplateURL=url,
         Parameters=parameters,
     )
 
@@ -167,13 +167,13 @@ def deploy_stack(cloudformation, stack_name: str, file: Path, parameters: list[d
         logger.error(exc)
         raise
 
-def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket):
+def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
     logger.info(f"account_id={account_id} region={boto3.session.Session().region_name}")
 
     deploy_stack(
         cloudformation=cloudformation,
         stack_name=f'{PREFIX}OptimizationDataReadPermissionsStack',
-        file=root / 'deploy' / 'deploy-data-read-permissions.yaml',
+        url=f'https://{bucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-read-permissions.yaml',
         parameters=[
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'DataCollectionAccountID',         'ParameterValue': account_id},
@@ -199,7 +199,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
     deploy_stack(
         cloudformation=cloudformation,
         stack_name=f'{PREFIX}OptimizationDataCollectionStack',
-        file=root / 'deploy' / 'deploy-data-collection.yaml',
+        url=f'https://{bucket}.s3.amazonaws.com/cfn/data-collection/deploy-data-collection.yaml',
         parameters=[
             {'ParameterKey': 'CFNSourceBucket',                 'ParameterValue': bucket},
             {'ParameterKey': 'RegionsInScope',                  'ParameterValue': REGIONS},
@@ -218,6 +218,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, root, bucket)
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
@@ -357,6 +358,10 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-optimization-hub-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Blog-Post-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Whats-New-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []
@@ -403,7 +408,6 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
         pass
 
 def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
-    root = Path(__file__).parent.parent
-    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, root=root, bucket=bucket)
+    initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
     clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
     trigger_update(account_id=account_id)

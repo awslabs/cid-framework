@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.0.6
+Description: CID Data Collection - All-in-One for Management Account v3.0.8
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
