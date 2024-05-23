@@ -230,7 +230,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          BUCKET_PATH: "aws-feeds/aws-feeds-whats_new"
+          BUCKET_PATH: "aws-feeds/aws-feeds-whats-new"
           FEED_URL: "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
     Metadata:
       cfn_nag:
@@ -358,7 +358,7 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          BUCKET_PATH: "aws-feeds/aws-feeds-blog_post"
+          BUCKET_PATH: "aws-feeds/aws-feeds-blog-post"
           FEED_URL: "https://aws.amazon.com/blogs/aws/feed/"
     Metadata:
       cfn_nag:
