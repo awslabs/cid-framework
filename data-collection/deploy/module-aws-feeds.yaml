@@ -703,7 +703,7 @@ Resources:
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-whats_new/"
+          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-whats-new/"
       Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
 
   CrawlerBlogPost:
@@ -714,7 +714,7 @@ Resources:
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-blog_post/"
+          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-blog-post/"
       Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
 
   CrawlerYoutTube:
