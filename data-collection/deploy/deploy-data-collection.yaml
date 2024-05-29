@@ -102,7 +102,7 @@ Mappings:
   StepFunctionCode:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
-    awsfeeds:       {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine.json}
+    awsfeeds-v1:       {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
 
 Parameters:
   DestinationBucket:
@@ -1145,7 +1145,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds-v1, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
