@@ -31,6 +31,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeAWSFeedsModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -76,6 +77,8 @@ Metadata:
         default: 'Include AWS Backup Collection Module'
       IncludeCostOptimizationHubModule:
         default: 'Include CostOptimizationHub Module'
+      IncludeAWSFeedsModule:
+        default: 'Include AWS Feeds Module'
 
 Mappings:
   RegionMap:
@@ -99,6 +102,7 @@ Mappings:
   StepFunctionCode:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
+    awsfeeds-v1:       {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
 
 Parameters:
   DestinationBucket:
@@ -216,6 +220,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeAWSFeedsModule:
+    Type: String
+    Description: Collects AWS Feeds data
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Outputs:
   S3Bucket:
@@ -241,6 +251,7 @@ Conditions:
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
   DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
+  DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -753,7 +764,7 @@ Resources:
                 Action:
                   - glue:StartCrawler
                   - glue:GetCrawler
-                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler'
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler*'
         - PolicyName: InvokeCollectionLambda
           PolicyDocument:
             Version: 2012-10-17
@@ -1120,6 +1131,23 @@ Resources:
             - RegionsInScopeIsEmpty
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
+
+  AWSFeedsModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployAWSFeedsModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-aws-feeds.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        Schedule: !Ref Schedule
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds-v1, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   AccountCollector:
     Type: AWS::CloudFormation::Stack
