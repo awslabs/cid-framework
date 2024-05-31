@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, AWSLambda
     Description: Services for pulling price data
 
 Mappings:
@@ -1004,6 +1004,12 @@ Resources:
                       paginated_scan,
                       service='ec2',
                       function_name='describe_vpcs'
+                  ),
+                  'lambda' : partial(
+                    paginated_scan,
+                    service='lambda',
+                    function_name='list_functions',
+                    obj_name='Functions[*]'
                   ),
                   'eks': eks_clusters_scan
               }
