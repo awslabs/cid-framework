@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.0.6
+Description: CID Data Collection Stack v3.0.7
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -32,6 +32,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeAWSFeedsModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -77,6 +78,8 @@ Metadata:
         default: 'Include AWS Backup Collection Module'
       IncludeCostOptimizationHubModule:
         default: 'Include CostOptimizationHub Module'
+      IncludeAWSFeedsModule:
+        default: 'Include AWS Feeds Module'
       IncludeHealthEventsModule:
         default: 'Include AWS Health Events Module'
 
@@ -102,6 +105,7 @@ Mappings:
   StepFunctionCode:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
+    awsfeeds-v1:       {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
 
 Parameters:
   DestinationBucket:
@@ -127,7 +131,7 @@ Parameters:
     Default: "rate(14 days)"
   ScheduleFrequent:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Cost Anomalies, and Budgets modules (see docs for tailoring the schedule for each module).
+    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, and Health Events modules (see docs for tailoring the schedule for each module).
     Default: "rate(1 day)"
   RegionsInScope:
     Type: String
@@ -219,6 +223,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeAWSFeedsModule:
+    Type: String
+    Description: Collects AWS Feeds data
+    AllowedValues:
+      - "yes"
+      - "no"
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events data
@@ -250,6 +260,7 @@ Conditions:
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
   DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
+  DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
@@ -764,7 +775,7 @@ Resources:
                 Action:
                   - glue:StartCrawler
                   - glue:GetCrawler
-                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler'
+                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler*'
         - PolicyName: InvokeCollectionLambda
           PolicyDocument:
             Version: 2012-10-17
@@ -1132,6 +1143,23 @@ Resources:
             - !Sub "${AWS::Region}"
             - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
 
+  AWSFeedsModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployAWSFeedsModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-aws-feeds.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        Schedule: !Ref Schedule
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds-v1, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
   HealthEventsModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployHealthEventsModule
@@ -1140,6 +1168,7 @@ Resources:
       Parameters:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        Schedule: !Ref ScheduleFrequent
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix

@@ -1,0 +1,923 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Restrieves AWS Feeds like what's new, blog posts, youtube videos and security bulletin
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created
+    Default: optimization_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold AWS feed data
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold AWS feed data
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: aws-feeds
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the AWS feed data retrieval
+    Default: "rate(1 days)"
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  StepFunctionTemplate:
+    Type: String
+    Description: S3 key to the JSON template for the StepFunction
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+
+Resources:
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: "S3Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  LambdaFunctionWhatsNew:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName} What's New"
+      Runtime: python3.12
+      Architectures: [arm64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import xml.etree.ElementTree as ET  # nosec
+          from html.parser import HTMLParser
+          from dateutil.parser import parse
+          import boto3
+
+          def clean_html(html_content):
+              result = ""
+              urls = []
+              ref_index = [1]
+
+              class SimpleHTMLParser(HTMLParser):
+                  def handle_starttag(self, tag, attrs):
+                      nonlocal result
+                      if tag == 'a':
+                          href = next((value for attr, value in attrs if attr == 'href'), None)
+                          if href:
+                              if href.startswith('/'):
+                                  href = f"https://aws.amazon.com{href}"
+                              urls.append(href)
+                              self.last_href_index = len(result)
+
+                  def handle_endtag(self, tag):
+                      nonlocal result
+                      if tag == 'a':
+                          result = result[:self.last_href_index] + f"[{ref_index[0]}] " + result[self.last_href_index:]
+                          ref_index[0] += 1
+
+                  def handle_data(self, data):
+                      nonlocal result
+                      result += data
+
+              parser = SimpleHTMLParser()
+              parser.feed(html_content)
+
+              for i, url in enumerate(urls, start=1):
+                  result += f"\n[{i}] {url}"
+              
+              return result
+
+          def lambda_handler(event, context):
+              feed_url = os.environ['FEED_URL']
+              bucket_name = os.environ['BUCKET_NAME']
+              bucket_path = os.environ.get('BUCKET_PATH', '')
+
+              try:
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
+                      feed_data = response.read().decode('utf-8')
+
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in feed_data:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  s3 = boto3.client('s3')
+                  root = ET.fromstring(feed_data)  # nosec
+
+                  date_grouped_records = {}
+
+                  for item in root.findall('.//item'):
+                      try:
+                          link = item.find('link').text
+                          title = item.find('title').text
+                          description = item.find('description').text
+                          pubDate = item.find('pubDate').text
+                          category = item.find('category').text
+
+                          # Parsing and formatting pubDate to ISO 8601 format
+                          pubDate_datetime = parse(pubDate)
+                          formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+                          year, month, day = formatted_date[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
+                          description_cleaned = clean_html(description)
+
+                          categories = category.split(',')
+                          services = []
+                          category_values = []
+
+                          for cat in categories:
+                              if cat.startswith('general:products/'):
+                                  services.append(cat.replace('general:products/', ''))
+                              elif cat.startswith('marketing:marchitecture/'):
+                                  category_values.append(cat.replace('marketing:marchitecture/', ''))
+
+                          for service in services:
+                              for category_value in category_values:
+                                  json_record = {
+                                      'link': link,
+                                      'title': title,
+                                      'description': description_cleaned,
+                                      'date': formatted_date,
+                                      'service': service,
+                                      'category': category_value
+                                  }
+                                  if date_key not in date_grouped_records:
+                                      date_grouped_records[date_key] = []
+                                  date_grouped_records[date_key].append(json_record)
+                      
+                      except Exception as e:
+                          print(f"Error processing item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+
+                  for date_key, records in date_grouped_records.items():
+                      year, month, day = date_key.split('-')
+                      json_lines = '\n'.join(json.dumps(record) for record in records)
+                      s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/whats_new.jsonl'
+                      s3.put_object(Body=json_lines, Bucket=bucket_name, Key=s3_key)
+
+                  return {
+                      'statusCode': 200,
+                      'body': f'Feed downloaded and grouped by date then uploaded to S3 bucket {bucket_name}'
+                  }
+
+              except urllib.error.URLError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error downloading feed: {str(e)}'
+                  }
+              except ET.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error parsing XML: {str(e)}'
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error uploading to S3: {str(e)}'
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error processing feed: {str(e)}'
+                  }
+      Handler: 'index.lambda_handler'
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          BUCKET_PATH: "aws-feeds/aws-feeds-whats-new"
+          FEED_URL: "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LambdaFunctionBlogPost:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName} Blog Posts"
+      Runtime: python3.12
+      Architectures: [arm64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import xml.etree.ElementTree as ET  # nosec
+          import boto3
+          from dateutil.parser import parse, ParserError
+
+          def lambda_handler(event, context):
+              url = os.environ['FEED_URL']
+              bucket_name = os.environ['BUCKET_NAME']
+              bucket_path = os.environ.get('BUCKET_PATH', '')
+
+              try:
+                  with urllib.request.urlopen(url, timeout=10) as response:  # nosec
+                      xml_data = response.read().decode('utf-8')
+
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in xml_data:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  root = ET.fromstring(xml_data)  # nosec
+
+                  date_grouped_records = {}
+
+                  for item in root.findall('.//item'):
+                      try:
+                          title = item.find('title').text
+                          link = item.find('link').text
+                          description = item.find('description').text
+                          pubDate = item.find('pubDate').text
+
+                          # Parsing and formatting pubDate to ISO 8601 format
+                          try:
+                              pubDate_datetime = parse(pubDate)
+                              formatted_date = pubDate_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          except ParserError as e:
+                              print(f"Error parsing date: {pubDate}. Exception: {str(e)}")
+                              continue
+
+                          year, month, day = formatted_date[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
+
+                          creator_element = item.find('{http://purl.org/dc/elements/1.1/}creator')
+                          creator = creator_element.text.strip() if creator_element is not None else None
+
+                          categories = item.findall('category')
+                          for category in categories:
+                              json_data = {
+                                  'title': title,
+                                  'link': link,
+                                  'description': description,
+                                  'date': formatted_date,  # Using the formatted date
+                                  'creator': creator,
+                                  'category': category.text.strip()
+                              }
+                              if date_key not in date_grouped_records:
+                                  date_grouped_records[date_key] = []
+                              date_grouped_records[date_key].append(json_data)
+
+                      except AttributeError as e:
+                          print(f"Missing expected element in item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+                      except Exception as e:
+                          print(f"General error processing item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+
+                  s3_client = boto3.client('s3')
+
+                  for date_key, records in date_grouped_records.items():
+                      year, month, day = date_key.split('-')
+                      json_lines = '\n'.join(json.dumps(record) for record in records)
+                      s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/blog_post.jsonl'
+                      s3_client.put_object(Body=json_lines, Bucket=bucket_name, Key=s3_key)
+
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps('XML data successfully stored in S3.')
+                  }
+
+              except urllib.error.URLError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error fetching XML data: {str(e)}')
+                  }
+              except ET.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error parsing XML data: {str(e)}')
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error uploading to S3: {str(e)}')
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps(f'Error: {str(e)}')
+                  }
+
+      Handler: 'index.lambda_handler'
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          BUCKET_PATH: "aws-feeds/aws-feeds-blog-post"
+          FEED_URL: "https://aws.amazon.com/blogs/aws/feed/"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LambdaFunctionYouTube:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-YouTube-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName} AWS YouTube Videos"
+      Runtime: python3.12
+      Architectures: [arm64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import xml.etree.ElementTree as ET  # nosec
+          import boto3
+          from dateutil.parser import parse, ParserError
+
+          def lambda_handler(event, context):
+              feed_url = os.environ['FEED_URL']
+              destination_bucket = os.environ['BUCKET_NAME']
+              bucket_path = os.environ.get('BUCKET_PATH', '')
+
+              try:
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
+                      xml_content = response.read().decode('utf-8')
+
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in xml_content:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  root = ET.fromstring(xml_content)  # nosec
+
+                  ns = {
+                      'atom': 'http://www.w3.org/2005/Atom',
+                      'yt': 'http://www.youtube.com/xml/schemas/2015',
+                      'media': 'http://search.yahoo.com/mrss/'
+                  }
+
+                  youtube_video_base_url = "https://www.youtube.com/watch?v="
+
+                  date_grouped_records = {}
+                  for entry in root.findall('atom:entry', ns):
+                      try:
+                          video_id_value = entry.find('yt:videoId', ns).text
+                          video_url = youtube_video_base_url + video_id_value
+                          title = entry.find('atom:title', ns).text
+                          published = entry.find('atom:published', ns).text
+
+                          # Parsing and formatting published date to ISO 8601 format
+                          try:
+                              published_datetime = parse(published)
+                              formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          except ParserError as e:
+                              print(f"Error parsing date: {published}. Exception: {str(e)}")
+                              continue
+
+                          year, month, day = formatted_published[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
+
+                          description_element = entry.find('media:group/media:description', ns)
+                          description = description_element.text if description_element is not None else 'No description available'
+
+                          star_rating_element = entry.find('media:group/media:community/media:starRating', ns)
+                          statistics_element = entry.find('media:group/media:community/media:statistics', ns)
+
+                          star_rating_count = star_rating_element.get('count') if star_rating_element is not None else '0'
+                          star_rating_average = star_rating_element.get('average') if star_rating_element is not None else '0.0'
+                          star_rating_min = star_rating_element.get('min') if star_rating_element is not None else '0'
+                          star_rating_max = star_rating_element.get('max') if star_rating_element is not None else '0'
+
+                          views = statistics_element.get('views') if statistics_element is not None else '0'
+
+                          json_entry = {
+                              'video_url': video_url,
+                              'title': title,
+                              'published': formatted_published,  # Correctly formatted date
+                              'description': description,
+                              'star_rating_count': star_rating_count,
+                              'star_rating_average': star_rating_average,
+                              'star_rating_min': star_rating_min,
+                              'star_rating_max': star_rating_max,
+                              'views': views
+                          }
+
+                          if date_key not in date_grouped_records:
+                              date_grouped_records[date_key] = []
+                          date_grouped_records[date_key].append(json_entry)
+
+                      except AttributeError as e:
+                          print(f"Missing expected element in entry: {ET.tostring(entry, encoding='unicode')}. Exception: {str(e)}")
+                      except Exception as e:
+                          print(f"General error processing entry: {ET.tostring(entry, encoding='unicode')}. Exception: {str(e)}")
+
+                  s3_client = boto3.client('s3')
+
+                  for date_key, records in date_grouped_records.items():
+                      year, month, day = date_key.split('-')
+                      json_lines = '\n'.join(json.dumps(record) for record in records)
+                      s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/youtube.jsonl'
+                      s3_client.put_object(Body=json_lines, Bucket=destination_bucket, Key=s3_key)
+
+                  return {
+                      'statusCode': 200,
+                      'body': 'XML parsed and JSON lines stored successfully'
+                  }
+
+              except urllib.error.URLError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error fetching XML data: {str(e)}'
+                  }
+              except ET.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error parsing XML data: {str(e)}'
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error uploading to S3: {str(e)}'
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error: {str(e)}'
+                  }
+      Handler: 'index.lambda_handler'
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          BUCKET_PATH: "aws-feeds/aws-feeds-youtube"
+          FEED_URL: "https://www.youtube.com/feeds/videos.xml?channel_id=UCd6MoB9NC6uYN2grvUNT-Zg"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LambdaFunctionSecurityBulletin:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-SecurityBulletin-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName} AWS Security Bulletin"
+      Runtime: python3.12
+      Architectures: [arm64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import urllib.request
+          import xml.etree.ElementTree as ET  # nosec
+          from html.parser import HTMLParser
+          import boto3
+          from dateutil.parser import parse, ParserError
+
+          def clean_html(html_content):
+              result = ""
+              urls = []
+              ref_index = [1]
+
+              class SimpleHTMLParser(HTMLParser):
+                  def handle_starttag(self, tag, attrs):
+                      nonlocal result
+                      if tag == 'a':
+                          href = next((value for attr, value in attrs if attr == 'href'), None)
+                          if href:
+                              if href.startswith('/'):
+                                  href = f"https://aws.amazon.com{href}"
+                              urls.append(href)
+                              self.last_href_index = len(result)
+
+                  def handle_endtag(self, tag):
+                      nonlocal result
+                      if tag == 'a':
+                          result = result[:self.last_href_index] + f"[{ref_index[0]}] " + result[self.last_href_index:]
+                          ref_index[0] += 1
+
+                  def handle_data(self, data):
+                      nonlocal result
+                      result += data
+
+              parser = SimpleHTMLParser()
+              parser.feed(html_content)
+
+              for i, url in enumerate(urls, start=1):
+                  result += f"\n[{i}] {url}"
+              
+              return result
+
+          def lambda_handler(event, context):
+              feed_url = os.environ['FEED_URL']
+              destination_bucket = os.environ['BUCKET_NAME']
+              bucket_path = os.environ.get('BUCKET_PATH', '')
+
+              try:
+                  with urllib.request.urlopen(feed_url, timeout=10) as response:  # nosec
+                      xml_content = response.read().decode('utf-8')
+
+                  malicious_strings = ['!ENTITY', ':include']
+                  for string in malicious_strings:
+                      if string in xml_content:
+                          return {
+                              'statusCode': 400,
+                              'body': f'Malicious content detected in the XML feed: {string}'
+                          }
+
+                  root = ET.fromstring(xml_content)  # nosec
+
+                  date_grouped_records = {}
+                  for item in root.findall('./channel/item'):
+                      try:
+                          link = item.find('link').text
+                          title = item.find('title').text
+                          description = item.find('description').text.strip()
+                          published = item.find('pubDate').text
+
+                          # Parsing and formatting published date to ISO 8601 format
+                          try:
+                              published_datetime = parse(published)
+                              formatted_published = published_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+                          except ParserError as e:
+                              print(f"Error parsing date: {published}. Exception: {str(e)}")
+                              continue
+
+                          year, month, day = formatted_published[:10].split('-')
+                          date_key = f"{year}-{month}-{day}"
+
+                          description_cleaned = clean_html(description)
+
+                          json_entry = {
+                              'link': link,
+                              'title': title,
+                              'published': formatted_published,
+                              'description': description_cleaned
+                          }
+
+                          if date_key not in date_grouped_records:
+                              date_grouped_records[date_key] = []
+                          date_grouped_records[date_key].append(json_entry)
+
+                      except AttributeError as e:
+                          print(f"Missing expected element in item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+                      except Exception as e:
+                          print(f"General error processing item: {ET.tostring(item, encoding='unicode')}. Exception: {str(e)}")
+
+                  s3_client = boto3.client('s3')
+
+                  for date_key, records in date_grouped_records.items():
+                      year, month, day = date_key.split('-')
+                      json_lines = '\n'.join(json.dumps(record) for record in records)
+                      s3_key = f'{bucket_path}/year={year}/month={month}/day={day}/security_bulletins.jsonl'
+                      s3_client.put_object(Body=json_lines, Bucket=destination_bucket, Key=s3_key)
+
+                  return {
+                      'statusCode': 200,
+                      'body': 'XML parsed and JSON lines stored successfully'
+                  }
+
+              except urllib.error.URLError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error fetching XML data: {str(e)}'
+                  }
+              except ET.ParseError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error parsing XML data: {str(e)}'
+                  }
+              except boto3.exceptions.S3UploadFailedError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error uploading to S3: {str(e)}'
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': f'Error: {str(e)}'
+                  }
+      Handler: 'index.lambda_handler'
+      MemorySize: 256
+      Timeout: 60
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          BUCKET_PATH: "aws-feeds/aws-feeds-security-bulletin"
+          FEED_URL: "	https://aws.amazon.com/security/security-bulletins/rss/feed/"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LogGroupWhatsNew:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionWhatsNew}"
+      RetentionInDays: 60
+
+  LogGroupBlogPost:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionBlogPost}"
+      RetentionInDays: 60
+
+  LogGroupYouTube:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionYouTube}"
+      RetentionInDays: 60
+
+  LogGroupSecurityBulletin:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunctionSecurityBulletin}"
+      RetentionInDays: 60
+
+  CrawlerWhatsNew:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-whats-new/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  CrawlerBlogPost:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-blog-post/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  CrawlerYoutTube:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-YouTube-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-youtube/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  CrawlerSecurityBulletin:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/aws-feeds/aws-feeds-security-bulletin/"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
+
+  ModuleStepFunctionWhatsNew:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunctionWhatsNew.Arn
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-Crawler'
+        CollectionType: "LINKED"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleStepFunctionBlogPost:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunctionBlogPost.Arn
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-Crawler'
+        CollectionType: "LINKED"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleStepFunctionYouTube:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-YouTube-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunctionYouTube.Arn
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-YouTube-Crawler'
+        CollectionType: "LINKED"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleStepFunctionSecurityBulletin:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunctionSecurityBulletin.Arn
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-Crawler'
+        CollectionType: "LINKED"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshScheduleWhatsNew:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} Whats New module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Whats-New-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunctionWhatsNew.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  ModuleRefreshScheduleBlogPost:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} Blog Post module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Blog-Post-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunctionBlogPost.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  ModuleRefreshScheduleYouTube:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} AWS YouTube module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-YouTube-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunctionYouTube.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  ModuleRefreshScheduleSecurityBulletin:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} AWS Security Bulletin module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Security-Bulletin-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunctionSecurityBulletin.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  AWSFeedsAthenaNamedQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Name: !Sub '${ResourcePrefix}${CFDataName}-AWSFeedsAthenaNamedQuery'
+      QueryString: |
+        CREATE OR REPLACE VIEW aws_feeds AS
+        SELECT
+          date as published,
+          'blog_post' AS feed_type,
+          title,
+          link as url,
+          category
+        FROM aws_feeds_blog_post
+
+        UNION
+
+        SELECT
+          published,
+          'security_bulletin' AS feed_type,
+          title,
+          link as url,
+          'security_bulletins' AS category
+        FROM aws_feeds_security_bulletin
+
+        UNION
+
+        SELECT
+          date as published,
+          'whats_new' AS feed_type,
+          title,
+          link as url,
+          category
+        FROM aws_feeds_whats_new
+
+        UNION
+
+        SELECT
+          published,
+          'youtube' AS feed_type,
+          title,
+          video_url AS url,
+          'video' AS category
+        FROM aws_feeds_youtube
+
+  AnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName

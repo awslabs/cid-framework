@@ -173,3 +173,7 @@ scratch/
 migration_log.csv
 # Pylint custom script temporal folder
 .tmp
+
+data-collection/lambda-layers/python/
+data-collection/lambda-layers/layer.zip
+data-collection/test/clean-html.py
