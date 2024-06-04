@@ -25,6 +25,7 @@ Metadata:
           - IncludeCostAnomalyModule
           - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
+          - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
           - IncludeOrgDataModule
           - IncludeRDSUtilizationModule
@@ -79,6 +80,8 @@ Metadata:
         default: 'Include CostOptimizationHub Module'
       IncludeAWSFeedsModule:
         default: 'Include AWS Feeds Module'
+      IncludeHealthEventsModule:
+        default: 'Include AWS Health Events Module'
 
 Mappings:
   RegionMap:
@@ -128,7 +131,7 @@ Parameters:
     Default: "rate(14 days)"
   ScheduleFrequent:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Cost Anomalies, and Budgets modules (see docs for tailoring the schedule for each module).
+    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, and Health Events modules (see docs for tailoring the schedule for each module).
     Default: "rate(1 day)"
   RegionsInScope:
     Type: String
@@ -226,6 +229,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthEventsModule:
+    Type: String
+    Description: Collects AWS Health Events data
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Outputs:
   S3Bucket:
@@ -252,6 +261,7 @@ Conditions:
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
   DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
+  DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -270,6 +280,7 @@ Conditions:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
       - !Condition DeployCostOptimizationHubModule
+      - !Condition DeployHealthEventsModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -1146,6 +1157,25 @@ Resources:
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
         StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds-v1, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+  HealthEventsModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployHealthEventsModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health-events.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        Schedule: !Ref ScheduleFrequent
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v1, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
