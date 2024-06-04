@@ -158,5 +158,10 @@ def test_cost_optimization_hub_detail_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_detail_data" LIMIT 10;')
     assert len(data) > 0, 'cost_optimization_hub_detail_data is empty'
 
+def test_health_events_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."health_events_detail_data" LIMIT 10;')
+    assert len(data) > 0, 'health_events_detail_data is empty'
+
+
 if __name__ == '__main__':
     pytest.main()

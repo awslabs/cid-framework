@@ -22,6 +22,7 @@ Metadata:
           - IncludeCostAnomalyModule
           - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
+          - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
           - IncludeRDSUtilizationModule
           - IncludeRightsizingModule
@@ -64,6 +65,8 @@ Metadata:
         default: "Include AWS Backup Collection Module"
       IncludeCostOptimizationHubModule:
         default: "Include Cost Optimization Hub Module"
+      IncludeHealthEventsModule:
+        default: "Include AWS Health Events Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -160,6 +163,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeHealthEventsModule:
+    Type: String
+    Description: Collects AWS Health Events from your accounts
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -178,6 +187,7 @@ Resources:
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
+        IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
