@@ -83,7 +83,11 @@ def test_inventory_vpc_data(athena):
 
 def test_inventory_rds_snaphot_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_rds_db_snapshots_data" LIMIT 10;')
-    assert len(data) > 0, 'inventory_vpc_data is empty'
+    assert len(data) > 0, 'inventory_rds_db_snapshots_data is empty'
+
+def test_inventory_lambda_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_awslambda_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory_lambda_data is empty'
 
 def test_rds_usage_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_usage_data" LIMIT 10;')
@@ -136,6 +140,10 @@ def test_pricing_opensearch_data(athena):
 def test_pricing_rds_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_rds_data" LIMIT 10;')
     assert len(data) > 0, 'pricing_rds_data is empty'
+
+def test_pricing_lambda_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_awslambda_data" LIMIT 10;')
+    assert len(data) > 0, 'pricing_awslambda_data is empty'
 
 def test_pricing_regionnames_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_regionnames_data" LIMIT 10;')
