@@ -848,8 +848,6 @@ Mappings:
               Type: string    
             - Name: region
               Type: string
-            - Name: environment
-              Type: struct<variables:struct<prefix:string,costonly:string,rolename:string,bucket_name:string,sendanonymousmetrics:string,metricsid:string,log_level:string,management_account_ids:string,include_member_accounts:string,regions:string,bucket_prefix:string,role_name:string,s3bucketname:string,cid_analytics_endpoint:string,email_subject:string,health_event_type:string,to_email:string,dynamodb_table:string,org_status:string,event_search_back:string,from_email:string,log_level:string,resource_prefix:string,database_name:string,targetlang:string,costselected:string,sagemakerendpoint:string,dynamodbname:string,trigger_lambda:string,stepfunctionarn:string,days:string,account_info_bucket:string,springclean_function_name:string,pvre_enabled:string,springclean_update_role:string,stage:string,aws_account_id:string,springclean_stack_name:string,code_bucket:string,code_prefix:string,detail_throttle:string,need_detailed:string,detail_sm_arn:string,athenaoutput:string,s3bucket:string,s3keyprefix:string,athenadb:string,spill_prefix:string,disable_spill_encryption:string,spill_bucket:string,ctrmodifieds3folder:string,dest_prefix:string,rds_graviton_path:string,delete_age:string,service_endpoint:string,ddb_table:string,grace_period:string,loglevel_boto:string,warn_age:string,email:string,whitelist_prefix:string,stack_name:string,control_key:string,version:string,max_deletable_res:string,loglevel:string,inc_support:string,s3_bucket:string,account_label:string,ses_from:string,ses_send:string,inc_tax:string,ses_region:string,cost_tags:string,current_month:string,eventhealthbusname:string,api_endpoint:string,account_id:string,crawler_name:string,workgroup:string,bucket:string,quicksight_user:string,crawler:string,ebscrawler:string,snapshotcrawler:string,amicrawler:string,wa_analytics_endpoint:string,role:string,region:string,recommendation_target:string,sqs_url:string>>
             - Name: layers
               Type: array<struct<arn:string,codesize:int>>
             - Name: vpcconfig
@@ -859,7 +857,7 @@ Mappings:
             OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
             SerdeInfo:
               Parameters:
-                paths: functionname, functionarn, runtime, role, handler, codesize, dedscription, timeout, memorysize, lastmodified, codesha256, version, tracingconfig, revisionid, packagetype, architectures, ephemeralstorage, snapstart, loggingconfig, accountid, collection_date, region, environment, layers, vpcconfig
+                paths: functionname, functionarn, runtime, role, handler, codesize, dedscription, timeout, memorysize, lastmodified, codesha256, version, tracingconfig, revisionid, packagetype, architectures, ephemeralstorage, snapstart, loggingconfig, accountid, collection_date, region, layers, vpcconfig
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
 
