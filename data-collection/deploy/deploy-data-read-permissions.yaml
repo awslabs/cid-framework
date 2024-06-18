@@ -206,7 +206,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.0.8"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
