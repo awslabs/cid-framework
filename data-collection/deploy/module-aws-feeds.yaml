@@ -94,38 +94,28 @@ Resources:
           import boto3
 
           def clean_html(html_content):
-              result = ""
-              urls = []
-              ref_index = [1]
-
-              class SimpleHTMLParser(HTMLParser):
+              class MyParser(HTMLParser):
+                  def __init__(self):
+                      super().__init__()
+                      self.text = ''
+                      self.ref = {}
+                      self.index = 0
                   def handle_starttag(self, tag, attrs):
-                      nonlocal result
                       if tag == 'a':
+                          self.index += 1
                           href = next((value for attr, value in attrs if attr == 'href'), None)
                           if href:
                               if href.startswith('/'):
                                   href = f"https://aws.amazon.com{href}"
-                              urls.append(href)
-                              self.last_href_index = len(result)
-
+                              self.ref[self.index] = href
                   def handle_endtag(self, tag):
-                      nonlocal result
                       if tag == 'a':
-                          result = result[:self.last_href_index] + f"[{ref_index[0]}] " + result[self.last_href_index:]
-                          ref_index[0] += 1
-
+                          self.text += f"[{self.index}]"
                   def handle_data(self, data):
-                      nonlocal result
-                      result += data
-
-              parser = SimpleHTMLParser()
+                      self.text += data
+              parser = MyParser()
               parser.feed(html_content)
-
-              for i, url in enumerate(urls, start=1):
-                  result += f"\n[{i}] {url}"
-              
-              return result
+              return parser.text.strip() + '\n\n' + '\n'.join([f"[{index}]: {url}" for index, url in parser.ref.items()])
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
@@ -532,38 +522,28 @@ Resources:
           from dateutil.parser import parse, ParserError
 
           def clean_html(html_content):
-              result = ""
-              urls = []
-              ref_index = [1]
-
-              class SimpleHTMLParser(HTMLParser):
+              class MyParser(HTMLParser):
+                  def __init__(self):
+                      super().__init__()
+                      self.text = ''
+                      self.ref = {}
+                      self.index = 0
                   def handle_starttag(self, tag, attrs):
-                      nonlocal result
                       if tag == 'a':
+                          self.index += 1
                           href = next((value for attr, value in attrs if attr == 'href'), None)
                           if href:
                               if href.startswith('/'):
                                   href = f"https://aws.amazon.com{href}"
-                              urls.append(href)
-                              self.last_href_index = len(result)
-
+                              self.ref[self.index] = href
                   def handle_endtag(self, tag):
-                      nonlocal result
                       if tag == 'a':
-                          result = result[:self.last_href_index] + f"[{ref_index[0]}] " + result[self.last_href_index:]
-                          ref_index[0] += 1
-
+                          self.text += f"[{self.index}]"
                   def handle_data(self, data):
-                      nonlocal result
-                      result += data
-
-              parser = SimpleHTMLParser()
+                      self.text += data
+              parser = MyParser()
               parser.feed(html_content)
-
-              for i, url in enumerate(urls, start=1):
-                  result += f"\n[{i}] {url}"
-              
-              return result
+              return parser.text.strip() + '\n\n' + '\n'.join([f"[{index}]: {url}" for index, url in parser.ref.items()])
 
           def lambda_handler(event, context):
               feed_url = os.environ['FEED_URL']
@@ -662,7 +642,7 @@ Resources:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
           BUCKET_PATH: "aws-feeds/aws-feeds-security-bulletin"
-          FEED_URL: "	https://aws.amazon.com/security/security-bulletins/rss/feed/"
+          FEED_URL: "https://aws.amazon.com/security/security-bulletins/rss/feed/"
     Metadata:
       cfn_nag:
         rules_to_suppress:
