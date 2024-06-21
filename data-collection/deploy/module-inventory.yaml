@@ -789,7 +789,7 @@ Mappings:
                 paths: Arn,Name,CreatedAt,Version,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
-  AWSLambda:
+    AWSLambda:
       path: lambda
       table:
         - Name: inventory_lambda_data
@@ -829,23 +829,23 @@ Mappings:
             - Name: version
               Type: string
             - Name: tracingconfig
-              Type: struct<mode:string> 
+              Type: struct<mode:string>
             - Name: revisionid
               Type: string
             - Name: packagetype
               Type: string
             - Name: architectures
-              Type: array<string> 
+              Type: array<string>
             - Name: ephemeralstorage
-              Type: struct<size:int> 
+              Type: struct<size:int>
             - Name: snapstart
-              Type: struct<applyon:string,optimizationstatus:string> 
+              Type: struct<applyon:string,optimizationstatus:string>
             - Name: loggingconfig
-              Type: struct<logformat:string,loggroup:string> 
+              Type: struct<logformat:string,loggroup:string>
             - Name: accountid
               Type: string
             - Name: collection_date
-              Type: string    
+              Type: string
             - Name: region
               Type: string
             - Name: layers
