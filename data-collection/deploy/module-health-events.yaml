@@ -121,6 +121,7 @@ Resources:
           import uuid
           import logging
           import jmespath
+          import socket
           from datetime import date, datetime, timedelta, timezone
 
           import boto3
@@ -284,6 +285,26 @@ Resources:
                   event_details_per_affected.append(merged_dict)
               return event_details_per_affected
 
+          def get_active_health_region():
+              """
+              Get the active AWS Health region from the global endpoint
+              See: https://docs.aws.amazon.com/health/latest/ug/health-api.html#endpoints
+              """
+
+              default_region = "us-east-1"
+
+              try:
+                  (active_endpoint, _, _) = socket.gethostbyname_ex("global.health.amazonaws.com")
+              except socket.gaierror:
+                  return default_region
+
+              split_active_endpoint = active_endpoint.split(".")
+              if len(split_active_endpoint) < 2:
+                  return default_region
+
+              active_region = split_active_endpoint[1]
+              return active_region
+
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects AWS Health Events data
               and must be called from the corresponding Step Function to orchestrate
@@ -308,6 +329,7 @@ Resources:
               )['Credentials']
               health_client = boto3.client(
                   'health',
+                  region_name=get_active_health_region(),
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
