@@ -319,7 +319,7 @@ Mappings:
           - { Type: string, Name: protocol }
     AWSLambda:
       path: lambda
-      partition: 
+      partition:
           - { Name: region, Type: string }
       fields:
           - { Type: string, Name: sku }
@@ -329,7 +329,7 @@ Mappings:
           - { Type: string, Name: pricedescription }
           - { Type: string, Name: effectivedate }
           - { Type: string, Name: endingrange }
-          - { Type: bigint, Name: startingrange }
+          - { Type: string, Name: startingrange }
           - { Type: string, Name: endingrange }
           - { Type: string, Name: unit }
           - { Type: double, Name: priceperunit }
