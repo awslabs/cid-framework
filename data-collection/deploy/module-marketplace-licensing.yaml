@@ -1,0 +1,336 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Retrieves AWS Marketplace License and grant information from AWS License manager from across an organization
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: mp_licensing_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket that exists or needs to be created to hold backup information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold backup information
+  ManagementRoleName:
+    Type: String
+    Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: marketplace-licensing
+  GrantDataPrefix:
+    Type: String
+    Description: Prefix for Grant data.
+    Default: grantdata
+  LicenseDataPrefix:
+    Type: String
+    Description: Prefix for License data.
+    Default: licensedata
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
+  StepFunctionTemplate:
+    Type: String
+    Description: S3 key to the JSON template for the StepFunction
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
+Outputs:
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}-${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          """ Collects AWS Marketplace Licensing and grant information,
+          and uploads to S3. Creates Step functions, Glue crawler to crawl S3 bucket, 
+          creates Athena tables and view. 
+          """
+          import os
+          import json
+          import logging
+          from datetime import date
+          import boto3
+          # Initialize AWS clients
+          
+          s3 = boto3.client('s3')
+          athena = boto3.client('athena')
+
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+          BUCKET = os.environ['BUCKET_NAME']
+          ROLE = os.environ['ROLENAME']
+          S3_GRANTS_PREFIX = os.environ['S3_GRANTS_PREFIX']
+          S3_LICENSES_PREFIX = os.environ['S3_LICENSES_PREFIX']
+
+          def store_data_to_s3(data, prefix, payer_id):
+              if not data:
+                  logger.info("No data")
+                  return
+              json_data = "\n".join(json.dumps(entity) for entity in data)
+              key = date.today().strftime(f"{prefix}/{prefix}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              s3.put_object(
+                  Bucket=BUCKET,
+                  Key=key,
+                  Body=json_data, ContentType='application/json')
+              logger.info(f'File upload successful to s3://{BUCKET}/{key}')
+
+          def process_one_management_acc(management_account_id):
+              logger.debug('assuming role')
+              cred = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+
+              license_manager = boto3.client(
+                  'license-manager',
+                  "us-east-1", #Must be "us-east-1"
+                  aws_access_key_id=cred['AccessKeyId'],
+                  aws_secret_access_key=cred['SecretAccessKey'],
+                  aws_session_token=cred['SessionToken'],
+              )
+              process_license_information(license_manager, management_account_id)
+          
+          def process_license_information(license_manager, management_account_id):
+              logger.info("Retrieving licensing information")
+              pagination_token = ''
+              licenses = []
+              license_grants = []
+              try:
+                  while True:
+                      response = license_manager.list_received_licenses(
+                        MaxResults=100,
+                        NextToken=pagination_token
+                      )
+
+                      # Extract the licenses
+                      licenses.extend(response.get('Licenses', []))
+
+                      # Check if there are more licenses to retrieve
+                      pagination_token = response.get('NextToken', '')
+
+                      if not pagination_token:
+                        break
+                  # Filter AWS Marketplace issued licenses based on the 'Name' field within 'Issuer'
+                  marketplace_licenses = [license for license in licenses if 'Issuer' in license and
+                        'Name' in license['Issuer'] and license['Issuer']['Name'] == 'AWS/Marketplace']
+
+                  for license in marketplace_licenses:
+                      license_arn = license['LicenseArn']
+                      grants_for_license = list_received_grants_for_organization(license_arn)  # Retrying function call
+                      license_grants.extend(grants_for_license)
+
+                  # Store the licenses data to S3
+                  store_data_to_s3(marketplace_licenses, S3_LICENSES_PREFIX, management_account_id)
+
+                  # Store the grants data to S3
+                  store_data_to_s3(license_grants, S3_GRANTS_PREFIX, management_account_id)
+
+              except Exception as exc:
+                  logging.warning(f"{account['management_account_id']} : {exc}")
+              return "Successful"
+          
+          def lambda_handler(event, context):
+              logger.info(f"Event data {json.dumps(event)}")
+              if 'account' not in event:
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              account = json.loads(event["account"])
+              try:
+                  process_one_management_acc(account["account_id"])
+              except Exception as exc:
+                  logging.warning(f"{account['account_id']} :  {exc}")
+
+              return "Successful"
+      Handler: 'index.lambda_handler'
+      MemorySize: 2688
+      Timeout: 600
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          S3_GRANTS_PREFIX: !Ref GrantDataPrefix
+          S3_LICENSES_PREFIX: !Ref LicenseDataPrefix
+          ROLENAME: !Ref ManagementRoleName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+
+  GrantsCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${GrantDataPrefix}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${GrantDataPrefix}/${GrantDataPrefix}-data/"
+
+  LicensesCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${LicenseDataPrefix}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${LicenseDataPrefix}/${LicenseDataPrefix}-data/"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  AnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
+
+  AthenaQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: Provides a view of the license and grant data
+      Name: !Sub '${ResourcePrefix}view cur_with_org_data'
+      QueryString: !Sub |
+        CREATE OR REPLACE VIEW "marketplace_licenses_view" AS 
+        SELECT DISTINCT
+          REGEXP_EXTRACT(lt.licensearn, '[^:]+$') "license_id"
+          , lt.productname
+          , data.value "seller"
+          , REGEXP_EXTRACT(agreement.value, '[^:]+$') "agreement_id"
+          , lt.status "license_status"
+          , lt.validity.begin "license_start_date"
+          , lt.validity."end" "license_end_date"
+          , lt.productsku
+          , lt.issuer.name "license_issuer"
+          , lt.homeregion
+          , REPLACE(REGEXP_EXTRACT(lt.beneficiary, '::(.+?):'), ':', '') "beneficiary"
+          , DATE_FORMAT(FROM_UNIXTIME(lt.createtime), '%Y-%m-%d %H:%i:%s') "license_create_time"
+          , lt."version" "license_version"
+          , gt.grantname "grant_name"
+          , REGEXP_EXTRACT(gt.grantarn, '[^:]+$') "grant_id"
+          , REPLACE(REGEXP_EXTRACT(gt.granteeprincipalarn, '::(.+?):'), ':', '') "grantee_principal_id"
+          , gt.grantstatus "grant_status"
+          , gt.version "grant_version"
+          , gt.grantedoperations "granted_operations"
+          , gt.options.activationoverridebehavior "activation_override_behavior"
+        FROM
+          ${DatabaseName}.${LicenseDataPrefix}-data lt
+        , ${DatabaseName}.${GrantDataPrefix}-data gt
+        , UNNEST(licensemetadata) t (data)
+        , UNNEST(licensemetadata) s (agreement)
+        WHERE ((lt.licensearn = gt.licensearn) AND 
+          (t.data.name = 'sellerOfRecord') 
+          AND (s.agreement.name = 'agreementUrl') 
+          AND (issuer.name = 'AWS/Marketplace'))

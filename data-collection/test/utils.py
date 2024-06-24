@@ -194,6 +194,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeMarketplaceLicensingModule','ParameterValue': "yes"},
        ]
     )
 
@@ -225,6 +226,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
+            {'ParameterKey': 'IncludeMarketplaceLicensingModule', 'ParameterValue': "yes"},
         ]
     )
 
@@ -368,6 +370,7 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}marketplace-licensing-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []

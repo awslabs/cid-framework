@@ -33,6 +33,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeAWSFeedsModule
+          - IncludeMarketplaceLicensingModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -82,6 +83,8 @@ Metadata:
         default: 'Include AWS Feeds Module'
       IncludeHealthEventsModule:
         default: 'Include AWS Health Events Module'
+      IncludeMarketplaceLicensingModule:
+        default: 'Include Marketplace Licensing Data Collection Module'
 
 Mappings:
   RegionMap:
@@ -235,6 +238,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeMarketplaceLicensingModule: 
+    Type: String
+    Description: Collects MarketplaceLicense data
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Outputs:
   S3Bucket:
@@ -262,6 +271,7 @@ Conditions:
   DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
+  DeployMarketplaceLicensingModule: !Equals [ !Ref IncludeMarketplaceLicensingModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -281,6 +291,7 @@ Conditions:
       - !Condition DeployTransitGatewayModule
       - !Condition DeployCostOptimizationHubModule
       - !Condition DeployHealthEventsModule
+      - !Condition DeployMarketplaceLicensingModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -1190,3 +1201,22 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+  
+  MarketplaceLicensingModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployMarketplaceLicensingModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-marketplace-licensing.yaml"
+      Parameters:
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref Schedule
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v1, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn

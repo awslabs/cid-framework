@@ -170,6 +170,10 @@ def test_health_events_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."health_events_detail_data" LIMIT 10;')
     assert len(data) > 0, 'health_events_detail_data is empty'
 
+def test_marketplace_licensing_information(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."marketplace_licenses_view" LIMIT 10;')
+    assert len(data) > 0, 'marketplace_licensing_information is empty'
+
 
 if __name__ == '__main__':
     pytest.main()
