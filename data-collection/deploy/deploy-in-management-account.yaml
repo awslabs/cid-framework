@@ -18,7 +18,7 @@ Metadata:
           - IncludeCostOptimizationHubModule
           - IncludeHealthEventsModule
           - IncludeRightsizingModule
-          - IncludeMarketplaceLicensingModule
+          - IncludeLicenseManagerModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -38,7 +38,7 @@ Metadata:
         default: "Include EnableCostOptimizationHub Module"
       IncludeHealthEventsModule:
         default: "Include Health Events Module"
-      IncludeMarketplaceLicensingModule:
+      IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
 Parameters:
   DataCollectionAccountID:
@@ -88,7 +88,7 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeMarketplaceLicensingModule:
+  IncludeLicenseManagerModule:
     Type: String
     Description: Collects Marketplace Licensing Information from your accounts
     AllowedValues:
@@ -102,7 +102,7 @@ Conditions:
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   EnableCostOptimizationHubModule: !Equals [!Ref IncludeCostOptimizationHubModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
-  EnableMarketplaceLicensingModule: !Equals [!Ref IncludeMarketplaceLicensingModule, "yes"]
+  EnableLicenceManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
 
 Outputs:
   LambdaRole:
@@ -133,7 +133,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-optimization-hub-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}marketplace-licensing-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -413,17 +413,18 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  MarketplaceLicensingPolicy: 
+  LicenceManagerPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: EnableMarketplaceLicensingModule
+    Condition: EnableLicenceManagerModule
     Properties:
-      PolicyName: MarketplaceLicensingPolicy
+      PolicyName: LicenceManagerPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
           - Effect: "Allow"
             Action:
               - "license-manager:ListReceivedGrants"
+              - "license-manager:ListReceivedLicenses"
               - "license-manager:ListReceivedGrantsForOrganization"
             Resource: "*"
       Roles:

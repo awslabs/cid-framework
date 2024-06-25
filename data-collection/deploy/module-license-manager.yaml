@@ -4,7 +4,7 @@ Parameters:
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
-    Default: mp_licensing_data
+    Default: optimization_data
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket that exists or needs to be created to hold backup information
@@ -18,15 +18,15 @@ Parameters:
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
-    Default: marketplace-licensing
+    Default: license-manager
   GrantDataPrefix:
     Type: String
     Description: Prefix for Grant data.
-    Default: grantdata
+    Default: grants
   LicenseDataPrefix:
     Type: String
     Description: Prefix for License data.
-    Default: licensedata
+    Default: licenses
   GlueRoleARN:
     Type: String
     Description: Arn for the Glue Crawler role
@@ -111,8 +111,8 @@ Resources:
       Code:
         ZipFile: |
           """ Collects AWS Marketplace Licensing and grant information,
-          and uploads to S3. Creates Step functions, Glue crawler to crawl S3 bucket, 
-          creates Athena tables and view. 
+          and uploads to S3. Creates Step functions, Glue crawler to crawl S3 bucket,
+          creates Athena tables and view.
           """
           import os
           import json
@@ -120,73 +120,83 @@ Resources:
           from datetime import date
           import boto3
           # Initialize AWS clients
-          
+
           s3 = boto3.client('s3')
           athena = boto3.client('athena')
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
           BUCKET = os.environ['BUCKET_NAME']
-          ROLE = os.environ['ROLENAME']
+          ROLE = os.environ['ROLE_NAME']
           S3_GRANTS_PREFIX = os.environ['S3_GRANTS_PREFIX']
           S3_LICENSES_PREFIX = os.environ['S3_LICENSES_PREFIX']
+          PREFIX = os.environ['PREFIX']
 
           def store_data_to_s3(data, prefix, payer_id):
               if not data:
                   logger.info("No data")
                   return
               json_data = "\n".join(json.dumps(entity) for entity in data)
-              key = date.today().strftime(f"{prefix}/{prefix}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              key = date.today().strftime(f"{PREFIX}/{PREFIX}-{prefix}/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
               s3.put_object(
                   Bucket=BUCKET,
                   Key=key,
-                  Body=json_data, ContentType='application/json')
+                  Body=json_data,
+                  ContentType='application/json'
+              )
               logger.info(f'File upload successful to s3://{BUCKET}/{key}')
 
+          def get_received_licenses(license_manager):
+              licenses = []
+              pagination_token = ''
+              while True: #Operation list_received_licenses cannot be paginated
+                  response = license_manager.list_received_licenses(
+                      MaxResults=100,
+                      NextToken=pagination_token
+                  )
+                  licenses.extend(response.get('Licenses', []))
+                  pagination_token = response.get('NextToken', '')
+                  if not pagination_token:
+                      break
+              return licenses
+
           def process_one_management_acc(management_account_id):
+              print(f"arn:aws:iam::{management_account_id}:role/{ROLE}")
               logger.debug('assuming role')
               cred = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
                   RoleSessionName="data_collection"
               )['Credentials']
-
               license_manager = boto3.client(
                   'license-manager',
-                  "us-east-1", #Must be "us-east-1"
+                  "us-east-1", # Must be "us-east-1"
                   aws_access_key_id=cred['AccessKeyId'],
                   aws_secret_access_key=cred['SecretAccessKey'],
                   aws_session_token=cred['SessionToken'],
               )
               process_license_information(license_manager, management_account_id)
-          
+
           def process_license_information(license_manager, management_account_id):
               logger.info("Retrieving licensing information")
-              pagination_token = ''
-              licenses = []
               license_grants = []
               try:
-                  while True:
-                      response = license_manager.list_received_licenses(
-                        MaxResults=100,
-                        NextToken=pagination_token
-                      )
-
-                      # Extract the licenses
-                      licenses.extend(response.get('Licenses', []))
-
-                      # Check if there are more licenses to retrieve
-                      pagination_token = response.get('NextToken', '')
-
-                      if not pagination_token:
-                        break
-                  # Filter AWS Marketplace issued licenses based on the 'Name' field within 'Issuer'
-                  marketplace_licenses = [license for license in licenses if 'Issuer' in license and
-                        'Name' in license['Issuer'] and license['Issuer']['Name'] == 'AWS/Marketplace']
+                  marketplace_licenses = [
+                      license for license in get_received_licenses(license_manager)
+                      if license.get('Issuer', {}).get('Name') == 'AWS/Marketplace'
+                  ]
 
                   for license in marketplace_licenses:
                       license_arn = license['LicenseArn']
-                      grants_for_license = list_received_grants_for_organization(license_arn)  # Retrying function call
-                      license_grants.extend(grants_for_license)
+                      try:
+                          grants_for_license = license_manager.list_received_grants_for_organization(LicenseArn=license_arn)['Grants']
+                      except license_manager.exceptions.AccessDeniedException:
+                          print(
+                              'ERROR: AccessDenied when getting grants for ', license_arn,
+                              'Open https://us-east-1.console.aws.amazon.com/marketplace/home#/settings and make sure '
+                              'the organization trust in Marketplace settings is enabled. '
+                          )
+                      else:
+                          license_grants.extend(grants_for_license)
 
                   # Store the licenses data to S3
                   store_data_to_s3(marketplace_licenses, S3_LICENSES_PREFIX, management_account_id)
@@ -195,9 +205,9 @@ Resources:
                   store_data_to_s3(license_grants, S3_GRANTS_PREFIX, management_account_id)
 
               except Exception as exc:
-                  logging.warning(f"{account['management_account_id']} : {exc}")
+                  logging.error(f"{management_account_id} : {exc}")
               return "Successful"
-          
+
           def lambda_handler(event, context):
               logger.info(f"Event data {json.dumps(event)}")
               if 'account' not in event:
@@ -209,9 +219,10 @@ Resources:
               try:
                   process_one_management_acc(account["account_id"])
               except Exception as exc:
-                  logging.warning(f"{account['account_id']} :  {exc}")
+                  logging.error(f"{account['account_id']} :  {exc}")
 
               return "Successful"
+
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
@@ -221,7 +232,8 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           S3_GRANTS_PREFIX: !Ref GrantDataPrefix
           S3_LICENSES_PREFIX: !Ref LicenseDataPrefix
-          ROLENAME: !Ref ManagementRoleName
+          PREFIX: !Ref CFDataName
+          ROLE_NAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -239,22 +251,22 @@ Resources:
   GrantsCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${GrantDataPrefix}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-${GrantDataPrefix}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${GrantDataPrefix}/${GrantDataPrefix}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-${GrantDataPrefix}/"
 
   LicensesCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${LicenseDataPrefix}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-${LicenseDataPrefix}-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${LicenseDataPrefix}/${LicenseDataPrefix}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-${LicenseDataPrefix}/"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -268,7 +280,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${LicenseDataPrefix}-Crawler","${ResourcePrefix}${CFDataName}-${GrantDataPrefix}-Crawler"]'
         CollectionType: "Payers"
         Params: ''
         Module: !Ref CFDataName
@@ -295,42 +307,3 @@ Resources:
     Properties:
       ServiceToken: !Ref LambdaAnalyticsARN
       Name: !Ref CFDataName
-
-  AthenaQuery:
-    Type: AWS::Athena::NamedQuery
-    Properties:
-      Database: !Ref DatabaseName
-      Description: Provides a view of the license and grant data
-      Name: !Sub '${ResourcePrefix}view cur_with_org_data'
-      QueryString: !Sub |
-        CREATE OR REPLACE VIEW "marketplace_licenses_view" AS 
-        SELECT DISTINCT
-          REGEXP_EXTRACT(lt.licensearn, '[^:]+$') "license_id"
-          , lt.productname
-          , data.value "seller"
-          , REGEXP_EXTRACT(agreement.value, '[^:]+$') "agreement_id"
-          , lt.status "license_status"
-          , lt.validity.begin "license_start_date"
-          , lt.validity."end" "license_end_date"
-          , lt.productsku
-          , lt.issuer.name "license_issuer"
-          , lt.homeregion
-          , REPLACE(REGEXP_EXTRACT(lt.beneficiary, '::(.+?):'), ':', '') "beneficiary"
-          , DATE_FORMAT(FROM_UNIXTIME(lt.createtime), '%Y-%m-%d %H:%i:%s') "license_create_time"
-          , lt."version" "license_version"
-          , gt.grantname "grant_name"
-          , REGEXP_EXTRACT(gt.grantarn, '[^:]+$') "grant_id"
-          , REPLACE(REGEXP_EXTRACT(gt.granteeprincipalarn, '::(.+?):'), ':', '') "grantee_principal_id"
-          , gt.grantstatus "grant_status"
-          , gt.version "grant_version"
-          , gt.grantedoperations "granted_operations"
-          , gt.options.activationoverridebehavior "activation_override_behavior"
-        FROM
-          ${DatabaseName}.${LicenseDataPrefix}-data lt
-        , ${DatabaseName}.${GrantDataPrefix}-data gt
-        , UNNEST(licensemetadata) t (data)
-        , UNNEST(licensemetadata) s (agreement)
-        WHERE ((lt.licensearn = gt.licensearn) AND 
-          (t.data.name = 'sellerOfRecord') 
-          AND (s.agreement.name = 'agreementUrl') 
-          AND (issuer.name = 'AWS/Marketplace'))

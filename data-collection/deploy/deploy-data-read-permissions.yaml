@@ -28,7 +28,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
-          - IncludeMarketplaceLicensingModule
+          - IncludeLicenseManagerModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -68,7 +68,7 @@ Metadata:
         default: "Include Cost Optimization Hub Module"
       IncludeHealthEventsModule:
         default: "Include AWS Health Events Module"
-      IncludeMarketplaceLicensingModule:
+      IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
 Parameters:
   ManagementAccountRole:
@@ -172,7 +172,7 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
-  IncludeMarketplaceLicensingModule:
+  IncludeLicenseManagerModule:
     Type: String
     Description: Collects Marketplace Licensing information
     AllowedValues:
@@ -197,7 +197,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
-        IncludeMarketplaceLicensingModule: !Ref IncludeMarketplaceLicensingModule
+        IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -213,7 +213,6 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
-        IncludeMarketplaceLicensingModule: !Ref IncludeMarketplaceLicensingModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
@@ -247,8 +246,6 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
-        - ParameterKey: IncludeMarketplaceLicensingModule
-          ParameterValue: !Ref IncludeMarketplaceLicensingModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]
