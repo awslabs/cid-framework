@@ -258,7 +258,7 @@ Outputs:
   DataCollectionDatabase:
     Description: "Techical Value - DataCollectionDatabase"
     Value: !Ref DatabaseName
-    Export: { Name: !Sub "cid-DataCollection-Database" }
+    Export: { Name: "cid-DataCollection-Database" }
 
 Conditions:
   DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
