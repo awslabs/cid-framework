@@ -28,6 +28,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeLicenseManagerModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -67,6 +68,8 @@ Metadata:
         default: "Include Cost Optimization Hub Module"
       IncludeHealthEventsModule:
         default: "Include AWS Health Events Module"
+      IncludeLicenseManagerModule:
+        default: "Include Marketplace Licensing Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -169,6 +172,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeLicenseManagerModule:
+    Type: String
+    Description: Collects Marketplace Licensing information
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -188,6 +197,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
+        IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt

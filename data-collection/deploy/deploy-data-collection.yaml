@@ -33,6 +33,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeAWSFeedsModule
+          - IncludeLicenseManagerModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -82,6 +83,8 @@ Metadata:
         default: 'Include AWS Feeds Module'
       IncludeHealthEventsModule:
         default: 'Include AWS Health Events Module'
+      IncludeLicenseManagerModule:
+        default: 'Include Marketplace Licensing Collection'
 
 Mappings:
   RegionMap:
@@ -105,7 +108,7 @@ Mappings:
   StepFunctionCode:
     main-v1:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v1.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
-    awsfeeds-v1:       {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
+    awsfeeds-v1:    {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
 
 Parameters:
   DestinationBucket:
@@ -235,6 +238,12 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  IncludeLicenseManagerModule:
+    Type: String
+    Description: Collects Marketplace Licenses and Grants
+    AllowedValues:
+      - "yes"
+      - "no"
 
 Outputs:
   S3Bucket:
@@ -262,6 +271,7 @@ Conditions:
   DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
+  DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -281,6 +291,7 @@ Conditions:
       - !Condition DeployTransitGatewayModule
       - !Condition DeployCostOptimizationHubModule
       - !Condition DeployHealthEventsModule
+      - !Condition DeployLicenseManagerModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -874,6 +885,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-trusted-advisor.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -893,6 +905,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -912,6 +925,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-optimization-hub.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -931,6 +945,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -950,6 +965,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-backup.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -969,6 +985,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-inventory.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -994,6 +1011,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-pricing.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1039,6 +1057,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-ecs-chargeback.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1063,6 +1082,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-rds-usage.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1087,6 +1107,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-organization.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1106,6 +1127,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-budgets.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1125,6 +1147,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-transit-gateway.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1149,6 +1172,7 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-aws-feeds.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         Schedule: !Ref ScheduleFrequent
@@ -1166,10 +1190,31 @@ Resources:
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-health-events.yaml"
       Parameters:
+        DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         Schedule: !Ref ScheduleFrequent
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v1, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+  LicenseManagerModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployLicenseManagerModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-license-manager.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref Schedule
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
