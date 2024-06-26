@@ -203,8 +203,7 @@ Resources:
                           resource["Status"] = resource.pop("status") if "status" in resource else '-'
                           output.update({"AccountId":account_id, "AccountName":account_name, "Category": check["category"], 'DateTime': dt, 'Timestamp': ts, "CheckName": check["name"], "CheckId": check["id"]})
                           output.update(resource)
-                          translator = str.maketrans(' ', '_', string.punctuation)
-                          output = {k.translate(translator).lower(): v for k, v in output.items()}
+                          output = {k.lower(): v for k, v in output.items()}
                           f.write(json.dumps(output, default=_json_serial) + "\n")
                   except Exception as e:
                       print(f'{type(e)}: {e}')
