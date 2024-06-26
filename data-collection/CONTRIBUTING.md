@@ -19,7 +19,7 @@ You can test this lab in a dedicated account that preferably has the following a
 ### General
 
 * [cfn_nag_scan](https://github.com/stelligent/cfn_nag#installation)
-* python3.8+
+* python3.9+
 * `pip3 install -U boto3 pytest cfn-flip pylint checkov`
 * Configured AWS credentials
 * Install and configure [git-secrets](https://github.com/awslabs/git-secrets#installing-git-secrets)
