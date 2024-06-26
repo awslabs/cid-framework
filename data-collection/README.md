@@ -33,6 +33,8 @@ List of modules and objects collected:
 | `ecs-chargeback`             |  Amazon ECS           | Linked Account      |  |
 | `backup`                     |  AWS Backup           | Management Account  | Collects Backup Restore and Copy Jobs. Requires [activation of cross-account](https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account) |
 | `cost-optimization-hub`      |  AWS Cost Optimization Hub | Management Account  | Collects Detailed Reccomendations. Requires [activation](https://aws.amazon.com/aws-cost-management/cost-optimization-hub/faqs/#:~:text=You%20can%20enable%20Cost%20Optimization%20Hub%20by%20going%20to%20the,navigation%20bar%2C%20and%20click%20Enable.)  |
+| `health-evetns`      |  AWS Health | Management Accounts  | Collect AWS Health notificaitons via AWS Organizational view  |
+| `licence-manager`      |  AWS License Manager | Management Accounts  | Collect Licences and Grants |
 
 
 

@@ -148,7 +148,7 @@ Resources:
 
           def get_received_licenses(license_manager):
               licenses = []
-              pagination_token = ''
+              pagination_token = '' #nosec
               while True: #Operation list_received_licenses cannot be paginated
                   response = license_manager.list_received_licenses(
                       MaxResults=100,
@@ -181,12 +181,12 @@ Resources:
               license_grants = []
               try:
                   marketplace_licenses = [
-                      license for license in get_received_licenses(license_manager)
-                      if license.get('Issuer', {}).get('Name') == 'AWS/Marketplace'
+                      license_ for license_ in get_received_licenses(license_manager)
+                      if license_.get('Issuer', {}).get('Name') == 'AWS/Marketplace'
                   ]
 
-                  for license in marketplace_licenses:
-                      license_arn = license['LicenseArn']
+                  for license_ in marketplace_licenses:
+                      license_arn = license_['LicenseArn']
                       try:
                           grants_for_license = license_manager.list_received_grants_for_organization(LicenseArn=license_arn)['Grants']
                       except license_manager.exceptions.AccessDeniedException:
@@ -204,11 +204,11 @@ Resources:
                   # Store the grants data to S3
                   store_data_to_s3(license_grants, S3_GRANTS_PREFIX, management_account_id)
 
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=W0718
                   logging.error(f"{management_account_id} : {exc}")
               return "Successful"
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=W0613
               logger.info(f"Event data {json.dumps(event)}")
               if 'account' not in event:
                   raise ValueError(
@@ -218,7 +218,7 @@ Resources:
               account = json.loads(event["account"])
               try:
                   process_one_management_acc(account["account_id"])
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=W0718
                   logging.error(f"{account['account_id']} :  {exc}")
 
               return "Successful"
