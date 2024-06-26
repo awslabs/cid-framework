@@ -104,7 +104,6 @@ Resources:
         ZipFile: |
           import os
           import json
-          import string
           from datetime import date, datetime
           from json import JSONEncoder
 
