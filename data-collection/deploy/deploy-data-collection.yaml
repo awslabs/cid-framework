@@ -255,6 +255,10 @@ Outputs:
   RoleARN:
     Description: "The arn of the IAM role that deployed in the management account which can retrieve AWS Organization data"
     Value: !Sub "arn:aws:iam::${ManagementAccountID}:role/${ManagementAccountRole}"
+  DataCollectionDatabase:
+    Description: "Techical Value - DataCollectionDatabase"
+    Value: !Ref DatabaseName
+    Export: { Name: !Sub "cid-DataCollection-Database" }
 
 Conditions:
   DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
