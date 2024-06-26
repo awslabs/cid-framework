@@ -55,45 +55,38 @@ Parameters:
   IncludeComputeOptimizerModule:
     Type: String
     Description: Collects AWS Compute Optimizer service recommendations
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeCostAnomalyModule:
     Type: String
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeRightsizingModule:
     Type: String
     Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeBackupModule:
     Type: String
     Description: Collects TransitGateway from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeCostOptimizationHubModule:
     Type: String
     Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeLicenseManagerModule:
     Type: String
     Description: Collects Marketplace Licensing Information from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
