@@ -410,6 +410,7 @@ Resources:
                           'ebs_volume':   co.export_ebs_volume_recommendations,
                           'ecs_service':  co.export_ecs_service_recommendations,
                           'license':      co.export_license_recommendations,
+                          'rds_database': partial(co.export_rds_database_recommendations, recommendationPreferences={'cpuVendorArchitectures': ARCH}),
                       }
                       bucket = BUCKET_PREFIX + '.' + region
                       logger.info(f"INFO: bucket={bucket}")

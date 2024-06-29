@@ -226,11 +226,11 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  COExportLambdaFunctionRecommendations:
+  COExportRecommendations:
     Type: "AWS::IAM::Policy"
     Condition: EnableComputeOptimizerModule
     Properties:
-      PolicyName: ComputeOptimizer-ExportLambdaFunctionRecommendations
+      PolicyName: ComputeOptimizer-ExportRecommendations
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -241,84 +241,24 @@ Resources:
               - "lambda:ListFunctions"
               - "lambda:ListProvisionedConcurrencyConfigs"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportAutoScalingGroupRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportAutoScalingGroupRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportAutoScalingGroupRecommendations"
               - "compute-optimizer:GetAutoScalingGroupRecommendations"
               - "autoscaling:DescribeAutoScalingGroups"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportEBSVolumeRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportEBSVolumeRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportEBSVolumeRecommendations"
               - "compute-optimizer:GetEBSVolumeRecommendations"
-              - "EC2:DescribeVolumes"
+              - "ec2:DescribeVolumes"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportEC2InstanceRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportEC2InstanceRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportEC2InstanceRecommendations"
               - "compute-optimizer:GetEC2InstanceRecommendations"
-              - "EC2:DescribeInstances"
+              - "ec2:DescribeInstances"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportECSRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportECSRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportECSServiceRecommendations"
@@ -327,26 +267,19 @@ Resources:
               - "ecs:ListServices"
               - "ecs:ListClusters"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportLicenseRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportLicenseRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportLicenseRecommendations"
               - "compute-optimizer:GetLicenseRecommendations"
               - "ec2:DescribeInstances"
+            Resource: "*"
+          - Effect: "Allow"
+            Action:
+              - "compute-optimizer:ExportRDSDatabaseRecommendations"
+              - "compute-optimizer:GetRDSDatabaseRecommendations"
+              - "compute-optimizer:GetRDSDatabaseRecommendationProjectedMetrics"
+              - "rds:DescribeDBInstances"
+              - "rds:DescribeDBClusters"
             Resource: "*"
       Roles:
         - Ref: LambdaRole
