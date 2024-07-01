@@ -1160,10 +1160,14 @@ Resources:
                   - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
           Configuration: |
             {
-              "Version": 1.0,
-              "CrawlerOutput": {
-                "Partitions": {
-                  "AddOrUpdateBehavior": "InheritFromTable"
+              "Version":1.0,
+              "Grouping": {
+                "TableGroupingPolicy": "CombineCompatibleSchemas"
+              },
+              "CrawlerOutput":{
+                "Tables":{
+                  "AddOrUpdateBehavior": "MergeNewColumns",
+                  "TableThreshold": 1
                 }
               }
             }
