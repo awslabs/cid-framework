@@ -1164,8 +1164,8 @@ Resources:
               "Grouping": {
                 "TableGroupingPolicy": "CombineCompatibleSchemas"
               },
-              "CrawlerOutput":{
-                "Tables":{
+              "CrawlerOutput": {
+                "Tables": {
                   "AddOrUpdateBehavior": "MergeNewColumns",
                   "TableThreshold": 1
                 }
