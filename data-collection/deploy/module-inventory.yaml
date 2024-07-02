@@ -1161,9 +1161,13 @@ Resources:
           Configuration: |
             {
               "Version": 1.0,
+              "Grouping": {
+                "TableGroupingPolicy": "CombineCompatibleSchemas"
+              },
               "CrawlerOutput": {
-                "Partitions": {
-                  "AddOrUpdateBehavior": "InheritFromTable"
+                "Tables": {
+                  "AddOrUpdateBehavior": "MergeNewColumns",
+                  "TableThreshold": 1
                 }
               }
             }
