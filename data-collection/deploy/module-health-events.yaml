@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Retrieves AWS Health Events details accross AWS organization
+Description: Retrieves AWS Health Events details across AWS organization
 Parameters:
   DatabaseName:
     Type: String
@@ -480,7 +480,7 @@ Resources:
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionString: |
         {
-          "Comment": "Collects individual Cost Optimization Hub recommendations",
+          "Comment": "Collects Health Events",
           "StartAt": "DetailProcessor Map",
           "States": {
             "DetailProcessor Map": {
