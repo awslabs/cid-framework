@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, AWSLambda
     Description: Services for pulling price data
 
 Mappings:
@@ -789,7 +789,77 @@ Mappings:
                 paths: Arn,Name,CreatedAt,Version,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
-
+    AWSLambda:
+      path: lambda
+      table:
+        - Name: inventory_lambda_data
+          PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+          StorageDescriptor:
+            Columns:
+            - Name: functionname
+              Type: string
+            - Name: functionarn
+              Type: string
+            - Name: runtime
+              Type: string
+            - Name: role
+              Type: string
+            - Name: handler
+              Type: string
+            - Name: codesize
+              Type: int
+            - Name: description
+              Type: string
+            - Name: timeout
+              Type: int
+            - Name: memorysize
+              Type: int
+            - Name: lastmodified
+              Type: string
+            - Name: codesha256
+              Type: string
+            - Name: version
+              Type: string
+            - Name: tracingconfig
+              Type: struct<mode:string>
+            - Name: revisionid
+              Type: string
+            - Name: packagetype
+              Type: string
+            - Name: architectures
+              Type: array<string>
+            - Name: ephemeralstorage
+              Type: struct<size:int>
+            - Name: snapstart
+              Type: struct<applyon:string,optimizationstatus:string>
+            - Name: loggingconfig
+              Type: struct<logformat:string,loggroup:string>
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            - Name: layers
+              Type: array<struct<arn:string,codesize:int>>
+            - Name: vpcconfig
+              Type: struct<subnetids:array<string>,securitygroupids:array<string>,vpcid:string,ipv6allowedfordualstack:boolean>
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: functionname, functionarn, runtime, role, handler, codesize, dedscription, timeout, memorysize, lastmodified, codesha256, version, tracingconfig, revisionid, packagetype, architectures, ephemeralstorage, snapstart, loggingconfig, accountid, collection_date, region, layers, vpcconfig
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
 
 Resources:
   LambdaRole:
@@ -1004,6 +1074,12 @@ Resources:
                       paginated_scan,
                       service='ec2',
                       function_name='describe_vpcs'
+                  ),
+                  'lambda' : partial(
+                    paginated_scan,
+                    service='lambda',
+                    function_name='list_functions',
+                    obj_name='Functions[*]'
                   ),
                   'eks': eks_clusters_scan
               }

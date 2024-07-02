@@ -35,7 +35,7 @@ Parameters:
     Description: Arn of lambda for Analytics
   AwsServices:
     Type: CommaDelimitedList
-    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, RegionNames
+    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, RegionNames, AWSLambda
     Description: Services for pulling price data
   CodeBucket:
     Type: String
@@ -317,6 +317,34 @@ Mappings:
           - { Type: string, Name: regionname }
           - { Type: string, Name: endpoint }
           - { Type: string, Name: protocol }
+    AWSLambda:
+      path: lambda
+      partition:
+          - { Name: region, Type: string }
+      fields:
+          - { Type: string, Name: sku }
+          - { Type: string, Name: offertermcode }
+          - { Type: string, Name: ratecode }
+          - { Type: string, Name: termtype }
+          - { Type: string, Name: pricedescription }
+          - { Type: string, Name: effectivedate }
+          - { Type: string, Name: endingrange }
+          - { Type: string, Name: startingrange }
+          - { Type: string, Name: endingrange }
+          - { Type: string, Name: unit }
+          - { Type: double, Name: priceperunit }
+          - { Type: string, Name: currency }
+          - { Type: string, Name: relatedto }
+          - { Type: string, Name: product family }
+          - { Type: string, Name: servicecode }
+          - { Type: string, Name: location }
+          - { Type: string, Name: location type }
+          - { Type: string, Name: group }
+          - { Type: string, Name: group description }
+          - { Type: string, Name: usagetype }
+          - { Type: string, Name: operation }
+          - { Type: string, Name: region code }
+          - { Type: string, Name: servicename }
     RDSGraviton:
       path: rdsgraviton
       partition:

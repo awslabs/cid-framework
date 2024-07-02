@@ -194,6 +194,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
        ]
     )
 
@@ -225,6 +226,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
             {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
+            {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
         ]
     )
 
@@ -344,6 +346,7 @@ def trigger_update(account_id):
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Ec2Instances-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-VpcInstances-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbSnapshots-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-AWSLambda-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',
@@ -356,6 +359,7 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonElastiCache-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonES-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSComputeSavingsPlan-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSLambda-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionNames-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-CopyJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
@@ -366,6 +370,7 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}license-manager-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []

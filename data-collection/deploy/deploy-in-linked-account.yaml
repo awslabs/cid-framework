@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Linked Account v3.0.7
+Description: CID Data Collection - Role for Linked Account v3.0.10
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -52,39 +52,33 @@ Parameters:
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeInventoryCollectorModule:
     Type: String
     Description: Collects data about AMIs, EBS volumes and snapshots
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeECSChargebackModule:
     Type: String
     Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeRDSUtilizationModule:
     Type: String
     Description: Collects RDS CloudWatch metrics from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeBudgetsModule:
     Type: String
     Description: Collects budgets from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeTransitGatewayModule:
     Type: String
     Description: Collects TransitGateway from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   IncludeTAModulePolicy: !Equals
@@ -197,6 +191,7 @@ Resources:
               - "elasticache:DescribeCacheClusters"
               - "eks:ListClusters"
               - "eks:DescribeCluster"
+              - "lambda:ListFunctions"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole

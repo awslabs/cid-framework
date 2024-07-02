@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.0.7
+Description: CID Data Collection - All-in-One for Management Account v3.0.10
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -28,6 +28,7 @@ Metadata:
           - IncludeRightsizingModule
           - IncludeTAModule
           - IncludeTransitGatewayModule
+          - IncludeLicenseManagerModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -67,6 +68,8 @@ Metadata:
         default: "Include Cost Optimization Hub Module"
       IncludeHealthEventsModule:
         default: "Include AWS Health Events Module"
+      IncludeLicenseManagerModule:
+        default: "Include Marketplace Licensing Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -100,75 +103,68 @@ Parameters:
   IncludeBudgetsModule:
     Type: String
     Description: Collects budgets from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeComputeOptimizerModule:
     Type: String
     Description: Collects AWS Compute Optimizer service recommendations
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeCostAnomalyModule:
     Type: String
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeECSChargebackModule:
     Type: String
     Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeInventoryCollectorModule:
     Type: String
     Description: Collects data about AMIs, EBS volumes and snapshots
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeRDSUtilizationModule:
     Type: String
     Description: Collects RDS CloudWatch metrics from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeRightsizingModule:
     Type: String
     Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeTransitGatewayModule:
     Type: String
     Description: Collects TransitGateway from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeBackupModule:
     Type: String
     Description: Collects AWS Backup events from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeCostOptimizationHubModule:
     Type: String
     Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
-    AllowedValues:
-      - "yes"
-      - "no"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
+  IncludeLicenseManagerModule:
+    Type: String
+    Description: Collects Marketplace Licensing information
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -188,6 +184,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
+        IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -206,7 +203,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.0.10"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
