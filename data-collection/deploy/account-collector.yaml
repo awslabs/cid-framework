@@ -85,6 +85,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "s3:GetObject"
+                  - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
     Metadata:
@@ -113,7 +114,10 @@ Resources:
             RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
             BUCKET = os.environ['BUCKET_NAME']
-            ACCOUNT_LIST_KEY = os.environ['ACCOUNT_LIST_KEY']
+            PREDEF_ACCOUNT_LIST_KEY = os.environ['PREDEF_ACCOUNT_LIST_KEY']
+            LINKED_ACCOUNT_LIST_KEY = os.environ['LINKED_ACCOUNT_LIST_KEY']
+            PAYER_ACCOUNT_LIST_KEY = os.environ['PAYER_ACCOUNT_LIST_KEY']
+            TMP_FILE = "/tmp/data.json"
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -141,10 +145,25 @@ Resources:
                     raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
 
                 account_iterator = functions[account_type]
-                accounts = list(account_iterator())
-                if not accounts:
+
+                with open(TMP_FILE, "w") as f:
+                    count = 0
+                    f.write("[\n")
+                    for account in account_iterator():
+                        if count > 0:
+                            f.write(",\n")
+                        f.write(json.dumps(account))
+                        count += 1
+                    f.write("\n]")
+
+                if count == 0:
                     raise Exception('No accounts found. Check the log.') #pylint: disable=broad-exception-raised
-                return {'statusCode': 200, 'accountList': accounts}
+
+                key = LINKED_ACCOUNT_LIST_KEY if account_type == 'linked' else PAYER_ACCOUNT_LIST_KEY
+                s3 = boto3.client('s3')
+                s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
+
+                return {'statusCode': 200, 'accountList': key, 'bucket': BUCKET}
 
             def get_all_payers():
                 for payer_id in MANAGEMENT_ACCOUNT_IDS.split(','):
@@ -163,10 +182,10 @@ Resources:
                     yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
 
             def iterate_linked_accounts():
-                defined_accounts, ext = get_defined_list(BUCKET, ACCOUNT_LIST_KEY)
+                defined_accounts, ext = get_defined_list(BUCKET, PREDEF_ACCOUNT_LIST_KEY)
                 try:
                     if defined_accounts:
-                        logger.info(f'Using defined account list {ACCOUNT_LIST_KEY}.{ext} instead of payer organization')
+                        logger.info(f'Using defined account list instead of payer organization')
                         for account_data in defined_accounts:
                             if ext == "json":
                                 account = json.loads(account_data)
@@ -186,10 +205,10 @@ Resources:
 
             def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
-                exts = ["json", "csv"]
+                exts = [".json", ".csv"]
                 for ext in exts:
                     try:
-                        accts = s3.get_object(Bucket=bucket, Key=f"{key}.{ext}")
+                        accts = s3.get_object(Bucket=bucket, Key=f"{key}{ext}")
                         return accts['Body'].read().decode('utf-8').strip('\n').split('\n'), ext
                     except Exception as exc: #pylint: disable=broad-exception-caught
                         continue
@@ -205,6 +224,7 @@ Resources:
                     })
                 }
 
+
             def get_client_with_role(account_id, service, region):
                 credentials = boto3.client('sts').assume_role(
                     RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
@@ -217,7 +237,6 @@ Resources:
                     aws_secret_access_key=credentials['SecretAccessKey'],
                     aws_session_token=credentials['SessionToken'],
                 )
-
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
@@ -228,7 +247,9 @@ Resources:
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Ref DestinationBucket
-          ACCOUNT_LIST_KEY: "account-list/account-list"
+          PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
+          LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
+          PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
     Metadata:
       cfn_nag:
         rules_to_suppress:
