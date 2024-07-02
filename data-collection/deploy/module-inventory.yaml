@@ -1160,7 +1160,7 @@ Resources:
                   - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
           Configuration: |
             {
-              "Version":1.0,
+              "Version": 1.0,
               "Grouping": {
                 "TableGroupingPolicy": "CombineCompatibleSchemas"
               },
