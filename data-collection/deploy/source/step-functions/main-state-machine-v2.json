@@ -31,7 +31,8 @@
         "Type": "Map",
         "ItemProcessor": {
           "ProcessorConfig": {
-            "Mode": "INLINE"
+            "Mode": "DISTRIBUTED",
+            "ExecutionType": "STANDARD"
           },
           "StartAt": "InvokeModuleLambda",
           "States": {
@@ -63,9 +64,18 @@
             }
           }
         },
-        "ItemsPath": "$.accountLambdaOutput.Payload.accountList",
-        "Next": "CrawlerStepFunctionStartExecution",
-        "MaxConcurrency": 60
+        "MaxConcurrency": 60,
+        "ItemReader": {
+          "Resource": "arn:aws:states:::s3:getObject",
+          "ReaderConfig": {
+            "InputType": "JSON"
+          },
+          "Parameters": {
+            "Bucket.$": "$.accountLambdaOutput.Payload.bucket",
+            "Key.$": "$.accountLambdaOutput.Payload.accountList"
+          }
+        },
+        "Next": "CrawlerStepFunctionStartExecution"
       },
       "CrawlerStepFunctionStartExecution": {
         "Type": "Task",
