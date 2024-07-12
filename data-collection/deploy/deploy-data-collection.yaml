@@ -34,6 +34,7 @@ Metadata:
           - IncludeTransitGatewayModule
           - IncludeAWSFeedsModule
           - IncludeLicenseManagerModule
+          - IncludeSecuirtyHubModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -85,6 +86,8 @@ Metadata:
         default: 'Include AWS Health Events Module'
       IncludeLicenseManagerModule:
         default: 'Include Marketplace Licensing Collection'
+      IncludeSecuirtyHubModule:
+        default: 'Include AWS Security Hub Module'
 
 Mappings:
   RegionMap:
@@ -229,6 +232,11 @@ Parameters:
     Description: Collects Marketplace Licenses and Grants
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeSecurityHubModule:
+    Type: String
+    Description: Collects AWS Security Hub Events
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Outputs:
   S3Bucket:
@@ -261,6 +269,7 @@ Conditions:
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
+  DeploySecurityHubModule: !Equals [!Ref IncludeSecurityHubModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -281,6 +290,7 @@ Conditions:
       - !Condition DeployCostOptimizationHubModule
       - !Condition DeployHealthEventsModule
       - !Condition DeployLicenseManagerModule
+      - !Condition DeploySecurityHubModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -930,6 +940,26 @@ Resources:
   CostAnomalyModule:
     Type: AWS::CloudFormation::Stack
     Condition: DeployCostAnomalyModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref ScheduleFrequent
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+  SecurityHubModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeploySecurityHubModule
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
       Parameters:
