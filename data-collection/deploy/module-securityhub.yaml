@@ -1,0 +1,452 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Retrieves AWS Security Hub details across AWS organization
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: securityhub-events
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
+  StepFunctionTemplate:
+    Type: String
+    Description: JSON representation of common StepFunction template
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
+Outputs:
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management accounts
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:PutObjectAcl"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "${DestinationBucketARN}"
+        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "states:StartExecution"
+                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  IAMRoleAmazonEventBridgeInvokeFirehose:
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-EBInvoke_Firehose"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "events.amazonaws.com"
+      Metadata:
+        cfn_nag:
+          rules_to_suppress:
+            - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+              reason: "Need explicit name to identify role actions"
+
+    KinesisFirehoseRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        Path: "/"
+        MaxSessionDuration: 3600
+        RoleName: "${ResourcePrefix}${CFDataName}-KinesisFireHoseRole"
+        Description: "Allows Kinesis Firehose to transform and deliver data to your\
+          \ destinations using CloudWatch Logs, Lambda, and S3 on your behalf."
+        Policies:
+          - PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+              - Resource:
+                - !Sub "arn:${AWS::Partition}:s3:::${CodeBucket}"
+                - !Sub "arn:${AWS::Partition}:s3:::${CodeBucket}*"
+                - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:%FIREHOSE_POLICY_TEMPLATE_PLACEHOLDER%:log-stream:*"
+                - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/PUT-S3-SVAnj:log-stream:*"
+                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+                Action:
+                - "s3:PutObject"
+                - "s3:GetObject"
+                - "s3:ListBucketMultipartUploads"
+                - "s3:AbortMultipartUpload"
+                - "lambda:InvokeFunction"
+                - "s3:ListBucket"
+                - "lambda:GetFunctionConfiguration"
+                - "s3:GetBucketLocation"
+                - "logs:PutLogEvents"
+                Effect: "Allow"
+                Sid: "VisualEditor0"
+            PolicyName: "${CFDataName}-detail-KinesisDataStream"
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Action: "sts:AssumeRole"
+            Effect: "Allow"
+            Principal:
+              Service: "firehose.amazonaws.com"
+      Metadata:
+        cfn_nag:
+          rules_to_suppress:
+            - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+              reason: "Need explicit name to identify role actions"
+
+  EventRuleSechubKinesisIntegration:
+    Type: "AWS::Events::Rule"
+    Properties:
+      EventPattern:
+        detail-type:
+        - "Security Hub Findings - Imported"
+        source:
+        - "aws.securityhub"
+      Targets:
+      - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
+        RoleArn: !GetAtt IAMRoleAmazonEventBridgeInvokeFirehose.Arn
+        Id: "FirehoseDeliveryStream"
+      State: "ENABLED"
+      Name: "${ResourcePrefix}${CFDataName}-SecHubEvents"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.10
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          import json
+          import os
+          import logging
+          import re
+          import base64
+          from botocore.exceptions import ClientError
+
+          def rename_keys(payload):
+              if isinstance(payload, dict):
+                  renamed_payload = {}
+                  for key, value in payload.items():
+                      renamed_key = re.sub(r'\W+', '_', key)
+                      renamed_value = rename_keys(value)
+                      renamed_payload[renamed_key] = renamed_value
+                  return renamed_payload
+              elif isinstance(payload, list):
+                  renamed_list = []
+                  for item in payload:
+                      renamed_item = rename_keys(item)
+                      renamed_list.append(renamed_item)
+                  return renamed_list
+              elif isinstance(payload, (str, int, float, bool, type(None))):
+                  return payload
+              else:
+                  if hasattr(payload, "__dict__"):
+                      renamed_payload = {}
+                      for key, value in payload.__dict__.items():
+                          renamed_key = re.sub(r'\W+', '_', key)
+                          renamed_value = rename_keys(value)
+                          renamed_payload[renamed_key] = renamed_value
+                      return renamed_payload
+                  else:
+                      return payload
+
+          def lambda_handler(event, context):
+              logger = logging.getLogger()
+              payload = event['records']
+              transformed_records = []
+
+              for record in payload:
+                  data = record['data']
+                  decoded_data = base64.b64decode(data).decode('utf-8')
+                  print(f"Input record JSON: {decoded_data}")
+                  renamed_payload = rename_keys(json.loads(decoded_data))
+                  flattened_data = json.dumps(renamed_payload, separators=(',', ':'))
+                  transformed_record = {
+                      'recordId': record['recordId'],
+                      'result': 'Ok',
+                      'data': base64.b64encode(flattened_data.encode('utf-8')).decode('utf-8')
+                  }
+                  print(f"Transformed record: {transformed_record}")
+                  transformed_records.append(transformed_record)
+              return {'records': transformed_records}
+      Handler: "index.lambda_handler"
+      MemorySize: 2688
+      Timeout: 900
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+          ROLENAME: !Ref ManagementRoleName
+          #REGIONS: -- defining regions can miss events within the region list so default to global
+          LOOKBACK: 90
+          DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+    FirehoseLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: !Sub "/aws/kinesis/${SecHubEventsFirehoseDeliveryStream}"
+        RetentionInDays: 60
+
+  SecHubEventsFirehoseDeliveryStream:
+      Type: AWS::KinesisFirehose::DeliveryStream
+      Properties:
+        DeliveryStreamName: '${ResourcePrefix}${CFDataName}-detail-stream'
+        DeliveryStreamType: DirectPut
+        DeliveryStreamEncryptionConfigurationInput:
+          KeyType: AWS_OWNED_CMK
+        ExtendedS3DestinationConfiguration:
+          BucketARN: !GetAtt DestinationBucketARN.Arn
+          Prefix: !Sub "sechub_events/managementid=${AWS::AccountId}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
+          ErrorOutputPrefix: "aws-sechub-logs-firehose-error/"
+          RoleARN: !GetAtt kinesisFirehoseRole.Arn
+          CloudWatchLoggingOptions:
+                Enabled: true
+                LogGroupName: !Ref FirehoseLogGroup
+          BufferingHints:
+                IntervalInSeconds: 900
+                SizeInMBs: 30
+          CompressionFormat: "GZIP"
+          ProcessingConfiguration:
+              Enabled: true
+              Processors:
+              - Type: Lambda
+                Parameters:
+                - ParameterName: LambdaArn
+                  ParameterValue: !GetAtt LambdaFunctiontransformationsechub.Arn
+                - ParameterName: BufferIntervalInSeconds
+                  ParameterValue: 600
+                - ParameterName: BufferSizeInMBs
+                  ParameterValue: 3
+
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: '[]'
+        CollectionType: "Payers"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  StepFunctionDetail:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-detail-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionString: |
+        {
+          "Comment": "Collects Health Events",
+          "StartAt": "DetailProcessor Map",
+          "States": {
+            "DetailProcessor Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "DISTRIBUTED",
+                  "ExecutionType": "STANDARD"
+                },
+                "StartAt": "DetailLambda Invoke",
+                "States": {
+                  "DetailLambda Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "Payload.$": "$",
+                      "FunctionName": "${ModuleLambdaARN}"
+                    },
+                    "Retry": [
+                      {
+                        "ErrorEquals": [
+                          "Lambda.ServiceException",
+                          "Lambda.AWSLambdaException",
+                          "Lambda.SdkClientException",
+                          "Lambda.TooManyRequestsException"
+                        ],
+                        "IntervalSeconds": 1,
+                        "MaxAttempts": 3,
+                        "BackoffRate": 2
+                      }
+                    ],
+                    "End": true
+                  }
+                }
+              },
+              "Label": "DetailProcessorMap",
+              "MaxConcurrency": ${MaxConcurrentBatches},
+              "ItemReader": {
+                "Resource": "arn:aws:states:::s3:getObject",
+                "ReaderConfig": {
+                  "InputType": "CSV",
+                  "CSVHeaderLocation": "FIRST_ROW"
+                },
+                "Parameters": {
+                  "Bucket.$": "$.bucket",
+                  "Key.$": "$.file"
+                }
+              },
+              "ItemBatcher": {
+                "MaxItemsPerBatch": ${ItemsPerBatch},
+                "BatchInput": {
+                  "account.$": "$.account",
+                  "ingestion_time.$": "$.ingestion_time"
+                }
+              },
+              "Next": "CrawlerStepFunctionStartExecution"
+            },
+            "CrawlerStepFunctionStartExecution": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "Input": {
+                  "crawlers": ${Crawlers}
+                }
+              },
+              "End": true
+            }
+          },
+          "TimeoutSeconds": 14400
+        }
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-detail-Crawler"]'
+        CollectionType: "Payers"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+        ItemsPerBatch: 50
+        MaxConcurrentBatches: 1
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E2532 #Passing a dynamic structure for crawlers input into the template as a DefinitionSubstitution
+  AnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
