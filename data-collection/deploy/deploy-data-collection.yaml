@@ -961,7 +961,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeploySecurityHubModule
     Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-securityhub.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
