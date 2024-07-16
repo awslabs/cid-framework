@@ -33,9 +33,9 @@ Parameters:
     Description: Source code bucket
 
 Outputs:
-  StepFunctionARN:
-    Description: ARN for the module's Step Function
-    Value: !GetAtt ModuleStepFunction.Arn
+  LambdaFunctionArn:
+    Description: ARN for the LambdaFunction
+    Value: !GetAtt LambdaFunction.Arn
 
 Resources:
   LambdaRole:
