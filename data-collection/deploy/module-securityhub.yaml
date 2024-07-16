@@ -121,49 +121,57 @@ Resources:
             - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
               reason: "Need explicit name to identify role actions"
 
-    KinesisFirehoseRole:
-      Type: "AWS::IAM::Role"
-      Properties:
-        Path: "/"
-        MaxSessionDuration: 3600
-        RoleName: "${ResourcePrefix}${CFDataName}-KinesisFireHoseRole"
-        Description: "Allows Kinesis Firehose to transform and deliver data to your\
-          \ destinations using CloudWatch Logs, Lambda, and S3 on your behalf."
-        Policies:
-          - PolicyDocument:
-              Version: "2012-10-17"
-              Statement:
-              - Resource:
-                - !Sub "arn:${AWS::Partition}:s3:::${CodeBucket}"
-                - !Sub "arn:${AWS::Partition}:s3:::${CodeBucket}*"
-                - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:%FIREHOSE_POLICY_TEMPLATE_PLACEHOLDER%:log-stream:*"
-                - !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/kinesisfirehose/PUT-S3-SVAnj:log-stream:*"
-                - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${LambdaFunction}"
+  KinesisFirehoseRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-KinesisFireHoseRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - firehose.amazonaws.com
+        Version: 2012-10-17
+      Path: /
+      Policies:
+        - PolicyName: "SecurityHub-S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
                 Action:
                 - "s3:PutObject"
                 - "s3:GetObject"
                 - "s3:ListBucketMultipartUploads"
                 - "s3:AbortMultipartUpload"
-                - "lambda:InvokeFunction"
-                - "s3:ListBucket"
-                - "lambda:GetFunctionConfiguration"
-                - "s3:GetBucketLocation"
-                - "logs:PutLogEvents"
-                Effect: "Allow"
-                Sid: "VisualEditor0"
-            PolicyName: "${CFDataName}-detail-KinesisDataStream"
-        AssumeRolePolicyDocument:
-          Version: "2012-10-17"
-          Statement:
-          - Action: "sts:AssumeRole"
-            Effect: "Allow"
-            Principal:
-              Service: "firehose.amazonaws.com"
-      Metadata:
-        cfn_nag:
-          rules_to_suppress:
-            - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
-              reason: "Need explicit name to identify role actions"
+                Resource:
+                - !Sub "${DestinationBucketARN}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                  - "s3:GetBucketLocation"
+                Resource:
+                - !Sub "${DestinationBucketARN}/*"
+              - Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunction"
+                  - "lambda:GetFunctionConfiguration"
+                Resource:
+                - !Sub "${LambdaFunction}/*"
+        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "states:StartExecution"
+                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   EventRuleSechubKinesisIntegration:
     Type: "AWS::Events::Rule"
@@ -246,14 +254,6 @@ Resources:
       MemorySize: 2688
       Timeout: 900
       Role: !GetAtt LambdaRole.Arn
-      Environment:
-        Variables:
-          BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
-          #REGIONS: -- defining regions can miss events within the region list so default to global
-          LOOKBACK: 90
-          DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:
         rules_to_suppress:
