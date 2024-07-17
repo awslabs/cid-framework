@@ -193,7 +193,7 @@ Resources:
           import logging
           import re
           import base64
-          from botocore.exceptions import ClientError
+          from botocore.exceptions
 
           def rename_keys(payload):
               if isinstance(payload, dict):
