@@ -65,6 +65,7 @@ Mappings:
       path: opensearch-domains
       table:
         - Name: inventory_opensearch_domains_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -105,6 +106,7 @@ Mappings:
       path: elasticache-clusters
       table:
         - Name: inventory_elasticache_clusters_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -192,7 +194,7 @@ Mappings:
       table:
         - Name: inventory_rds_db_instances_data
           TableType: EXTERNAL_TABLE
-
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - { Name: payer_id, Type: string }
           - { Name: year, Type: string }
@@ -334,6 +336,7 @@ Mappings:
       path: rds-db-snapshots
       table:
         - Name: inventory_rds_db_snapshots_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -422,6 +425,7 @@ Mappings:
       path: ebs
       table:
         - Name: inventory_ebs_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -478,6 +482,7 @@ Mappings:
       path: ami
       table:
         - Name: inventory_ami_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -550,6 +555,7 @@ Mappings:
       path: snapshot
       table:
         - Name: inventory_snapshot_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -602,6 +608,7 @@ Mappings:
       path: ec2-instances
       table:
         - Name: inventory_ec2_instances_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -711,6 +718,7 @@ Mappings:
       path: vpc
       table:
         - Name: inventory_vpc_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -756,6 +764,7 @@ Mappings:
       path: eks
       table:
         - Name: inventory_eks_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -793,6 +802,7 @@ Mappings:
       path: lambda
       table:
         - Name: inventory_lambda_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
             Type: string
@@ -849,7 +859,7 @@ Mappings:
             - Name: region
               Type: string
             - Name: layers
-              Type: array<struct<arn:string,codesize:int>>
+              Type: array<struct<arn:string,codesize:int>> # will be updated
             - Name: vpcconfig
               Type: struct<subnetids:array<string>,securitygroupids:array<string>,vpcid:string,ipv6allowedfordualstack:boolean>
             InputFormat: org.apache.hadoop.mapred.TextInputFormat
@@ -1166,7 +1176,6 @@ Resources:
               },
               "CrawlerOutput": {
                 "Tables": {
-                  "AddOrUpdateBehavior": "MergeNewColumns",
                   "TableThreshold": 1
                 }
               }
