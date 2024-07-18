@@ -89,5 +89,7 @@ def mode(request):
 @pytest.fixture(scope='session', autouse=True)
 def prepare_setup(athena, cloudformation, s3, s3client, account_id, org_unit_id, bucket, start_time, mode, glue):
     yield prepare_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket, s3=s3, s3client=s3client)
+
+    mode = pytest.params.get('mode', mode)
     if mode != "no-teardown":
         cleanup_stacks(cloudformation=cloudformation, account_id=account_id, s3=s3, s3client=s3client, athena=athena, glue=glue)
