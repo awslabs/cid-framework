@@ -170,6 +170,7 @@ Resources:
             Action:
               - "budgets:ViewBudget"
               - "budgets:DescribeBudgets"
+              - "budgets:ListTagsForResource"
             Resource: "arn:aws:budgets::*:budget/*"
       Roles:
         - Ref: LambdaRole
