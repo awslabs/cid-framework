@@ -31,6 +31,7 @@ Python:
 
 """
 import logging
+import sys
 
 import pytest
 
@@ -180,4 +181,10 @@ def test_license_manager_licenses(athena):
 
 
 if __name__ == '__main__':
+    pytest.params = {}
+    if '--no-teardown' in sys.argv:
+        sys.argv.remove('--no-teardown')
+        pytest.params['mode'] = 'no-teardown'
+
+    sys.argv = sys.argv[:1]
     pytest.main()
