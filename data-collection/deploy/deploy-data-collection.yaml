@@ -34,7 +34,7 @@ Metadata:
           - IncludeTransitGatewayModule
           - IncludeAWSFeedsModule
           - IncludeLicenseManagerModule
-          - IncludeSecuirtyHubModule
+          - IncludeSecurityHubModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket'
@@ -86,7 +86,7 @@ Metadata:
         default: 'Include AWS Health Events Module'
       IncludeLicenseManagerModule:
         default: 'Include Marketplace Licensing Collection'
-      IncludeSecuirtyHubModule:
+      IncludeSecurityHubModule:
         default: 'Include AWS Security Hub Module'
 
 Mappings:
@@ -966,16 +966,9 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
-        Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
-        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   BackupModule:
     Type: AWS::CloudFormation::Stack

@@ -25,12 +25,6 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-  AccountCollectorLambdaARN:
-    Type: String
-    Description: Arn of the Account Collector Lambda
-  CodeBucket:
-    Type: String
-    Description: Source code bucket
 
 Outputs:
   LambdaFunctionArn:
@@ -55,13 +49,6 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Path: /
       Policies:
-        - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management accounts
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -91,14 +78,14 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  IAMRoleAmazonEventBridgeInvokeFirehose:
+  EventBridgeInvokeFirehoseRole:
     UpdateReplacePolicy: "Delete"
     Type: "AWS::IAM::Role"
     DeletionPolicy: "Delete"
     Properties:
       Path: "/service-role/"
       MaxSessionDuration: 3600
-      RoleName: !Sub "${ResourcePrefix}${CFDataName}-EBInvoke_Firehose"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-EventBridgeInvokeFirehose"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -106,11 +93,11 @@ Resources:
           Effect: "Allow"
           Principal:
             Service: "events.amazonaws.com"
-      Metadata:
-        cfn_nag:
-          rules_to_suppress:
-            - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
-              reason: "Need explicit name to identify role actions"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
 
   KinesisFirehoseRole:
     Type: AWS::IAM::Role
@@ -150,14 +137,7 @@ Resources:
                   - "lambda:InvokeFunction"
                   - "lambda:GetFunctionConfiguration"
                 Resource:
-                - !Sub "${LambdaFunction}/*"
-        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: "states:StartExecution"
-                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
+                - !GetAtt LambdaFunction.Arn
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -174,10 +154,10 @@ Resources:
         - "aws.securityhub"
       Targets:
       - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
-        RoleArn: !GetAtt IAMRoleAmazonEventBridgeInvokeFirehose.Arn
+        RoleArn: !GetAtt KinesisFirehoseRole.Arn 
         Id: "FirehoseDeliveryStream"
       State: "ENABLED"
-      Name: "${ResourcePrefix}${CFDataName}-SecHubEvents"
+      Name: !Sub "${ResourcePrefix}${CFDataName}-SecHubEvents"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -253,47 +233,43 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  LogGroup:
+  FirehoseLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      LogGroupName: !Sub "/aws/kinesis/${ResourcePrefix}${CFDataName}-detail-stream"
       RetentionInDays: 60
-    FirehoseLogGroup:
-      Type: AWS::Logs::LogGroup
-      Properties:
-        LogGroupName: !Sub "/aws/kinesis/${SecHubEventsFirehoseDeliveryStream}"
-        RetentionInDays: 60
 
   SecHubEventsFirehoseDeliveryStream:
       Type: AWS::KinesisFirehose::DeliveryStream
       Properties:
-        DeliveryStreamName: '${ResourcePrefix}${CFDataName}-detail-stream'
+        DeliveryStreamName: !Sub '${ResourcePrefix}${CFDataName}-detail-stream'
         DeliveryStreamType: DirectPut
         DeliveryStreamEncryptionConfigurationInput:
           KeyType: AWS_OWNED_CMK
         ExtendedS3DestinationConfiguration:
-          BucketARN: !GetAtt DestinationBucketARN.Arn
-          Prefix: !Sub "sechub_events/managementid=${AWS::AccountId}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
+          BucketARN: !Ref DestinationBucketARN
+          Prefix: !Sub "securityhub_events/managementid=${AWS::AccountId}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/" #managementid is not good!
           ErrorOutputPrefix: "aws-sechub-logs-firehose-error/"
-          RoleARN: !GetAtt kinesisFirehoseRole.Arn
+          RoleARN: !GetAtt KinesisFirehoseRole.Arn
           CloudWatchLoggingOptions:
-                Enabled: true
-                LogGroupName: !Ref FirehoseLogGroup
+            Enabled: true
+            LogGroupName: !Ref FirehoseLogGroup
+            LogStreamName: SecHubEventsFirehoseDeliveryStreamLog
           BufferingHints:
-                IntervalInSeconds: 900
-                SizeInMBs: 30
+            IntervalInSeconds: 900
+            SizeInMBs: 30
           CompressionFormat: "GZIP"
           ProcessingConfiguration:
-              Enabled: true
-              Processors:
-              - Type: Lambda
-                Parameters:
-                - ParameterName: LambdaArn
-                  ParameterValue: !GetAtt LambdaFunctiontransformationsechub.Arn
-                - ParameterName: BufferIntervalInSeconds
-                  ParameterValue: 600
-                - ParameterName: BufferSizeInMBs
-                  ParameterValue: 3
+            Enabled: true
+            Processors:
+            - Type: Lambda
+              Parameters:
+              - ParameterName: LambdaArn
+                ParameterValue: !GetAtt LambdaFunction.Arn
+              - ParameterName: BufferIntervalInSeconds
+                ParameterValue: 600
+              - ParameterName: BufferSizeInMBs
+                ParameterValue: 3
 
   Crawler:
     Type: AWS::Glue::Crawler
@@ -303,7 +279,8 @@ Resources:
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-detail-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/"
+
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
