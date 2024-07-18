@@ -4,6 +4,7 @@
 # vars
 account_id=$(aws sts get-caller-identity --query "Account" --output text )
 bucket=cid-$account_id-test
+export bucket
 
 # upload files
 ./data-collection/utils/upload.sh  "$bucket"
