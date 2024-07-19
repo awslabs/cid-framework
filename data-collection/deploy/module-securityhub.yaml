@@ -173,20 +173,20 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
-      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-transformation-Lambda'
+      Description: !Sub "Lambda function to transform Security Hub events"
       Runtime: python3.12
       Architectures: [x86_64]
       Code:
         ZipFile: |
-          import json
           import os
-          import logging
           import re
+          import json
+          import logging
           import base64
-          from botocore.exceptions
 
           def rename_keys(payload):
+              """Recursively rename all special characters in keys to '_'. """
               if isinstance(payload, dict):
                   renamed_payload = {}
                   for key, value in payload.items():
@@ -259,8 +259,8 @@ Resources:
           KeyType: AWS_OWNED_CMK
         ExtendedS3DestinationConfiguration:
           BucketARN: !Ref DestinationBucketARN
-          Prefix: !Sub "securityhub_events/managementid=${AWS::AccountId}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/" #managementid is not good!
-          ErrorOutputPrefix: "aws-sechub-logs-firehose-error/"
+          Prefix: !Sub "${CFDataName}/securityhub_events/managementid=${AWS::AccountId}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/" #managementid is not good!
+          ErrorOutputPrefix: !Sub "${CFDataName}/security_hub_firehose_errors/"
           RoleARN: !GetAtt KinesisFirehoseRole.Arn
           CloudWatchLoggingOptions:
             Enabled: true
@@ -285,7 +285,7 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-detail-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-securityhub-events-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
