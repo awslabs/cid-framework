@@ -103,11 +103,16 @@ Resources:
       Code:
         ZipFile: |
           #Author Stephanie Gooch 2021
+          #Mohideen - Added Budgets tag collection module
           import os
           import json
           import logging
           import datetime
           from json import JSONEncoder
+          import sys
+          from pip._internal import main
+          main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
+          sys.path.insert(0,'/tmp/')
 
           import boto3
 
@@ -164,7 +169,17 @@ Resources:
                               count += 1
                               budget['collection_time'] = collection_time
                               logger.debug(budget)
-                              budget.update({'Account_ID': account_id, 'Account_Name': account_name})
+                              # Fetch tags for the budget using List tag for resource API
+                              budget_name = budget['BudgetName']
+                              resource_arn = f"arn:aws:budgets::{account_id}:budget/{budget_name}"
+                              budget_tag = budgets_client.list_tags_for_resource(
+                                  ResourceARN=f"{resource_arn}"
+                              )
+                              if budget_tag['ResourceTags'] is not None:
+                                budget.update({'Account_ID': account_id, 'Account_Name': account_name, 'Tags': budget_tag['ResourceTags']})
+                              else:
+                                budget.update({'Account_ID': account_id, 'Account_Name': account_name})
+                              # Fetch CostFilters if available
                               if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
                                   budget.update({'CostFilters': {'Filter': ['None']}})
                               dataJSONData = json.dumps(budget, cls=DateTimeEncoder)
