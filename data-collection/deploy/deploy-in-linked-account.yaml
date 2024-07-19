@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Linked Account v3.0.10
+Description: CID Data Collection - Role for Linked Account v3.1.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
