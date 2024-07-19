@@ -65,13 +65,7 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "${DestinationBucketARN}"
-        - PolicyName: !Sub "${CFDataName}-detail-StateMachineExecution"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action: "states:StartExecution"
-                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
+
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -93,6 +87,18 @@ Resources:
           Effect: "Allow"
           Principal:
             Service: "events.amazonaws.com"
+      Policies:
+        - PolicyName: "Firehose-WriteAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "firehose:PutRecord"
+                  - "firehose:PutRecordBatch"
+                Resource:
+                  - !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
+
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -138,13 +144,18 @@ Resources:
                   - "lambda:GetFunctionConfiguration"
                 Resource:
                 - !GetAtt LambdaFunction.Arn
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  EventRuleSechubKinesisIntegration:
+  EventRuleSecurityHubKinesisIntegration:
     Type: "AWS::Events::Rule"
     Properties:
       EventPattern:
@@ -154,10 +165,10 @@ Resources:
         - "aws.securityhub"
       Targets:
       - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
-        RoleArn: !GetAtt KinesisFirehoseRole.Arn 
-        Id: "FirehoseDeliveryStream"
+        RoleArn: !GetAtt EventBridgeInvokeFirehoseRole.Arn
+        Id: "Firehose"
       State: "ENABLED"
-      Name: !Sub "${ResourcePrefix}${CFDataName}-SecHubEvents"
+      Name: !Sub "${ResourcePrefix}${CFDataName}-SecurityHubToFirehose"
 
   LambdaFunction:
     Type: AWS::Lambda::Function
