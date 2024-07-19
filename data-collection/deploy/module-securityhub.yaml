@@ -174,7 +174,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-transformation-Lambda'
-      Description: !Sub "Lambda function to transform Security Hub events"
+      Description: "Lambda function to transform Security Hub events"
       Runtime: python3.12
       Architectures: [x86_64]
       Code:
