@@ -799,7 +799,7 @@ Mappings:
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
     LambdaFunctions:
-      path: lambda_functions
+      path: lambda-functions
       table:
         - Name: inventory_lambda_functions_data
           Parameters: { "classification" : "json", "compressionType": "none" }
@@ -863,7 +863,7 @@ Mappings:
             - Name: vpcconfig
               Type: struct<subnetids:array<string>,securitygroupids:array<string>,vpcid:string,ipv6allowedfordualstack:boolean>
             InputFormat: org.apache.hadoop.mapred.TextInputFormat
-            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-data/
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-functions-data/
             OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
             SerdeInfo:
               Parameters:
@@ -1085,7 +1085,7 @@ Resources:
                       service='ec2',
                       function_name='describe_vpcs'
                   ),
-                  'lambda_functions' : partial(
+                  'lambda-functions' : partial(
                     paginated_scan,
                     service='lambda',
                     function_name='list_functions',
