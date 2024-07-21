@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, AWSLambda
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions
     Description: Services for pulling price data
 
 Mappings:
@@ -798,10 +798,10 @@ Mappings:
                 paths: Arn,Name,CreatedAt,Version,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
-    AWSLambda:
-      path: lambda
+    LambdaFunctions:
+      path: lambda-functions
       table:
-        - Name: inventory_lambda_data
+        - Name: inventory_lambda_functions_data
           Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
@@ -863,7 +863,7 @@ Mappings:
             - Name: vpcconfig
               Type: struct<subnetids:array<string>,securitygroupids:array<string>,vpcid:string,ipv6allowedfordualstack:boolean>
             InputFormat: org.apache.hadoop.mapred.TextInputFormat
-            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-data/
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-functions-data/
             OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
             SerdeInfo:
               Parameters:
@@ -970,9 +970,7 @@ Resources:
               session = assume_session(account_id, region)
               client = session.client(service, region_name=region)
               try:
-                  paginator = client.get_paginator(function_name)
-                  for obj in paginator.paginate(**(params or {})).search(obj_name):
-                      yield obj
+                  yield from client.get_paginator(function_name).paginate(**(params or {})).search(obj_name)
               except Exception as exc:  #pylint: disable=broad-exception-caught
                   logger.info(f'Error in scan {function_name}/{account_id}: {exc}')
 
@@ -996,32 +994,32 @@ Resources:
                   logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def eks_clusters_scan(account_id, region):
-            """special function to scan EKS clusters"""
-            service = "eks"
-            session = assume_session(account_id, region)
-            client = session.client(service, region_name=region)
-            try:
-                for cluster_name in (
-                    client.get_paginator("list_clusters")
-                    .paginate(
-                        PaginationConfig={
-                            "PageSize": 100,
-                        }
-                    )
-                    .search("clusters")
-                ):
-                    cluster = client.describe_cluster(name=cluster_name)
-                    yield {
-                            "Arn": cluster["cluster"]["arn"],
-                            "Name": cluster["cluster"]["name"],
-                            "CreatedAt": datetime.strftime(
-                                cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
-                            ),
-                            "Version": cluster["cluster"]["version"],
-                    }
-            except Exception as exc:
-                logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
-                return []
+              """special function to scan EKS clusters"""
+              service = "eks"
+              session = assume_session(account_id, region)
+              client = session.client(service, region_name=region)
+              try:
+                  for cluster_name in (
+                      client.get_paginator("list_clusters")
+                      .paginate(
+                          PaginationConfig={
+                              "PageSize": 100,
+                          }
+                      )
+                      .search("clusters")
+                  ):
+                      cluster = client.describe_cluster(name=cluster_name)
+                      yield {
+                          "Arn": cluster["cluster"]["arn"],
+                          "Name": cluster["cluster"]["name"],
+                          "CreatedAt": datetime.strftime(
+                              cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+                          ),
+                          "Version": cluster["cluster"]["version"],
+                      }
+              except Exception as exc: #pylint: disable=W0718
+                  logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
+              return []
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
@@ -1085,7 +1083,7 @@ Resources:
                       service='ec2',
                       function_name='describe_vpcs'
                   ),
-                  'lambda' : partial(
+                  'lambda-functions' : partial(
                     paginated_scan,
                     service='lambda',
                     function_name='list_functions',
@@ -1114,7 +1112,7 @@ Resources:
                                           obj[f"tag_{tag['Key']}"] = tag["Value"]
                               obj['collection_date'] = collection_date
                               obj['region'] = region
-                              if 'Environment' in obj and name == 'lambda':
+                              if 'Environment' in obj and name == 'lambda_functions':
                                   obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
                               file_.write(to_json(obj) + "\n")
                   logger.info(f"Collected {counter} total {name} instances")

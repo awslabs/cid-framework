@@ -346,7 +346,7 @@ def trigger_update(account_id):
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Ec2Instances-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-VpcInstances-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbSnapshots-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-AWSLambda-StateMachine',
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-LambdaFunctions-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}rds-usage-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
         f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',
