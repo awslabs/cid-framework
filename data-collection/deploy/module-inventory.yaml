@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, AWSLambda
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions
     Description: Services for pulling price data
 
 Mappings:
@@ -798,10 +798,10 @@ Mappings:
                 paths: Arn,Name,CreatedAt,Version,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
-    AWSLambda:
-      path: lambda
+    LambdaFunctions:
+      path: lambda_functions
       table:
-        - Name: inventory_lambda_data
+        - Name: inventory_lambda_functions_data
           Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
@@ -1085,7 +1085,7 @@ Resources:
                       service='ec2',
                       function_name='describe_vpcs'
                   ),
-                  'lambda' : partial(
+                  'lambda_functions' : partial(
                     paginated_scan,
                     service='lambda',
                     function_name='list_functions',
@@ -1114,7 +1114,7 @@ Resources:
                                           obj[f"tag_{tag['Key']}"] = tag["Value"]
                               obj['collection_date'] = collection_date
                               obj['region'] = region
-                              if 'Environment' in obj and name == 'lambda':
+                              if 'Environment' in obj and name == 'lambda_functions':
                                   obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
                               file_.write(to_json(obj) + "\n")
                   logger.info(f"Collected {counter} total {name} instances")
