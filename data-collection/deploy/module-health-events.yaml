@@ -337,7 +337,7 @@ Resources:
 
               count = 0
               if is_summary_mode:
-                  start_from, start_to = calculate_dates(BUCKET_NAME, PREFIX)
+                  start_from, start_to = calculate_dates(BUCKET_NAME, f"{PREFIX}/{PREFIX}-summary-data/payer_id={account_id}")
                   logger.info(f"Collecting events from {start_from} to {start_to}")
                   args = {
                       'maxResults':100,
