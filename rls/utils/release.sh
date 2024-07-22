@@ -23,7 +23,7 @@ aws cloudformation list-stack-instances \
       --query 'StackResourceSummaries[?LogicalResourceId == `LayerBucket`].PhysicalResourceId' \
       --region $region --output text)
 
-    aws s3 sync $code_path/ s3://$bucket/cfn/rls`/ --delete
+    aws s3 sync $code_path/ s3://$bucket/cfn/rls/ --delete
   done
 
 echo 'Done'
