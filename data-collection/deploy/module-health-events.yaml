@@ -196,20 +196,13 @@ Resources:
               end_date = datetime.now(timezone.utc)
               start_date = end_date - timedelta(days=LOOKBACK)
               # Check the create time of objects in the S3 bucket
-              paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=bucket, Prefix=s3_path)], [])
-              last_file_date = get_last_modified_date(contents)
-              if last_file_date and last_file_date >= start_date:
-                  start_date = last_file_date
+              contents = boto3.client('s3').get_paginator('list_objects_v2').paginate(
+                  Bucket=bucket,
+                  Prefix=s3_path
+              ).search('Contents')
+              start_date = max([obj['LastModified'] for obj in contents if obj] + [start_date])
               return start_date, end_date
 
-          def get_last_modified_date(contents):
-              """ Helper for calculate_dates """
-              last_modified_dates = [obj['LastModified'] for obj in contents]
-              last_modified_dates_within_90_days = [datetime for datetime in last_modified_dates if datetime >= datetime.now(timezone.utc) - timedelta(days=90)]
-              if last_modified_dates_within_90_days:
-                  return max(last_modified_dates_within_90_days)
-              return None
 
           def search(function, args=None, expression='@'):
               compiled = jmespath.compile(expression)
