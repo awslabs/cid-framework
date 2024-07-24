@@ -165,6 +165,7 @@ Resources:
               count = 0
               with open(TMP_FILE, "w", encoding='utf-8') as f:
                   for budget in budgets_client.get_paginator("describe_budgets").paginate(AccountId=account_id).search('Budgets'):
+                      if not budget: continue
                       budget['collection_time'] = collection_time
 
                       # Fetch tags for the budget using List tag for resource API
