@@ -153,7 +153,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Runtime: python3.9
-      FunctionName: !Sub ${ResourcePrefix}-RLS-Analytics
+      FunctionName: !Sub ${ResourcePrefix}RLS-Analytics
       Handler: index.lambda_handler
       MemorySize: 128
       Role: !GetAtt LambdaAnalyticsRole.Arn
