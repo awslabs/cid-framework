@@ -29,7 +29,7 @@ Parameters:
   CodeKey:
       Type: String
       Description: file name of ZipFile with data code
-      Default: rls/create_rls.zip # RLS Folder to be updated, once the LAB will be created
+      Default: cfn/rls/create_rls.zip # RLS Folder to be updated, once the LAB will be created
 Outputs:
   LambdaFunctionName:
     Value:
@@ -50,7 +50,7 @@ Resources:
       Description: LambdaFunction of python3.8.
       Runtime: python3.9
       Code:
-        S3Bucket: !Sub '${LambdaLayerBucketPrefix}-${AWS::Region}'
+        S3Bucket: !Sub '${CodeBucket}-${AWS::Region}'
         S3Key: !Ref CodeKey
       Handler: 'create_rls.lambda_handler'
       MemorySize: 2688
