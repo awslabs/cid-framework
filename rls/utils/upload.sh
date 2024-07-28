@@ -13,5 +13,5 @@ fi
 code_path=$(git rev-parse --show-toplevel)/rls/deploy
 
 echo "Sync to $bucket"
-aws s3 sync $code_path/ s3://$bucket/cfn/data-collection/
+aws s3 sync $code_path/ s3://$bucket/cfn/rls
 echo 'Done'
