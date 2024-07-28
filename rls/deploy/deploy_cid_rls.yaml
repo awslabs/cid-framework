@@ -68,7 +68,7 @@ Resources:
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${ResourcePrefix}-RLS-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}RLS-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
