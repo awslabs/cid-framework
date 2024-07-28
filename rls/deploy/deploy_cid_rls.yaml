@@ -62,13 +62,13 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          MANAGEMENTROLENAME: !Ref ManagementAccountRole
+          MANAGEMENTROLENAME: !Sub "${ResourcePrefix}${ManagementAccountRole}"
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           QS_REGION: !Ref AWS::Region
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+      RoleName: !Sub "${ResourcePrefix}-RLS-LambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
