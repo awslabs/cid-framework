@@ -127,6 +127,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}RLS-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
