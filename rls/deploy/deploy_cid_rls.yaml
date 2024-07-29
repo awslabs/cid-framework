@@ -41,6 +41,34 @@ Outputs:
         - CIDRLS
         - Arn
 Resources:
+  QS_RLS_DATASET:
+    Type: AWS::QuickSight::DataSet
+    Properties:
+      DataSetId: String
+      DatasetParameters: 
+        - DatasetParameter
+      DataSetRefreshProperties: 
+        DataSetRefreshProperties
+      DataSetUsageConfiguration: 
+        DataSetUsageConfiguration
+      FieldFolders: 
+        Key: Value
+      ImportMode: String
+      IngestionWaitPolicy: 
+        IngestionWaitPolicy
+      LogicalTableMap: 
+        Key: Value
+      Name: String
+      Permissions: 
+        - ResourcePermission
+      PhysicalTableMap: 
+        Key: Value
+      RowLevelPermissionDataSet: 
+        RowLevelPermissionDataSet
+      RowLevelPermissionTagConfiguration: 
+        RowLevelPermissionTagConfiguration
+      Tags: 
+        - Tag
   CIDRLS:
     Type: AWS::Lambda::Function
     Properties:
