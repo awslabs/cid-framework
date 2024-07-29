@@ -6,7 +6,7 @@ repo = git.Repo('.')
 
 print(repo.git.execute('git checkout main'.split()))
 print(repo.git.execute('git pull'.split()))
-module = '{module}'
+module = 'rls'
 
 
 old_ver = json.load(open(f"{module}/utils/version.json"))['version']
