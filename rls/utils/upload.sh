@@ -14,6 +14,7 @@ code_path=$(git rev-parse --show-toplevel)/rls/deploy
 
 
 echo "Sync to $bucket"
+rm $code_path/create_rls.zip
 zip -j $code_path/create_rls.zip $code_path/create_rls.py
 aws s3 sync $code_path/ s3://$bucket/cfn/rls
 echo 'Done'
