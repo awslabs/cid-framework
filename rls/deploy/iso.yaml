@@ -1,0 +1,61 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda to collect Org data and store in S3 
+Parameters:
+  QuicksightUserARN:
+      Type: String
+      Description: QuickSight ARN of the owning User
+Resources:
+  QsRLSDatasource:
+    Type: AWS::QuickSight::DataSource
+    Properties:
+      AwsAccountId: !Ref "AWS::AccountId"
+      DataSourceId: "cid-rls-datasource"
+      Name: "cid-rls-datasource"
+      Type: S3
+      DataSourceParameters:
+        S3Parameters:
+          ManifestFileLocation:
+            Bucket: "182071094551rlsdata"
+            Key: "cid_rls/cid_rls.json"
+      Permissions:
+        - Actions:
+            - "quicksight:UpdateDataSourcePermissions"
+            - "quicksight:DescribeDataSource"
+            - "quicksight:DescribeDataSourcePermissions"
+            - "quicksight:PassDataSource"
+            - "quicksight:UpdateDataSource"
+            - "quicksight:DeleteDataSource"
+          Principal: !Ref QuicksightUserARN
+  QsRLSDataSet:
+    Type: AWS::QuickSight::DataSet
+    DependsOn: "QsRLSDatasource"
+    Properties:
+      DataSetId: "cid-rls-dataset"
+      AwsAccountId: !Ref "AWS::AccountId"
+      Name: "cid-rls-dataset"
+      ImportMode: SPICE
+      Permissions:
+        - Actions:
+            - "quicksight:DeleteDataSet"
+            - "quicksight:CreateIngestion"
+            - "quicksight:CancelIngestion"
+            - "quicksight:DescribeDataSet"
+            - "quicksight:DescribeDataSetPermissions"
+            - "quicksight:PassDataSet"
+            - "quicksight:DescribeIngestion"
+            - "quicksight:ListIngestions"
+            - "quicksight:UpdateDataSetPermissions"
+            - "quicksight:UpdateDataSet"
+          Principal: !Ref QuicksightUserARN
+      PhysicalTableMap:
+        cid-rls-dataset:
+          S3Source:
+            DataSourceArn: !Sub "arn:aws:quicksight:${AWS::Region}:${AWS::AccountId}:datasource/cid-rls-datasource"
+            InputColumns:
+              - Name: "UserName"
+                Type: "STRING"
+              - Name: "account_id"
+                Type: "STRING"
+              - Name: "payer_account_id"
+                Type: "STRING"
