@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions, RdsDbClusters
     Description: Services for pulling price data
 
 Mappings:
@@ -188,6 +188,141 @@ Mappings:
                 paths: ARN,AtRestEncryptionEnabled,AuthTokenEnabled,AutoMinorVersionUpgrade,CacheClusterCreateTime,CacheClusterId,CacheClusterStatus,CacheNodeType,CacheParameterGroup,CacheSecurityGroups,CacheSubnetGroupName,ClientDownloadLandingPage,Engine,EngineVersion,IpDiscovery,LogDeliveryConfigurations,NetworkType,NumCacheNodes,PendingModifiedValues,PreferredAvailabilityZone,PreferredMaintenanceWindow,ReplicationGroupId,ReplicationGroupLogDeliveryEnabled,SecurityGroups,SnapshotRetentionLimit,SnapshotWindow,TransitEncryptionEnabled,TransitEncryptionMode,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
+
+    RdsDbClusters:
+      path: rds-db-clusters
+      table:
+        - Name: inventory_rds_db_clusters_data
+          TableType: EXTERNAL_TABLE
+
+          PartitionKeys:
+          - { Name: payer_id, Type: string }
+          - { Name: year, Type: string }
+          - { Name: month, Type: string }
+          - { Name: day, Type: string }
+          StorageDescriptor:
+            Columns:
+            - Name: readreplicaidentifiers
+              Type: string
+            - Name: capacity
+              Type: string
+            - Name: charactersetname
+              Type: string
+            - Name: preferredbackupwindow
+              Type: string
+            - Name: copytagstosnapshot
+              Type: string
+            - Name: activitystreamkinesisstreamname
+              Type: string
+            - Name: multiaz
+              Type: string
+            - Name: backtrackwindow
+              Type: string
+            - Name: earliestrestorabletime
+              Type: string
+            - Name: engine
+              Type: string
+            - Name: earliestbacktracktime
+              Type: string
+            - Name: httpendpointenabled
+              Type: string
+            - Name: percentprogress
+              Type: string
+            - Name: dbclusterparametergroup
+              Type: string
+            - Name: hostedzoneid
+              Type: string
+            - Name: status
+              Type: string
+            - Name: associatedroles
+              Type: string
+            - Name: dbclusteridentifier
+              Type: string
+            - Name: backtrackconsumedchangerecords
+              Type: string
+            - Name: iamdatabaseauthenticationenabled
+              Type: string
+            - Name: serverlessv2scalingconfiguration
+              Type: string
+            - Name: customendpoints
+              Type: string
+            - Name: port
+              Type: string
+            - Name: activitystreamkmskeyid
+              Type: string
+            - Name: masterusername
+              Type: string
+            - Name: dbclusterresourceid
+              Type: string
+            - Name: clustercreatetime
+              Type: string
+            - Name: vpcsecuritygroups
+              Type: string
+            - Name: dbsubnetgroup
+              Type: string
+            - Name: latestrestorabletime
+              Type: string
+            - Name: availabilityzones
+              Type: string
+            - Name: dbclusteroptiongroupmemberships
+              Type: string
+            - Name: replicationsourceidentifier
+              Type: string
+            - Name: deletionprotection
+              Type: string
+            - Name: endpoint
+              Type: string
+            - Name: preferredmaintenancewindow
+              Type: string
+            - Name: readerendpoint
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: enabledcloudwatchlogsexports
+              Type: string
+            - Name: scalingconfigurationinfo
+              Type: string
+            - Name: storageencrypted
+              Type: string
+            - Name: enginemode
+              Type: string
+            - Name: databasename
+              Type: string
+            - Name: activitystreammode
+              Type: string
+            - Name: crossaccountclone
+              Type: string
+            - Name: dbclusterarn
+              Type: string
+            - Name: activitystreamstatus
+              Type: string
+            - Name: allocatedstorage
+              Type: string
+            - Name: engineversion
+              Type: string
+            - Name: backupretentionperiod
+              Type: string
+            - Name: clonegroupid
+              Type: string
+            - Name: dbclustermembers
+              Type: string
+            - Name: kmskeyid
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-rds-db-clusters-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            Parameters:
+              UPDATED_BY_CRAWLER: !Sub ${ResourcePrefix}inventory-RdsDbClusters-Crawler
+            SerdeInfo:
+              Parameters:
+                paths: readreplicaidentifiers,capacity,charactersetname,preferredbackupwindow,copytagstosnapshot,activitystreamkinesisstreamname,multiaz,backtrackwindow,earliestrestorabletime,engine,earliestbacktracktime,httpendpointenabled,payer_id,percentprogress,day,dbclusterparametergroup,hostedzoneid,status,associatedroles,dbclusteridentifier,backtrackconsumedchangerecords,iamdatabaseauthenticationenabled,serverlessv2scalingconfiguration,customendpoints,port,activitystreamkmskeyid,masterusername,dbclusterresourceid,clustercreatetime,vpcsecuritygroups,dbsubnetgroup,latestrestorabletime,availabilityzones,dbclusteroptiongroupmemberships,replicationsourceidentifier,year,deletionprotection,endpoint,preferredmaintenancewindow,readerendpoint,accountid,enabledcloudwatchlogsexports,scalingconfigurationinfo,storageencrypted,enginemode,databasename,activitystreammode,month,crossaccountclone,dbclusterarn,activitystreamstatus,allocatedstorage,engineversion,backupretentionperiod,clonegroupid,dbclustermembers,kmskeyid,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
     RdsDbInstances:
       path: rds-db-instances
@@ -1042,6 +1177,12 @@ Resources:
                       function_name='describe_cache_clusters',
                       obj_name='CacheClusters'
                       # fields=['CacheClusterId', 'CacheNodeType', 'EngineVersion', 'Engine', 'NumCacheNodes', 'PreferredAvailabilityZone', 'CacheClusterCreateTime'],
+                  ),
+                  'rds-db-clusters': partial(
+                      paginated_scan,
+                      service='rds',
+                      function_name='describe_db_clusters',
+                      obj_name='DBClusters[*]'
                   ),
                   'rds-db-instances': partial(
                       paginated_scan,
