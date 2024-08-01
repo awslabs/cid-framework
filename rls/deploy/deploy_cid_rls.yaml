@@ -241,15 +241,17 @@ Resources:
                 Type: "STRING"
               - Name: "payer_account_id"
                 Type: "STRING"
-
-  
-
-  
-
-
-
-
-
+  QsRLSDataSetRefreshSchedule:
+    Type: AWS::QuickSight::RefreshSchedule
+    DependsOn: "QsRLSDataSet"
+    Properties:
+      DataSetId: "cid-rls-dataset"
+      AwsAccountId: !Ref "AWS::AccountId"
+      Schedule: 
+        RefreshType: "FULL_REFRESH"
+        ScheduleId: "cid-rls-dataset-refresh-schedule"
+        ScheduleFrequency:
+          Interval: "HOURLY"
   LambdaAnalyticsRole: #Execution role for the custom resource
     Type: AWS::IAM::Role
     Properties:
