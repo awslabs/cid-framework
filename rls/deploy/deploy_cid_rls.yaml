@@ -61,6 +61,10 @@ Parameters:
       Type: String
       Description: Location of the S3 Manifest File for QuickSight dataset. Do not change. 
       Default: cid_rls/cid_rls.json
+  DestinationBucketCsvRlsKey
+      Type: String
+      Description: Location of the S3 CSV File for QuickSight dataset. Do not change. 
+      Default: cid_rls/cid_rls.csv
 Outputs:
   LambdaFunctionName:
     Value:
@@ -176,7 +180,7 @@ Resources:
           "fileLocations": [
               {
                   "URIs": [
-                      "s3://${DestinationBucket}/${DestinationBucketManifestKey}"
+                      "s3://${DestinationBucket}/${DestinationBucketCsvRlsKey}"
                   ]
               }
           ],
