@@ -1,0 +1,35 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 
+  - "AWS::Serverless-2016-10-31"
+Description: Lambda to collect Org data and store in S3 
+Resources:
+  S3ObjectResourceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.9
+      CodeUri: s3://aws-managed-cost-intelligence-dashboards-us-east-1/cfn/rls/S3Object/lambda_macro_s3Object.zip
+      Handler: resource.handler
+      Policies: AmazonS3FullAccess
+  S3ObjectMacroFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Runtime: python3.9
+      CodeUri: s3://aws-managed-cost-intelligence-dashboards-us-east-1/cfn/rls/S3Object/lambda_macro_s3Object.zip
+      Handler: macro.handler
+      Policies: AmazonS3FullAccess
+      Environment:
+        Variables:
+          LAMBDA_ARN:
+            Fn::GetAtt:
+            - S3ObjectResourceFunction
+            - Arn
+  S3ObjectMacro:
+    Type: AWS::CloudFormation::Macro
+    DependsOn: [S3ObjectMacroFunction, S3ObjectResourceFunction]
+    Properties:
+      Name: S3Objects
+      FunctionName:
+        Fn::GetAtt:
+        - S3ObjectMacroFunction
+        - Arn

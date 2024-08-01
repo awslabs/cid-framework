@@ -1,13 +1,48 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
+Transform: 
+  - S3Objects
 Description: Lambda to collect Org data and store in S3 
 Parameters:
   QuicksightUserARN:
-      Type: String
-      Description: QuickSight ARN of the owning User
+    Type: String
+    Description: QuickSight ARN of the owning User
+    Default: "arn:aws:quicksight:us-east-1:182071094551:user/default/vmindru"
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket that is created to hold org data
+    Default: cid-182071094551-shared
+  DestinationBucketManifestKey:
+    Type: String
+    Description: Name of the S3 Bucket Key with Manifest
+    Default: cid_rls/cid_rls.json
 Resources:
+  S3Object:
+    Type: AWS::S3::Object
+    Properties:
+      Target:
+        Bucket: !Ref DestinationBucket
+        Key: README.md
+        ContentType: text/markdown
+      Body: !Sub |
+        {
+          "fileLocations": [
+              {
+                  "URIs": [
+                      "s3:///${DestinationBucket}/${DestinationBucketManifestKey}",
+                  ]
+              }
+          ],
+          "globalUploadSettings": {
+              "format": "CSV",
+              "delimiter": ",",
+              "textqualifier": "\"",
+              "containsHeader": "true"
+          \}
+        \}
   QsRLSDatasource:
     Type: AWS::QuickSight::DataSource
+    DependsOn: "S3Object"
     Properties:
       AwsAccountId: !Ref "AWS::AccountId"
       DataSourceId: "cid-rls-datasource"

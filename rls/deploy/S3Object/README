@@ -1,0 +1,3 @@
+# Original aws cloudformation package  --template-file macro.template  --s3-bucket aws-managed-cost-intelligence-dashboards-us-east-1  --output-template-file packaged.template
+zip -j lambda_macro_s3Object.zip ./lambda/*.py
+
