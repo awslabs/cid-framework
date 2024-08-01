@@ -241,6 +241,8 @@ Resources:
             InputColumns:
               - Name: "UserName"
                 Type: "STRING"
+              - Name: "UserGroup"
+                Type: "STRING"
               - Name: "account_id"
                 Type: "STRING"
               - Name: "payer_account_id"
