@@ -22,7 +22,7 @@ Resources:
     Properties:
       Target:
         Bucket: !Ref DestinationBucket
-        Key: README.md
+        Key: cid_rls/cid_rls.json
         ContentType: text/markdown
       Body: !Sub |
         {

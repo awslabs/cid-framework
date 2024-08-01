@@ -7,29 +7,28 @@ Resources:
   S3ObjectResourceFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Runtime: python3.9
+      Runtime: python3.11
       CodeUri: s3://aws-managed-cost-intelligence-dashboards-us-east-1/cfn/rls/S3Object/lambda_macro_s3Object.zip
       Handler: resource.handler
       Policies: AmazonS3FullAccess
   S3ObjectMacroFunction:
     Type: AWS::Serverless::Function
+    Metadata:
+      guard:
+        SuppressedRules:
+          - LAMBDA_INSIDE_VPC
+          - LAMBDA_FUNCTION_PUBLIC_ACCESS_PROHIBITED
     Properties:
-      Runtime: python3.9
+      Runtime: python3.11
       CodeUri: s3://aws-managed-cost-intelligence-dashboards-us-east-1/cfn/rls/S3Object/lambda_macro_s3Object.zip
       Handler: macro.handler
       Policies: AmazonS3FullAccess
       Environment:
         Variables:
-          LAMBDA_ARN:
-            Fn::GetAtt:
-            - S3ObjectResourceFunction
-            - Arn
+          LAMBDA_ARN: !GetAtt S3ObjectResourceFunction.Arn
   S3ObjectMacro:
     Type: AWS::CloudFormation::Macro
     DependsOn: [S3ObjectMacroFunction, S3ObjectResourceFunction]
     Properties:
       Name: S3Objects
-      FunctionName:
-        Fn::GetAtt:
-        - S3ObjectMacroFunction
-        - Arn
+      FunctionName: !GetAtt S3ObjectMacroFunction.Arn
