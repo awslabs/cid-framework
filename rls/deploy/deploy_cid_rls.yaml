@@ -1,4 +1,4 @@
---
+---
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: S3Objects
 Description: Lambda to collect Org data and store in S3 
