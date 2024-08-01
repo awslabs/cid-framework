@@ -1,37 +1,40 @@
-# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License"). You
-# may not use this file except in compliance with the License. A copy of
-# the License is located at
-#
-#     http://aws.amazon.com/apache2.0/
-#
-# or in the "license" file accompanying this file. This file is
-# distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF
-# ANY KIND, either express or implied. See the License for the specific
-# language governing permissions and limitations under the License.
+"S3Objects macro handler. Replaces AWS::S3::Object with a custom resource."
+
+import os
 
 import boto3
-import os
 
 LAMBDA_ARN = os.environ["LAMBDA_ARN"]
 
 s3_client = boto3.client("s3")
 
+
 def handle_template(request_id, template):
+    "Process the template and modify instances of AWS::S3::Object"
+
+    print(request_id)
+
     new_resources = {}
 
-    for name, resource in template.get("Resources", {}).items():
+    for name, resource in list(template.get("Resources", {}).items()):
         if resource["Type"] == "AWS::S3::Object":
             props = resource["Properties"]
 
-            if len([prop for prop in resource["Properties"] if prop in ["Body", "Base64Body", "Source"]]) != 1:
-                raise Exception("You must specify exactly one of: Body, Base64Body, Source")
+            if (
+                len(
+                    [
+                        prop
+                        for prop in resource["Properties"]
+                        if prop in ["Body", "URL", "Base64Body", "Source"]
+                    ]
+                )
+                != 1
+            ):
+                raise Exception(
+                    "You must specify exactly one of: Body, URL, Base64Body, Source"
+                )
 
             target = props["Target"]
-
-            if "ACL" not in target:
-                target["ACL"] = "private"
 
             resource_props = {
                 "ServiceToken": LAMBDA_ARN,
@@ -41,11 +44,16 @@ def handle_template(request_id, template):
             if "Body" in props:
                 resource_props["Body"] = props["Body"]
 
+            elif "URL" in props:
+                resource_props["URL"] = props["URL"]
+
             elif "Base64Body" in props:
                 resource_props["Base64Body"] = props["Base64Body"]
 
             elif "Source" in props:
                 resource_props["Source"] = props["Source"]
+
+            resource_props["ServiceTimeout"] = 120
 
             new_resources[name] = {
                 "Type": "Custom::S3Object",
@@ -53,15 +61,17 @@ def handle_template(request_id, template):
                 "Properties": resource_props,
             }
 
-    for name, resource in new_resources.items():
+    for name, resource in list(new_resources.items()):
         template["Resources"][name] = resource
 
     return template
 
-def handler(event, context):
+
+def handler(event, _):
+    "Macro handler"
     try:
         template = handle_template(event["requestId"], event["fragment"])
-    except Exception as e:
+    except Exception:
         return {
             "requestId": event["requestId"],
             "status": "failure",
