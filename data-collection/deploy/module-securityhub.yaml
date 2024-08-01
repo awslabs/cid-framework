@@ -141,6 +141,11 @@ Resources:
                 - !Sub "${DestinationBucketARN}/*"
               - Effect: "Allow"
                 Action:
+                  - "logs:PutLogEvents"
+                Resource:
+                  - !Sub "${FirehoseLogGroup}/*"
+              - Effect: "Allow"
+                Action:
                   - "s3:ListBucket"
                   - "s3:GetBucketLocation"
                 Resource:
