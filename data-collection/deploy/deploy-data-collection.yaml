@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.1.2
+Description: CID Data Collection Stack v3.2.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
