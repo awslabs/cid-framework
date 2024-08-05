@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.1.1
+Description: CID Data Collection - All-in-One for Management Account v3.1.2
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -203,7 +203,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts v3.1.1"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.1.2"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
