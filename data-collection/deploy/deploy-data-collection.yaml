@@ -23,7 +23,6 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
@@ -77,8 +76,6 @@ Metadata:
         default: 'Include AWS TransitGateway Collection Module'
       IncludeBackupModule:
         default: 'Include AWS Backup Collection Module'
-      IncludeCostOptimizationHubModule:
-        default: 'Include CostOptimizationHub Module'
       IncludeAWSFeedsModule:
         default: 'Include AWS Feeds Module'
       IncludeHealthEventsModule:
@@ -130,7 +127,7 @@ Parameters:
     Default: "Optimization-Data-Multi-Account-Role"
   Schedule:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Trusted Advisor, Cost Optimization Hub, Compute Optimizer, Organizations Data, Rightsizing, RDS Utilization, Inventory Collector, Transit Gateway, Backup, and ECS Chargeback modules (see docs for tailoring the schedule for each module).
+    Description: EventBridge schedule to trigger data collection for Trusted Advisor, Compute Optimizer, Organizations Data, Rightsizing, RDS Utilization, Inventory Collector, Transit Gateway, Backup, and ECS Chargeback modules (see docs for tailoring the schedule for each module).
     Default: "rate(14 days)"
   ScheduleFrequent:
     Type: String
@@ -209,11 +206,6 @@ Parameters:
     Description: Collects AWS Backup data
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeCostOptimizationHubModule:
-    Type: String
-    Description: Collects CostOptimizationHub data
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeAWSFeedsModule:
     Type: String
     Description: Collects AWS Feeds data
@@ -243,7 +235,6 @@ Conditions:
   DeployBudgetsModule: !Equals [ !Ref IncludeBudgetsModule, "yes"]
   DeployTransitGatewayModule: !Equals [ !Ref IncludeTransitGatewayModule, "yes"]
   DeployBackupModule: !Equals [ !Ref IncludeBackupModule, "yes"]
-  DeployCostOptimizationHubModule: !Equals [ !Ref IncludeCostOptimizationHubModule, "yes"]
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
@@ -264,7 +255,6 @@ Conditions:
     - Fn::Or:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
-      - !Condition DeployCostOptimizationHubModule
       - !Condition DeployHealthEventsModule
       - !Condition DeployLicenseManagerModule
   RegionsInScopeIsEmpty: !Equals
@@ -878,26 +868,6 @@ Resources:
     Condition: DeployRightsizingModule
     Properties:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
-      Parameters:
-        DatabaseName: !Ref DatabaseName
-        DestinationBucket: !Ref S3Bucket
-        DestinationBucketARN: !GetAtt S3Bucket.Arn
-        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
-        Schedule: !Ref Schedule
-        GlueRoleARN: !GetAtt GlueRole.Arn
-        ResourcePrefix: !Ref ResourcePrefix
-        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
-        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-
-  CostOptimizationHubModule:
-    Type: AWS::CloudFormation::Stack
-    Condition: DeployCostOptimizationHubModule
-    Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-optimization-hub.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket

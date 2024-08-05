@@ -20,7 +20,6 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
@@ -64,8 +63,6 @@ Metadata:
         default: "Include AWS TransitGateway Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
-      IncludeCostOptimizationHubModule:
-        default: "Include Cost Optimization Hub Module"
       IncludeHealthEventsModule:
         default: "Include AWS Health Events Module"
       IncludeLicenseManagerModule:
@@ -150,11 +147,6 @@ Parameters:
     Description: Collects AWS Backup events from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeCostOptimizationHubModule:
-    Type: String
-    Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
@@ -182,7 +174,6 @@ Resources:
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
-        IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
         IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
   DataCollectorMgmtAccountModulesReadStack:

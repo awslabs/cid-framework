@@ -192,7 +192,6 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
        ]
@@ -219,7 +218,6 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
@@ -364,7 +362,6 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-CopyJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-optimization-hub-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Blog-Post-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Whats-New-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
