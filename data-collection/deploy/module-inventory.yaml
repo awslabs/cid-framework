@@ -1253,7 +1253,7 @@ Resources:
                                           obj[f"tag_{tag['Key']}"] = tag["Value"]
                               obj['collection_date'] = collection_date
                               obj['region'] = region
-                              if 'Environment' in obj and name == 'lambda_functions':
+                              if 'Environment' in obj and name == 'lambda-functions':
                                   obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
                               file_.write(to_json(obj) + "\n")
                   logger.info(f"Collected {counter} total {name} instances")
