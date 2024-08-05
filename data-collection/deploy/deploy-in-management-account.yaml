@@ -15,7 +15,6 @@ Metadata:
           - IncludeBackupModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeCostOptimizationHubModule
           - IncludeHealthEventsModule
           - IncludeRightsizingModule
           - IncludeLicenseManagerModule
@@ -34,8 +33,6 @@ Metadata:
         default: "Include Rightsizing Recommendations Data Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
-      IncludeCostOptimizationHubModule:
-        default: "Include EnableCostOptimizationHub Module"
       IncludeHealthEventsModule:
         default: "Include Health Events Module"
       IncludeLicenseManagerModule:
@@ -72,11 +69,6 @@ Parameters:
     Description: Collects TransitGateway from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeCostOptimizationHubModule:
-    Type: String
-    Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
@@ -93,9 +85,8 @@ Conditions:
   EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
-  EnableCostOptimizationHubModule: !Equals [!Ref IncludeCostOptimizationHubModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
-  EnableLicenceManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
+  EnableLicenseManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
 
 Outputs:
   LambdaRole:
@@ -123,7 +114,6 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}compute-optimizer-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-anomaly-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-explorer-rightsizing-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-optimization-hub-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
@@ -288,35 +278,6 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  CostOptimizationHubRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableCostOptimizationHubModule
-    Properties:
-      PolicyName: CostOptimizationHubRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action:
-              - "cost-optimization-hub:ListEnrollmentStatuses"
-              - "cost-optimization-hub:GetPreferences"
-              - "cost-optimization-hub:GetRecommendation"
-              - "cost-optimization-hub:ListRecommendations"
-              - "cost-optimization-hub:ListRecommendationSummaries"
-              - "organizations:DescribeOrganization"
-              - "organizations:ListAccounts"
-              - "organizations:ListAWSServiceAccessForOrganization"
-              - "organizations:ListParents"
-              - "organizations:DescribeOrganizationalUnit"
-              - "ce:ListCostAllocationTags"
-            Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
   HealthEventsPolicy:
     Type: "AWS::IAM::Policy"
     Condition: EnableHealthEventsModule
@@ -339,11 +300,11 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  LicenceManagerPolicy:
+  LicenseManagerPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: EnableLicenceManagerModule
+    Condition: EnableLicenseManagerModule
     Properties:
-      PolicyName: LicenceManagerPolicy
+      PolicyName: LicenseManagerPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
