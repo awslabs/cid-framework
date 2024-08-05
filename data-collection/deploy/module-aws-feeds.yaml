@@ -143,9 +143,9 @@ Resources:
                       try:
                           link = item.find('link').text
                           title = item.find('title').text
-                          description = item.find('description').text
+                          description = str(item.find('description').text or '')
                           pubDate = item.find('pubDate').text
-                          category = item.find('category').text
+                          category = str(item.find('category').text or '')
 
                           # Parsing and formatting pubDate to ISO 8601 format
                           pubDate_datetime = parse(pubDate)
