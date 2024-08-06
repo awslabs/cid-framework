@@ -143,7 +143,7 @@ Resources:
                       try:
                           link = item.find('link').text
                           title = item.find('title').text
-                          description = str(item.find('description').text or '')
+                          description = item.find('description').text or ''
                           pubDate = item.find('pubDate').text
                           category = str(item.find('category').text or '')
 
