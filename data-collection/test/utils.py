@@ -273,7 +273,7 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
         # Extract Lambda function ARNs from the state machine definition
         state_machine_definition = json.loads(stepfunctions.describe_state_machine(stateMachineArn=state_machine_arn)['definition'])
         def _extract_lambda_arns(state):
-            if str(state).startswith('arn:aws:lambda:'):
+            if str(state).startswith('arn:aws:lambda:') or str(state).startswith('arn:aws-cn:lambda:'):
                 lambda_arns.add(state)
             elif isinstance(state, dict):
                 for value in state.values():
