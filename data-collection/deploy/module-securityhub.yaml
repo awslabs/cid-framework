@@ -16,9 +16,6 @@ Parameters:
     Type: String
     Description: The name of what this cf is doing.
     Default: securityhub
-  GlueRoleARN:
-    Type: String
-    Description: Arn for the Glue Crawler role
   ResourcePrefix:
     Type: String
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
@@ -98,7 +95,6 @@ Resources:
                   - "firehose:PutRecordBatch"
                 Resource:
                   - !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
-
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -110,14 +106,15 @@ Resources:
     Properties:
       RoleName: !Sub "${ResourcePrefix}${CFDataName}-KinesisFireHoseRole"
       AssumeRolePolicyDocument:
+        Version: 2012-10-17
         Statement:
-          - Action:
-              - sts:AssumeRole
+          - Action: sts:AssumeRole
             Effect: Allow
             Principal:
-              Service:
-                - firehose.amazonaws.com
-        Version: 2012-10-17
+              Service: firehose.amazonaws.com
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref 'AWS::AccountId'
       Path: /
       Policies:
         - PolicyName: "SecurityHub-S3-Access"
@@ -259,8 +256,8 @@ Resources:
           KeyType: AWS_OWNED_CMK
         ExtendedS3DestinationConfiguration:
           BucketARN: !Ref DestinationBucketARN
-          Prefix: !Sub "${CFDataName}/securityhub_events/managementid=${AWS::AccountId}/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/" #managementid is not good!
-          ErrorOutputPrefix: !Sub "${CFDataName}/security_hub_firehose_errors/"
+          Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
+          ErrorOutputPrefix: !Sub "${CFDataName}/securityhub_errors/!{timestamp:yyyy/MM/}/!{firehose:error-output-type}"
           RoleARN: !GetAtt KinesisFirehoseRole.Arn
           CloudWatchLoggingOptions:
             Enabled: true
@@ -282,15 +279,44 @@ Resources:
               - ParameterName: BufferSizeInMBs
                 ParameterValue: 3
 
-  Crawler:
-    Type: AWS::Glue::Crawler
+  TableSecurityHubEvents:
+    Type: AWS::Glue::Table
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-securityhub-events-Crawler'
-      Role: !Ref GlueRoleARN
+      CatalogId: !Ref "AWS::AccountId"
       DatabaseName: !Ref DatabaseName
-      Targets:
-        S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/"
+      TableInput:
+        Name: securityhub_events
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - { Name: datehour,    Type: string }
+        StorageDescriptor:
+          Columns:
+          - { Name: version,     Type: string }
+          - { Name: id,          Type: string }
+          - { Name: detail_type, Type: string }
+          - { Name: source,      Type: string }
+          - { Name: account,     Type: string }
+          - { Name: time,        Type: string }
+          - { Name: region,      Type: string }
+          - { Name: resources,   Type: array<string> }
+          - { Name: detail,      Type: string }
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/"
+          Parameters: {}
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              serialization.format: '1'
+        Parameters:
+          EXTERNAL: 'TRUE'
+          projection.datehour.format: yyyy/MM/dd
+          projection.datehour.interval: '1'
+          projection.datehour.interval.unit: DAYS
+          projection.datehour.range: 2024/07/01,NOW
+          projection.datehour.type: date
+          projection.enabled: 'true'
+          storage.location.template: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/${!datehour}"
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
