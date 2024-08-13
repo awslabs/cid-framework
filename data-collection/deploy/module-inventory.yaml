@@ -56,7 +56,7 @@ Parameters:
     Description: ARN of a Lambda for Managing GlueTable
   AwsObjects:
     Type: CommaDelimitedList
-    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, AWSLambda
+    Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions, RdsDbClusters
     Description: Services for pulling price data
 
 Mappings:
@@ -188,6 +188,141 @@ Mappings:
                 paths: ARN,AtRestEncryptionEnabled,AuthTokenEnabled,AutoMinorVersionUpgrade,CacheClusterCreateTime,CacheClusterId,CacheClusterStatus,CacheNodeType,CacheParameterGroup,CacheSecurityGroups,CacheSubnetGroupName,ClientDownloadLandingPage,Engine,EngineVersion,IpDiscovery,LogDeliveryConfigurations,NetworkType,NumCacheNodes,PendingModifiedValues,PreferredAvailabilityZone,PreferredMaintenanceWindow,ReplicationGroupId,ReplicationGroupLogDeliveryEnabled,SecurityGroups,SnapshotRetentionLimit,SnapshotWindow,TransitEncryptionEnabled,TransitEncryptionMode,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
+
+    RdsDbClusters:
+      path: rds-db-clusters
+      table:
+        - Name: inventory_rds_db_clusters_data
+          TableType: EXTERNAL_TABLE
+
+          PartitionKeys:
+          - { Name: payer_id, Type: string }
+          - { Name: year, Type: string }
+          - { Name: month, Type: string }
+          - { Name: day, Type: string }
+          StorageDescriptor:
+            Columns:
+            - Name: readreplicaidentifiers
+              Type: string
+            - Name: capacity
+              Type: string
+            - Name: charactersetname
+              Type: string
+            - Name: preferredbackupwindow
+              Type: string
+            - Name: copytagstosnapshot
+              Type: string
+            - Name: activitystreamkinesisstreamname
+              Type: string
+            - Name: multiaz
+              Type: string
+            - Name: backtrackwindow
+              Type: string
+            - Name: earliestrestorabletime
+              Type: string
+            - Name: engine
+              Type: string
+            - Name: earliestbacktracktime
+              Type: string
+            - Name: httpendpointenabled
+              Type: string
+            - Name: percentprogress
+              Type: string
+            - Name: dbclusterparametergroup
+              Type: string
+            - Name: hostedzoneid
+              Type: string
+            - Name: status
+              Type: string
+            - Name: associatedroles
+              Type: string
+            - Name: dbclusteridentifier
+              Type: string
+            - Name: backtrackconsumedchangerecords
+              Type: string
+            - Name: iamdatabaseauthenticationenabled
+              Type: string
+            - Name: serverlessv2scalingconfiguration
+              Type: string
+            - Name: customendpoints
+              Type: string
+            - Name: port
+              Type: string
+            - Name: activitystreamkmskeyid
+              Type: string
+            - Name: masterusername
+              Type: string
+            - Name: dbclusterresourceid
+              Type: string
+            - Name: clustercreatetime
+              Type: string
+            - Name: vpcsecuritygroups
+              Type: string
+            - Name: dbsubnetgroup
+              Type: string
+            - Name: latestrestorabletime
+              Type: string
+            - Name: availabilityzones
+              Type: string
+            - Name: dbclusteroptiongroupmemberships
+              Type: string
+            - Name: replicationsourceidentifier
+              Type: string
+            - Name: deletionprotection
+              Type: string
+            - Name: endpoint
+              Type: string
+            - Name: preferredmaintenancewindow
+              Type: string
+            - Name: readerendpoint
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: enabledcloudwatchlogsexports
+              Type: string
+            - Name: scalingconfigurationinfo
+              Type: string
+            - Name: storageencrypted
+              Type: string
+            - Name: enginemode
+              Type: string
+            - Name: databasename
+              Type: string
+            - Name: activitystreammode
+              Type: string
+            - Name: crossaccountclone
+              Type: string
+            - Name: dbclusterarn
+              Type: string
+            - Name: activitystreamstatus
+              Type: string
+            - Name: allocatedstorage
+              Type: string
+            - Name: engineversion
+              Type: string
+            - Name: backupretentionperiod
+              Type: string
+            - Name: clonegroupid
+              Type: string
+            - Name: dbclustermembers
+              Type: string
+            - Name: kmskeyid
+              Type: string
+            - Name: accountid
+              Type: string
+            - Name: collection_date
+              Type: string
+            - Name: region
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-rds-db-clusters-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            Parameters:
+              UPDATED_BY_CRAWLER: !Sub ${ResourcePrefix}inventory-RdsDbClusters-Crawler
+            SerdeInfo:
+              Parameters:
+                paths: readreplicaidentifiers,capacity,charactersetname,preferredbackupwindow,copytagstosnapshot,activitystreamkinesisstreamname,multiaz,backtrackwindow,earliestrestorabletime,engine,earliestbacktracktime,httpendpointenabled,payer_id,percentprogress,day,dbclusterparametergroup,hostedzoneid,status,associatedroles,dbclusteridentifier,backtrackconsumedchangerecords,iamdatabaseauthenticationenabled,serverlessv2scalingconfiguration,customendpoints,port,activitystreamkmskeyid,masterusername,dbclusterresourceid,clustercreatetime,vpcsecuritygroups,dbsubnetgroup,latestrestorabletime,availabilityzones,dbclusteroptiongroupmemberships,replicationsourceidentifier,year,deletionprotection,endpoint,preferredmaintenancewindow,readerendpoint,accountid,enabledcloudwatchlogsexports,scalingconfigurationinfo,storageencrypted,enginemode,databasename,activitystreammode,month,crossaccountclone,dbclusterarn,activitystreamstatus,allocatedstorage,engineversion,backupretentionperiod,clonegroupid,dbclustermembers,kmskeyid,accountid,collection_date,region
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
     RdsDbInstances:
       path: rds-db-instances
@@ -798,10 +933,10 @@ Mappings:
                 paths: Arn,Name,CreatedAt,Version,accountid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
-    AWSLambda:
-      path: lambda
+    LambdaFunctions:
+      path: lambda-functions
       table:
-        - Name: inventory_lambda_data
+        - Name: inventory_lambda_functions_data
           Parameters: { "classification" : "json", "compressionType": "none" }
           PartitionKeys:
           - Name: payer_id
@@ -863,7 +998,7 @@ Mappings:
             - Name: vpcconfig
               Type: struct<subnetids:array<string>,securitygroupids:array<string>,vpcid:string,ipv6allowedfordualstack:boolean>
             InputFormat: org.apache.hadoop.mapred.TextInputFormat
-            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-data/
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-lambda-functions-data/
             OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
             SerdeInfo:
               Parameters:
@@ -970,9 +1105,7 @@ Resources:
               session = assume_session(account_id, region)
               client = session.client(service, region_name=region)
               try:
-                  paginator = client.get_paginator(function_name)
-                  for obj in paginator.paginate(**(params or {})).search(obj_name):
-                      yield obj
+                  yield from client.get_paginator(function_name).paginate(**(params or {})).search(obj_name)
               except Exception as exc:  #pylint: disable=broad-exception-caught
                   logger.info(f'Error in scan {function_name}/{account_id}: {exc}')
 
@@ -996,32 +1129,32 @@ Resources:
                   logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def eks_clusters_scan(account_id, region):
-            """special function to scan EKS clusters"""
-            service = "eks"
-            session = assume_session(account_id, region)
-            client = session.client(service, region_name=region)
-            try:
-                for cluster_name in (
-                    client.get_paginator("list_clusters")
-                    .paginate(
-                        PaginationConfig={
-                            "PageSize": 100,
-                        }
-                    )
-                    .search("clusters")
-                ):
-                    cluster = client.describe_cluster(name=cluster_name)
-                    yield {
-                            "Arn": cluster["cluster"]["arn"],
-                            "Name": cluster["cluster"]["name"],
-                            "CreatedAt": datetime.strftime(
-                                cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
-                            ),
-                            "Version": cluster["cluster"]["version"],
-                    }
-            except Exception as exc:
-                logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
-                return []
+              """special function to scan EKS clusters"""
+              service = "eks"
+              session = assume_session(account_id, region)
+              client = session.client(service, region_name=region)
+              try:
+                  for cluster_name in (
+                      client.get_paginator("list_clusters")
+                      .paginate(
+                          PaginationConfig={
+                              "PageSize": 100,
+                          }
+                      )
+                      .search("clusters")
+                  ):
+                      cluster = client.describe_cluster(name=cluster_name)
+                      yield {
+                          "Arn": cluster["cluster"]["arn"],
+                          "Name": cluster["cluster"]["name"],
+                          "CreatedAt": datetime.strftime(
+                              cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+                          ),
+                          "Version": cluster["cluster"]["version"],
+                      }
+              except Exception as exc: #pylint: disable=W0718
+                  logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
+              return []
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
@@ -1044,6 +1177,12 @@ Resources:
                       function_name='describe_cache_clusters',
                       obj_name='CacheClusters'
                       # fields=['CacheClusterId', 'CacheNodeType', 'EngineVersion', 'Engine', 'NumCacheNodes', 'PreferredAvailabilityZone', 'CacheClusterCreateTime'],
+                  ),
+                  'rds-db-clusters': partial(
+                      paginated_scan,
+                      service='rds',
+                      function_name='describe_db_clusters',
+                      obj_name='DBClusters[*]'
                   ),
                   'rds-db-instances': partial(
                       paginated_scan,
@@ -1085,7 +1224,7 @@ Resources:
                       service='ec2',
                       function_name='describe_vpcs'
                   ),
-                  'lambda' : partial(
+                  'lambda-functions' : partial(
                     paginated_scan,
                     service='lambda',
                     function_name='list_functions',
@@ -1114,6 +1253,8 @@ Resources:
                                           obj[f"tag_{tag['Key']}"] = tag["Value"]
                               obj['collection_date'] = collection_date
                               obj['region'] = region
+                              if 'Environment' in obj and name == 'lambda-functions':
+                                  obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
                               file_.write(to_json(obj) + "\n")
                   logger.info(f"Collected {counter} total {name} instances")
                   upload_to_s3(name, account_id, payer_id)

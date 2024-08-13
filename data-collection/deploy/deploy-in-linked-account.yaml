@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Linked Account v3.0.10
+Description: CID Data Collection - Role for Linked Account v3.2.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -164,6 +164,7 @@ Resources:
             Action:
               - "budgets:ViewBudget"
               - "budgets:DescribeBudgets"
+              - "budgets:ListTagsForResource"
             Resource: "arn:aws:budgets::*:budget/*"
       Roles:
         - Ref: LambdaRole
@@ -183,6 +184,7 @@ Resources:
               - "ec2:DescribeRegions"
               - "ec2:DescribeInstances"
               - "ec2:DescribeVpcs"
+              - "rds:DescribeDBClusters"
               - "rds:DescribeDBInstances"
               - "rds:DescribeDBSnapshots"
               - "es:ListDomainNames"

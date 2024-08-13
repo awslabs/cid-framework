@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.0.10
+Description: CID Data Collection - All-in-One for Management Account v3.2.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -20,7 +20,6 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeCostOptimizationHubModule
           - IncludeECSChargebackModule
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
@@ -64,8 +63,6 @@ Metadata:
         default: "Include AWS TransitGateway Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
-      IncludeCostOptimizationHubModule:
-        default: "Include Cost Optimization Hub Module"
       IncludeHealthEventsModule:
         default: "Include AWS Health Events Module"
       IncludeLicenseManagerModule:
@@ -150,11 +147,6 @@ Parameters:
     Description: Collects AWS Backup events from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeCostOptimizationHubModule:
-    Type: String
-    Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
@@ -182,7 +174,6 @@ Resources:
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
-        IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
         IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
   DataCollectorMgmtAccountModulesReadStack:
@@ -203,7 +194,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts v3.0.10"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.2.0"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true

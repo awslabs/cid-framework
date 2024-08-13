@@ -82,13 +82,13 @@ def test_inventory_vpc_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_vpc_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_vpc_data is empty'
 
-def test_inventory_rds_snaphot_data(athena):
+def test_inventory_rds_snapshot_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_rds_db_snapshots_data" LIMIT 10;')
     assert len(data) > 0, 'inventory_rds_db_snapshots_data is empty'
 
-def test_inventory_lambda_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_lambda_data" LIMIT 10;')
-    assert len(data) > 0, 'inventory_lambda_data is empty'
+def test_inventory_lambda_functions_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."inventory_lambda_functions_data" LIMIT 10;')
+    assert len(data) > 0, 'inventory_lambda_functions_data is empty'
 
 def test_rds_usage_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."rds_usage_data" LIMIT 10;')
@@ -144,7 +144,7 @@ def test_pricing_rds_data(athena):
 
 def test_pricing_lambda_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_lambda_data" LIMIT 10;')
-    assert len(data) > 0, 'pricing_awslambda_data is empty'
+    assert len(data) > 0, 'pricing_lambda_data is empty'
 
 def test_pricing_regionnames_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."pricing_regionnames_data" LIMIT 10;')
@@ -154,18 +154,10 @@ def test_compute_optimizer_export_triggered(compute_optimizer, start_time):
     jobs = compute_optimizer.describe_recommendation_export_jobs()['recommendationExportJobs']
     logger.debug(f'Jobs in: {jobs}')
     jobs_since_start = [job for job in jobs if job['creationTimestamp'].replace(tzinfo=None) > start_time.replace(tzinfo=None)]
-    assert len(jobs_since_start) == 6, f'started {len(jobs_since_start)} jobs. Expected 6. Not all jobs launched'
+    assert len(jobs_since_start) == 7, f'started {len(jobs_since_start)} jobs. Expected 7. Not all jobs launched'
     jobs_failed = [job for job in jobs_since_start if job.get('status') == 'failed']
     assert len(jobs_failed) == 0, f'Some jobs failed {jobs_failed}'
     # TODO: check how we can add better test, taking into account 15-30 mins delay of export in CO
-
-def test_cost_optimization_hub_summary_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_summary_data" LIMIT 10;')
-    assert len(data) > 0, 'cost_optimization_hub_data is empty'
-
-def test_cost_optimization_hub_detail_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_detail_data" LIMIT 10;')
-    assert len(data) > 0, 'cost_optimization_hub_detail_data is empty'
 
 def test_health_events_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."health_events_detail_data" LIMIT 10;')

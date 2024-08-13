@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Management Account v3.0.10
+Description: CID Data Collection - Role for Management Account v3.2.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -15,7 +15,6 @@ Metadata:
           - IncludeBackupModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeCostOptimizationHubModule
           - IncludeHealthEventsModule
           - IncludeRightsizingModule
           - IncludeLicenseManagerModule
@@ -34,8 +33,6 @@ Metadata:
         default: "Include Rightsizing Recommendations Data Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
-      IncludeCostOptimizationHubModule:
-        default: "Include EnableCostOptimizationHub Module"
       IncludeHealthEventsModule:
         default: "Include Health Events Module"
       IncludeLicenseManagerModule:
@@ -72,11 +69,6 @@ Parameters:
     Description: Collects TransitGateway from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeCostOptimizationHubModule:
-    Type: String
-    Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
@@ -93,9 +85,8 @@ Conditions:
   EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
-  EnableCostOptimizationHubModule: !Equals [!Ref IncludeCostOptimizationHubModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
-  EnableLicenceManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
+  EnableLicenseManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
 
 Outputs:
   LambdaRole:
@@ -123,10 +114,10 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}compute-optimizer-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-anomaly-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-explorer-rightsizing-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-optimization-hub-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}RLS-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -226,11 +217,11 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  COExportLambdaFunctionRecommendations:
+  COExportRecommendations:
     Type: "AWS::IAM::Policy"
     Condition: EnableComputeOptimizerModule
     Properties:
-      PolicyName: ComputeOptimizer-ExportLambdaFunctionRecommendations
+      PolicyName: ComputeOptimizer-ExportRecommendations
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -241,84 +232,24 @@ Resources:
               - "lambda:ListFunctions"
               - "lambda:ListProvisionedConcurrencyConfigs"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportAutoScalingGroupRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportAutoScalingGroupRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportAutoScalingGroupRecommendations"
               - "compute-optimizer:GetAutoScalingGroupRecommendations"
               - "autoscaling:DescribeAutoScalingGroups"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportEBSVolumeRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportEBSVolumeRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportEBSVolumeRecommendations"
               - "compute-optimizer:GetEBSVolumeRecommendations"
-              - "EC2:DescribeVolumes"
+              - "ec2:DescribeVolumes"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportEC2InstanceRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportEC2InstanceRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportEC2InstanceRecommendations"
               - "compute-optimizer:GetEC2InstanceRecommendations"
-              - "EC2:DescribeInstances"
+              - "ec2:DescribeInstances"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportECSRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportECSRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportECSServiceRecommendations"
@@ -327,55 +258,19 @@ Resources:
               - "ecs:ListServices"
               - "ecs:ListClusters"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  COExportLicenseRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableComputeOptimizerModule
-    Properties:
-      PolicyName: ComputeOptimizer-ExportLicenseRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
               - "compute-optimizer:ExportLicenseRecommendations"
               - "compute-optimizer:GetLicenseRecommendations"
               - "ec2:DescribeInstances"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  CostOptimizationHubRecommendations:
-    Type: "AWS::IAM::Policy"
-    Condition: EnableCostOptimizationHubModule
-    Properties:
-      PolicyName: CostOptimizationHubRecommendations
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
           - Effect: "Allow"
             Action:
-              - "cost-optimization-hub:ListEnrollmentStatuses"
-              - "cost-optimization-hub:GetPreferences"
-              - "cost-optimization-hub:GetRecommendation"
-              - "cost-optimization-hub:ListRecommendations"
-              - "cost-optimization-hub:ListRecommendationSummaries"
-              - "organizations:DescribeOrganization"
-              - "organizations:ListAccounts"
-              - "organizations:ListAWSServiceAccessForOrganization"
-              - "organizations:ListParents"
-              - "organizations:DescribeOrganizationalUnit"
-              - "ce:ListCostAllocationTags"
+              - "compute-optimizer:ExportRDSDatabaseRecommendations"
+              - "compute-optimizer:GetRDSDatabaseRecommendations"
+              - "compute-optimizer:GetRDSDatabaseRecommendationProjectedMetrics"
+              - "rds:DescribeDBInstances"
+              - "rds:DescribeDBClusters"
             Resource: "*"
       Roles:
         - Ref: LambdaRole
@@ -406,11 +301,11 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
-  LicenceManagerPolicy:
+  LicenseManagerPolicy:
     Type: "AWS::IAM::Policy"
-    Condition: EnableLicenceManagerModule
+    Condition: EnableLicenseManagerModule
     Properties:
-      PolicyName: LicenceManagerPolicy
+      PolicyName: LicenseManagerPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
