@@ -921,7 +921,6 @@ Resources:
       Parameters:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
-        DestinationBucketARN: !GetAtt S3Bucket.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
 

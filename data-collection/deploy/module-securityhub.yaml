@@ -9,9 +9,6 @@ Parameters:
     Type: String
     Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
-  DestinationBucketARN:
-    Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
@@ -22,11 +19,6 @@ Parameters:
   LambdaAnalyticsARN:
     Type: String
     Description: Arn of lambda for Analytics
-
-Outputs:
-  LambdaFunctionArn:
-    Description: ARN for the LambdaFunction
-    Value: !GetAtt LambdaFunction.Arn
 
 Resources:
   LambdaRole:
@@ -56,12 +48,12 @@ Resources:
                   - "s3:GetObject"
                   - "s3:PutObjectAcl"
                 Resource:
-                  - !Sub "${DestinationBucketARN}/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
               - Effect: "Allow"
                 Action:
                   - "s3:ListBucket"
                 Resource:
-                  - !Sub "${DestinationBucketARN}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
 
     Metadata:
       cfn_nag:
@@ -128,13 +120,13 @@ Resources:
                 - "s3:ListBucketMultipartUploads"
                 - "s3:AbortMultipartUpload"
                 Resource:
-                - !Sub "${DestinationBucketARN}/*"
+                - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
               - Effect: "Allow"
                 Action:
                   - "s3:ListBucket"
                   - "s3:GetBucketLocation"
                 Resource:
-                - !Sub "${DestinationBucketARN}/*"
+                - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
               - Effect: "Allow"
                 Action:
                   - "lambda:InvokeFunction"
@@ -159,7 +151,8 @@ Resources:
         detail-type:
         - "Security Hub Findings - Imported"
         source:
-        - "aws.securityhub"
+        - "aws.securityhub" # only AWS can send events with source aws.*
+        - "cid.test" # uncomment for testing
       Targets:
       - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
         RoleArn: !GetAtt EventBridgeInvokeFirehoseRole.Arn
@@ -255,7 +248,7 @@ Resources:
         DeliveryStreamEncryptionConfigurationInput:
           KeyType: AWS_OWNED_CMK
         ExtendedS3DestinationConfiguration:
-          BucketARN: !Ref DestinationBucketARN
+          BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
           Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
           ErrorOutputPrefix: !Sub "${CFDataName}/securityhub_errors/!{timestamp:yyyy/MM/}/!{firehose:error-output-type}"
           RoleARN: !GetAtt KinesisFirehoseRole.Arn
