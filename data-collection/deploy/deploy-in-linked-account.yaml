@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Linked Account v3.3.0
+Description: CID Data Collection - Role for Linked Account v3.4.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -17,6 +17,7 @@ Metadata:
         - IncludeInventoryCollectorModule
         - IncludeRDSUtilizationModule
         - IncludeTAModule
+        - IncludeSupportCasesModule
         - IncludeTransitGatewayModule
     ParameterLabels:
       DataCollectionAccountID:
@@ -27,6 +28,8 @@ Metadata:
         default: "Role Prefix"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
+      IncludeSupportCasesModule:
+        default: 'Include AWS Support Cases Data Collection Module'
       IncludeInventoryCollectorModule:
         default: 'Include Inventory Collector Module'
       IncludeECSChargebackModule:
@@ -52,6 +55,11 @@ Parameters:
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
+  IncludeSupportCasesModule:
+    Type: String
+    Description: Collects AWS Support Cases data
     AllowedValues: ['yes', 'no']
     Default: 'no'
   IncludeInventoryCollectorModule:
@@ -83,6 +91,9 @@ Parameters:
 Conditions:
   IncludeTAModulePolicy: !Equals
     - !Ref IncludeTAModule
+    - "yes"
+  IncludeSupportCasesModulePolicy: !Equals
+    - !Ref IncludeSupportCasesModule
     - "yes"
   IncludeInventoryCollectorModulePolicy: !Equals
     - !Ref IncludeInventoryCollectorModule
@@ -126,6 +137,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}support-cases-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -144,6 +156,26 @@ Resources:
             Action:
               - "support:DescribeTrustedAdvisorChecks"
               - "support:DescribeTrustedAdvisorCheckResult"
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  SupportCasesPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeSupportCasesModulePolicy
+    Properties:
+      PolicyName: SupportCasesPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "support:DescribeCases"
+              - "support:DescribeCommunications"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole

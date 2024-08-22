@@ -7,11 +7,11 @@ Parameters:
     Default: optimization_data
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: Name of the S3 Bucket that exists or needs to be created to hold Health Events information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
   DestinationBucketARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold Health Events information
   ManagementRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT

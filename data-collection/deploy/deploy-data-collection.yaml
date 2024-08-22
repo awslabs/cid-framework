@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.3.0
+Description: CID Data Collection Stack v3.4.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -23,6 +23,7 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
+          - IncludeSupportCasesModule
           - IncludeECSChargebackModule
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
@@ -60,6 +61,8 @@ Metadata:
         default: 'Include Rightsizing Recommendations Data Collection Module'
       IncludeCostAnomalyModule:
         default: 'Include Cost Anomalies Data Collection Module'
+      IncludeSupportCasesModule:
+        default: 'Include Support Cases Data Collection Module'
       IncludeInventoryCollectorModule:
         default: 'Include Inventory Collector Module'
       IncludeComputeOptimizerModule:
@@ -131,7 +134,7 @@ Parameters:
     Default: "rate(14 days)"
   ScheduleFrequent:
     Type: String
-    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, and Health Events modules (see docs for tailoring the schedule for each module).
+    Description: EventBridge schedule to trigger data collection for Cost Anomalies, Budgets, Support Cases and Health Events modules (see docs for tailoring the schedule for each module).
     Default: "rate(1 day)"
   RegionsInScope:
     Type: String
@@ -164,6 +167,11 @@ Parameters:
   IncludeCostAnomalyModule:
     Type: String
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
+  IncludeSupportCasesModule:
+    Type: String
+    Description: "Collects AWS Support Cases Data"
     AllowedValues: ['yes', 'no']
     Default: 'no'
   IncludeInventoryCollectorModule:
@@ -227,6 +235,7 @@ Conditions:
   DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
   DeployRightsizingModule: !Equals [ !Ref IncludeRightsizingModule, "yes"]
   DeployCostAnomalyModule: !Equals [ !Ref IncludeCostAnomalyModule, "yes"]
+  DeploySupportCasesModule: !Equals [ !Ref IncludeSupportCasesModule, "yes"]
   DeployInventoryCollectorModule: !Equals [ !Ref IncludeInventoryCollectorModule, "yes"]
   DeployComputeOptimizerModule: !Equals [ !Ref IncludeComputeOptimizerModule, "yes"]
   DeployEcsChargebackModule: !Equals [ !Ref IncludeECSChargebackModule, "yes"]
@@ -246,6 +255,7 @@ Conditions:
       - !Condition DeployTAModule
       - !Condition DeployRightsizingModule
       - !Condition DeployCostAnomalyModule
+      - !Condition DeploySupportCasesModule
       - !Condition DeployInventoryCollectorModule
       - !Condition DeployComputeOptimizerModule
       - !Condition DeployEcsChargebackModule
@@ -893,6 +903,26 @@ Resources:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref ScheduleFrequent
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+  
+  SupportCasesModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeploySupportCasesModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-support-cases.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix

@@ -8,11 +8,11 @@ Parameters:
     Default: optimization_data
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: Name of the S3 Bucket that exists or needs to be created to hold Pricing information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
   DestinationBucketARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold Pricing information
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
