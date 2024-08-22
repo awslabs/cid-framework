@@ -142,7 +142,7 @@ Resources:
               }
 
           def calculate_dates(bucket, s3_path):
-              end_date = datetime.now().date()
+              end_date = datetime.now().date()  + timedelta(days=1)
               start_date = datetime.now().date() - timedelta(days=90) #Support Cases are available for last 90days
               # Check the create time of objects in the S3 bucket
               paginator = boto3.client('s3').get_paginator('list_objects_v2')
