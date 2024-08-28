@@ -312,6 +312,63 @@ Resources:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
 
+  CostAnomalyDataTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: cost_anomaly_data
+        StorageDescriptor:
+          Columns:
+            - Name: anomalyid
+              Type: string
+            - Name: anomalystartdate
+              Type: string
+            - Name: anomalyenddate
+              Type: string
+            - Name: dimensionvalue
+              Type: string
+            - Name: maximpact
+              Type: double
+            - Name: totalactualspend
+              Type: double
+            - Name: totalexpectedspend
+              Type: double
+            - Name: totalimpact
+              Type: double
+            - Name: totalimpactpercentage
+              Type: double
+            - Name: monitorarn
+              Type: string
+            - Name: linkedaccount
+              Type: string
+            - Name: linkedaccountname
+              Type: string
+            - Name: region
+              Type: string
+            - Name: service
+              Type: string
+            - Name: usagetype
+              Type: string
+            - Name: payer_id
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+            Parameters:
+              serialization.format: 1
+          StoredAsSubDirectories: false
+        PartitionKeys:
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
