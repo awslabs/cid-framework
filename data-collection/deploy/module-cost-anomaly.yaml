@@ -1,6 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: Retrieves AWS Cost Explorer Cost Anomalies details accross AWS organization
-Transform: AWS::LanguageExtensions
 Parameters:
   DatabaseName:
     Type: String
@@ -51,67 +50,11 @@ Parameters:
   LambdaManageGlueTableARN:
     Type: String
     Description: ARN of a Lambda for Managing GlueTable
-  AwsObjects:
-    Type: CommaDelimitedList
-    Default: CostAnomalyData
-    Description: Services for pulling cost anomaly data
 
-Mappings:
-  ServicesMap:
-    CostAnomalyData:
-      path: cost-anomaly
-      table:
-        - Name: cost_anomaly_data
-          TableType: EXTERNAL_TABLE
-          Parameters: { "classification": "json", "compressionType": "none" }
-          PartitionKeys:
-            - Name: payer_id
-              Type: string
-            - Name: year
-              Type: string
-            - Name: month
-              Type: string
-            - Name: day
-              Type: string
-          StorageDescriptor:
-            Columns:
-              - Name: anomalyid
-                Type: string
-              - Name: anomalystartdate
-                Type: string
-              - Name: anomalyenddate
-                Type: string
-              - Name: dimensionvalue
-                Type: string
-              - Name: maximpact
-                Type: double
-              - Name: totalactualspend
-                Type: double
-              - Name: totalexpectedspend
-                Type: double
-              - Name: totalimpact
-                Type: double
-              - Name: totalimpactpercentage
-                Type: double
-              - Name: monitorarn
-                Type: string
-              - Name: linkedaccount
-                Type: string
-              - Name: linkedaccountname
-                Type: string
-              - Name: region
-                Type: string
-              - Name: service
-                Type: string
-              - Name: usagetype
-                Type: string
-            InputFormat: org.apache.hadoop.mapred.TextInputFormat
-            Location: !Sub s3://${DestinationBucket}/cost-anomaly-data/
-            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
-            SerdeInfo:
-              Parameters:
-                paths: anomalyid,anomalystartdate,anomalyenddate,dimensionvalue,maximpact,totalactualspend,totalexpectedspend,totalimpact,totalimpactpercentage,monitorarn,linkedaccount,linkedaccountname,region,service,usagetype
-              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+Outputs:
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
 
 Resources:
   LambdaRole:
@@ -362,72 +305,120 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
 
-  "Fn::ForEach::Object":
-    - AwsObject
-    - !Ref AwsObjects
-    - "Crawler${AwsObject}":
-        Type: AWS::Glue::Crawler
-        Properties:
-          Name: !Sub "${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"
-          Role: !Ref GlueRoleARN
-          DatabaseName: !Ref DatabaseName
-          Targets:
-            S3Targets:
-              - Path:
-                  Fn::Sub:
-                    - "s3://${DestinationBucket}/${path}-data/"
-                    - path: !FindInMap [ServicesMap, !Ref AwsObject, path]
-          Configuration: |
-            {
-              "Version": 1.0,
-              "Grouping": {
-                "TableGroupingPolicy": "CombineCompatibleSchemas"
-              },
-              "CrawlerOutput": {
-                "Tables": {
-                  "TableThreshold": 1
-                }
-              }
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+      Configuration: |
+        {
+          "Version": 1.0,
+          "Grouping": {
+            "TableGroupingPolicy": "CombineCompatibleSchemas"
+          },
+          "CrawlerOutput": {
+            "Tables": {
+              "TableThreshold": 1
             }
-      "Table${AwsObject}":
-        Type: Custom::ManageGlueTable
-        Properties:
-          ServiceToken: !Ref LambdaManageGlueTableARN
-          TableInput:
-            !Select [0, !FindInMap [ServicesMap, !Ref AwsObject, table]]
+          }
+        }
 
-      "StepFunction${AwsObject}":
-        Type: AWS::StepFunctions::StateMachine
-        Properties:
-          StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-${AwsObject}-StateMachine"
-          StateMachineType: STANDARD
-          RoleArn: !Ref StepFunctionExecutionRoleARN
-          DefinitionS3Location:
-            Bucket: !Ref CodeBucket
-            Key: !Ref StepFunctionTemplate
-          DefinitionSubstitutions:
-            AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
-            ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-            Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-${AwsObject}-Crawler"]'
-            CollectionType: "LINKED"
-            Params: !FindInMap [ServicesMap, !Ref AwsObject, path]
-            Module: !Ref CFDataName
-            DeployRegion: !Ref AWS::Region
-            Account: !Ref AWS::AccountId
-            Prefix: !Ref ResourcePrefix
-      "RefreshSchedule${AwsObject}":
-        Type: AWS::Scheduler::Schedule
-        Properties:
-          Description: !Sub "Scheduler for the ODC ${CFDataName} ${AwsObject} module"
-          Name: !Sub "${ResourcePrefix}${CFDataName}-${AwsObject}-RefreshSchedule"
-          ScheduleExpression: !Ref Schedule
-          State: ENABLED
-          FlexibleTimeWindow:
-            MaximumWindowInMinutes: 30
-            Mode: "FLEXIBLE"
-          Target:
-            Arn: !GetAtt [!Sub "StepFunction${AwsObject}", Arn]
-            RoleArn: !Ref SchedulerExecutionRoleARN
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      TableInput:
+        Name: cost_anomaly_data
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          compressionType: none
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: anomalyid
+              Type: string
+            - Name: anomalystartdate
+              Type: string
+            - Name: anomalyenddate
+              Type: string
+            - Name: dimensionvalue
+              Type: string
+            - Name: maximpact
+              Type: double
+            - Name: totalactualspend
+              Type: double
+            - Name: totalexpectedspend
+              Type: double
+            - Name: totalimpact
+              Type: double
+            - Name: totalimpactpercentage
+              Type: double
+            - Name: monitorarn
+              Type: string
+            - Name: linkedaccount
+              Type: string
+            - Name: linkedaccountname
+              Type: string
+            - Name: region
+              Type: string
+            - Name: service
+              Type: string
+            - Name: usagetype
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            Parameters:
+              paths: anomalyid,anomalystartdate,anomalyenddate,dimensionvalue,maximpact,totalactualspend,totalexpectedspend,totalimpact,totalimpactpercentage,monitorarn,linkedaccount,linkedaccountname,region,service,usagetype
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-StateMachine"
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "Payers"
+        Params: ""
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: "AWS::Scheduler::Schedule"
+    Properties:
+      Description: !Sub "Scheduler for the ODC ${CFDataName} module"
+      Name: !Sub "${ResourcePrefix}${CFDataName}-RefreshSchedule"
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: "FLEXIBLE"
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
