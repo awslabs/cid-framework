@@ -901,6 +901,7 @@ Resources:
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   BackupModule:
