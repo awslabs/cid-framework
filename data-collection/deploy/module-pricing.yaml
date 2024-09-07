@@ -407,14 +407,15 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
         ZipFile: |
           import os
+          import csv
           import json
-          import urllib3
           import logging
+          import urllib3
 
           import boto3
 
@@ -433,13 +434,63 @@ Resources:
           def get_json(url):
               return json.loads(urllib3.PoolManager().request('GET', url).data)
 
+          def download_file(url, save_path, chunk_size=100*1024*1024):
+              ''' download file to disk '''
+              response = urllib3.PoolManager().request('GET', url, preload_content=False)
+              file_size = response.length_remaining
+              print(f'Downloading {url}')
+              for _ in range(5): # Skip first 5 lines
+                  response.readline()
+              with open(save_path, 'wb', encoding='utf-8') as out_file:
+                  for data in response.stream(chunk_size):
+                      out_file.write(data)
+                      print(f'downloaded {int(100 - 100 * response.length_remaining / file_size )} %')
+              response.release_conn()
+              print("Download completed!")
+
+          def csv_to_json_and_multi_upload(csv_file_path, s3_bucket, s3_key, chunk_size=100*1024*1024):
+              ''' take csv file and upload data as json '''
+              s3_client = boto3.client('s3')
+              mpu = s3_client.create_multipart_upload(Bucket=s3_bucket, Key=s3_key)
+              parts = []
+              part_number = 1
+              with open(csv_file_path, 'r', encoding='utf-8') as csv_file:
+                  csv_reader = csv.DictReader(csv_file)
+                  chunk = ''
+                  while True:
+                      for row in csv_reader:
+                          chunk += (json.dumps(row) + '\n')
+                          if len(chunk) >= chunk_size:
+                              break
+                      if not chunk:
+                          break
+                      print(f'Uploading part {part_number}')
+                      part = s3_client.upload_part(
+                          Body=chunk,
+                          Bucket=s3_bucket,
+                          Key=s3_key,
+                          PartNumber=part_number,
+                          UploadId=mpu['UploadId']
+                      )
+                      parts.append({"PartNumber": part_number, "ETag": part['ETag']})
+                      part_number += 1
+                      chunk = ''
+
+              print('Completing')
+              s3_client.complete_multipart_upload(
+                  Bucket=s3_bucket,
+                  Key=s3_key,
+                  UploadId=mpu['UploadId'],
+                  MultipartUpload={"Parts": parts}
+              )
+              print(f"Upload Successful: s3://{s3_bucket}/{s3_key}")
+              return True
+
+
+
           def upload_pricing(service, path):
-              s3 = boto3.client('s3')
-              http = urllib3.PoolManager()
               offers = get_json(OFFERS_URL)['offers']
-
               errors = ''
-
               logger.info(f'Getting regional pricing for {service}')
               try:
                   if service == 'AWSComputeSavingsPlan':
@@ -447,7 +498,7 @@ Resources:
                   else:
                       url = offers[service]['currentRegionIndexUrl']
                   regions = get_json(BASE_URL + url)["regions"]
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=W0718
                   err = f'{service}: {exc}'
                   logger.warning(err)
                   return {
@@ -467,20 +518,11 @@ Resources:
                   try:
                       version_url =  region.get("versionUrl") or region.get("currentVersionUrl")
                       assert version_url
-                      region_url = BASE_URL + version_url.replace(".json", ".csv")
-
-                      # Starting Download
-                      file_obj = http.request('GET', region_url, preload_content=False)
-
-                      # Skip 5 lines
-                      for _ in range(5):
-                          file_obj.readline()
-
-                      # Upload
-                      key = f"pricing/pricing-{path}-data/region={region_code}/index.csv"
-                      res = s3.upload_fileobj(Fileobj=file_obj, Bucket=BUCKET_NAME, Key=key)
-                      logger.debug(f'{res} Uploaded to s3://{BUCKET_NAME}/{key}')
-                  except Exception as exc:
+                      region_url = BASE_URL + version_url.replace(".json", ".csv") # we use CSV as json provided by api is not athena friendly
+                      key = f"pricing/latest/pricing-{path}-data/region={region_code}/index.json"
+                      download_file(region_url, '/tmp/tmp.csv')
+                      csv_to_json_and_multi_upload('/tmp/tmp.csv', BUCKET_NAME, key)
+                  except Exception as exc: #pylint: disable=W0718
                       err = f'{service}/{region_code}: {exc}'
                       logger.warning(err)
                       logger.exception(exc)
@@ -493,8 +535,8 @@ Resources:
 
           def s3copy(src_bucket, src_key, dest_bucket, dest_key):
               boto3.resource('s3').Bucket(dest_bucket).copy({
-                    'Bucket': src_bucket,
-                    'Key': src_key
+                  'Bucket': src_bucket,
+                  'Key': src_key
                   },
                   dest_key
               )
@@ -508,35 +550,34 @@ Resources:
                   long_name = ssm_client.get_parameter(Name=f"/aws/service/global-infrastructure/regions/{region}/longName")["Parameter"]["Value"]
                   lines.append(",".join([region,long_name,f"rds.{region}.amazonaws.com","HTTPS"]))
 
-              with open(TMP_FILE, "w") as f:
+              with open(TMP_FILE, "w", encoding='utf-8') as f:
                   f.write("Region,Long Name,Endpoint,Protocol\n")
                   f.write("\n".join(lines))
 
               # Upload
-              key = f"pricing/pricing-regionnames-data/pricing_region_names/pricing_region_names.csv"
-              res = boto3.client('s3').upload_file(TMP_FILE, Bucket=BUCKET_NAME, Key=key)
-              logger.info(f"Uploaded pricing_region_names")
+              key = "pricing/pricing-regionnames-data/pricing_region_names/pricing_region_names.csv"
+              boto3.client('s3').upload_file(TMP_FILE, Bucket=BUCKET_NAME, Key=key)
+              logger.info("Uploaded pricing_region_names")
               return {
                   'statusCode': 200
               }
 
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=W0613
               logger.info(f"Incoming event: {event}")
               try:
                   service = event['service']
                   path = event['path']
-              except Exception as exc:
-                  logger.error('please provide service and path')
-                  raise Exception(f'({type(exc).__name__}) raised. Please provide service and path parameters.')
-
+              except Exception: #pylint: disable=W0718
+                  logger.error('please provide service and path. Will use EC2 and tmp for testing')
+                  service = 'AmazonEC2'
+                  path = 'tmp'
               if service == "RegionNames":
                   res = process_region_list(REGIONS)
                   return {
                       'statusCode': 200,
                       'body': {service: res}
                   }
-              else:
-                  res = upload_pricing(service, path)
+              upload_pricing(service, path)
 
               # FIXME: move it to separate lambda?
               try:
@@ -544,9 +585,8 @@ Resources:
                       CODE_BUCKET, RDS_GRAVITON_PATH,
                       BUCKET_NAME, 'pricing/pricing-rdsgraviton-data/rds_graviton_mapping.csv',
                   )
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=W0718
                   res['errors'] += f'rds_graviton_mapping: {exc}'
-
               return {
                   'statusCode': 200,
                   'body': {service: res}
