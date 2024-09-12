@@ -54,7 +54,6 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
-
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -159,7 +158,8 @@ Resources:
         Id: "Firehose"
       State: "ENABLED"
       Name: !Sub "${ResourcePrefix}${CFDataName}-SecurityHubToFirehose"
-  SecHubstatemachineRole:
+
+  SecHubStateMachineRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -167,71 +167,65 @@ Resources:
           - Action: sts:AssumeRole
             Effect: Allow
             Principal:
-              Service: !Join
-                - ''
-                - - states.
-                  - !Ref AWS::Region
-                  - .amazonaws.com
+              Service: !Sub 'states.${AWS::Region}.amazonaws.com'
         Version: '2012-10-17'
-  SecHubstatemachineRoleDefaultPolicy:
-    Type: AWS::IAM::Policy
-    Properties:
-      PolicyDocument:
-        Statement:
-          - Action: lambda:InvokeFunction
-            Effect: Allow
-            Resource:
-              - - !Sub "${SecHubBackfillFunction.Arn}/:*"
-          - Action: ssm:PutParameter
-            Effect: Allow
-            Resource: !Join
-              - ''
-              - - 'arn:'
-                - !Ref AWS::Partition
-                - ':ssm:'
-                - !Ref AWS::Region
-                - ':'
-                - !Ref AWS::AccountId
-                - ':parameter'
-                - !Ref SecHubcountParameter
-        Version: '2012-10-17'
-      PolicyName: SecHubstatemachineRole
-      Roles:
-        - !Ref SecHubstatemachineRole
-  sechubstatemachine4A890B2A:
+      Path: /
+      Policies:
+        - PolicyName: "SecurityHub-S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action: lambda:InvokeFunction
+                Effect: Allow
+                Resource:
+                  - !GetAtt SecHubBackfillLambda.Arn
+  SecHubStateMachineBackfill:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      RoleArn: !GetAtt SecHubstatemachineRole.Arn
-      DefinitionString: !Join
-        - ''
-        - - '{"StartAt":"GetSecurityHubFindings","States":{"GetSecurityHubFindings":{"Next":"Check for NextToken in Security Hub Findings response.","Retry":[{"ErrorEquals":["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],"IntervalSeconds":2,"MaxAttempts":6,"BackoffRate":2},{"ErrorEquals":["States.ALL"],"IntervalSeconds":10,"MaxAttempts":5,"BackoffRate":2}],"Type":"Task","InputPath":"$","OutputPath":"$","Resource":"arn:'
-          - !Ref AWS::Partition
-          - ':states:::lambda:invoke","Parameters":{"FunctionName":"'
-          - !GetAtt SecHubBackfillFunction.Arn
-          - '","Payload.$":"$"}},"Check for NextToken in Security Hub Findings response.":{"Type":"Choice","Choices":[{"Variable":"$.Payload.NextToken","IsNull":false,"Next":"GetSecurityHubFindings"}],"Default":"Security Hub Export Succeded"},"Security Hub Export Succeded":{"Type":"Succeed"}}}'
-      StateMachineName: sec_hub_finding_export
-  EventRuleSechubKinesisIntegration:
-    Type: "AWS::Events::Rule"
-    Properties:
-      EventPattern:
-        detail-type:
-        - "Security Hub Findings - Imported"
-        source:
-        - "aws.securityhub"
-      Targets:
-      - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
-        RoleArn: !GetAtt IAMRoleAmazonEventBridgeInvokeFirehose.Arn
-        Id: "FirehoseDeliveryStream"
-      State: "ENABLED"
-      Name: "${ResourcePrefix}${CFDataName}-SecHubEvents"
-
-  SecHubcountParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Type: String
-      Value: '0'
-      Description: The Count for Security Hub findings for Backfill purpose.
-      Name: /sechubexport/count
+      StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-BackfillData"
+      RoleArn: !GetAtt SecHubStateMachineRole.Arn
+      DefinitionString: !Sub '
+        {
+          "StartAt": "GetSecurityHubFindings",
+          "States": {
+            "GetSecurityHubFindings": {
+              "Next": "Check for NextToken in Security Hub Findings response.",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                },{
+                  "ErrorEquals": ["States.ALL"],
+                  "IntervalSeconds": 10,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Type": "Task",
+              "InputPath": "$",
+              "OutputPath": "$",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters":{
+                "FunctionName": "${SecHubBackfillLambda.Arn}",
+                "Payload.$": "$"
+              }
+            },
+            "Check for NextToken in Security Hub Findings response.": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.Payload.NextToken",
+                  "IsNull":false,
+                  "Next": "GetSecurityHubFindings"
+                }
+              ],
+              "Default": "Security Hub Export Succeeded"
+            },
+            "Security Hub Export Succeeded": {"Type": "Succeed"}
+          }
+        }'
 
   LambdaFunction:
     Type: AWS::Lambda::Function
@@ -242,6 +236,8 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
+          ''' This function just transforms Security Hub events before it is written by Firehose.
+          '''
           import os
           import re
           import json
@@ -306,68 +302,106 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
-  SecHubBackfillFunction:
+
+  SecHubBackfillLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-BackfillLambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: "SecurityHub-ReadAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "securityhub:GetFindings"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:securityhub:*:*:*"
+        - PolicyName: "S3-WriteAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:PutObjectAcl"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  SecHubBackfillLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-BackfillLambda'
       Description: !Sub "Lambda function to Backfill SecurityHub Active & Archived findings for last 90days ${CFDataName}"
-      Runtime: python3.10
+      Role: !GetAtt SecHubBackfillLambdaRole.Arn
+      Runtime: python3.12
       Architectures: [x86_64]
       Environment:
         Variables:
-          REGION: !Ref AWS::Region
-          account: !Ref AWS::AccountId
-          S3_BUCKET: !GetAtt DestinationBucketARN.Arn
-          SSM_PARAMETER_COUNT: !Ref sechubcountparameterD48E37A7
-      Handler: get_sh_finding.lambda_handler
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+      Handler: index.lambda_handler
       MemorySize: 1024
       ReservedConcurrentExecutions: 100
       Timeout: 900
       Code:
         ZipFile: |
-          import boto3
+          """ This function pulls the data from Security Hub and stores it on the S3.
+          It supposed to be One time operation for Backfill data after installation.
+
+          This lambda must be used with StepFunction. StepFunction manages pagination for large Backfill jobs.
+
+          Heavily inspired by the work done by Jonathan Nguyen. Please check:
+          https://aws.amazon.com/blogs/security/export-historical-security-hub-findings-to-an-s3-bucket-to-enable-complex-analytics/
+          """
+          import os
+          import gzip
+          import time
           import json
           import uuid
-          from botocore.exceptions import ClientError
           import datetime
           import logging
-          import os
-          import time
-          import gzip
           from io import BytesIO
+
+          import boto3
+          from botocore.exceptions import ClientError
 
           logger = logging.getLogger()
           logger.setLevel(logging.INFO)
 
-          S3_BUCKET = os.environ['S3_BUCKET']
-          account = os.environ['account']
-          REGION = os.environ['REGION']
-
-          SSM_PARAMETER_COUNT = os.environ['SSM_PARAMETER_COUNT']
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          PREFIX = os.environ['PREFIX']
+          REGION = os.environ['AWS_REGION']
 
           sechub = boto3.client('securityhub')
           s3 = boto3.resource('s3')
-          ssm = boto3.client('ssm')
 
-          def create_filter():
-              # converted_string_date = datetime.datetime.strptime(date_filter, '%Y-%m-%dT%H:%M:%S.%fZ')
-              # day_counter = 90
-              # updatedat_end = str(converted_string_date.isoformat()[:-3]+'Z')
-              # updatedat_start = str((converted_string_date - datetime.timedelta(days=day_counter)).isoformat()[:-3]+'Z')
-              # logger.info("Creating finding filter to get findings from {} to {}...".format(updatedat_start,updatedat_end))
-
-              finding_filter = {
-                  # 'UpdatedAt': [
-                  #     {
-                  #         'Start': updatedat_start,
-                  #         'End': updatedat_end
-                  #     },
-                  # ],
-              }
-              return finding_filter
-
-          def get_findings(sechub, finding_filter, next_token):
-              max_iterator = 50
+          def get_findings(sechub, finding_filter, next_token, account, max_iterator=50):
+              ''' get findings
+              '''
               results = []
               logger.info("Running export for Security Hub findings...")
               for x in range(0, max_iterator, 1):
@@ -375,7 +409,7 @@ Resources:
                       response = sechub.get_findings(
                           Filters=finding_filter,
                           NextToken=next_token,
-                          MaxResults=100
+                          MaxResults=100,
                       )
                       results.extend(response["Findings"])
                       if "NextToken" in response:
@@ -410,28 +444,13 @@ Resources:
               })
               return next_token, results, consolidated_results
 
-          def sechub_count_value(results):
-              logger.info("Adding {} Security Hub findings to export count...".format(len(results)))
+          def put_obj_to_s3(results, consolidated_results, account):
+              ''' Upload to s3
+              '''
+              date = datetime.datetime.now()
+              key = date.strftime(f"{PREFIX}/securityhub_events/%Y/%m/%d/{account}-backfill-{uuid.uuid4()}.gz")
               try:
-                  existing_value = ssm.get_parameter(
-                      Name=SSM_PARAMETER_COUNT
-                  )
-                  existing_value['Parameter']['Value']
-                  sechub_count = (int(existing_value['Parameter']['Value'])) + len(results)
-                  response = ssm.put_parameter(
-                      Name=SSM_PARAMETER_COUNT,
-                      Value=str(sechub_count),
-                      Overwrite=True,
-                  )
-                  logger.info("Current Security Hub export count is {}.".format(str(sechub_count)))
-              except ClientError as error_handle:
-                  logger.error(error_handle)
-              return sechub_count
-
-          def put_obj_to_s3(results, consolidated_results):
-              key = f"sechub_events/managementid={account}/{datetime.datetime.now().strftime('%Y/%m/%d/%H')}/security-hub-finding-backfill{uuid.uuid4()}.gz"
-              try:
-                  logger.info("Exporting {} findings to s3://{}/{}".format(len(results), S3_BUCKET, key))
+                  logger.info("Exporting {} findings to s3://{}/{}".format(len(results), BUCKET_NAME, key))
 
                   # Compress the JSON data with GZip
                   compressed_data = BytesIO()
@@ -442,8 +461,8 @@ Resources:
                               "id": str(uuid.uuid4()),
                               "detail_type": "sechub-backfill",
                               "source": "security-hub-backfill_data",
-                              "account": account,
-                              "time": datetime.datetime.now().isoformat(),
+                              "account": account, # Source Account
+                              "time": date.isoformat(),
                               "region": REGION,
                               "resources": [
                                   "backfill_resource"
@@ -455,11 +474,11 @@ Resources:
                           gz_file.write(json_obj.encode() + b'\n')
                   compressed_data.seek(0)
 
-                  response = s3.Bucket(S3_BUCKET).put_object(
+                  response = s3.Bucket(BUCKET_NAME).put_object(
                       Key=key,
                       Body=compressed_data
                   )
-                  logger.info("Successfully exported {} findings to s3://{}/{}".format(len(results), S3_BUCKET, key))
+                  logger.info("Successfully exported {} findings to s3://{}/{}".format(len(results), BUCKET_NAME, key))
               except ClientError as error_handle:
                   if error_handle.response['Error']['Code'] == 'ConnectTimeoutError':
                       time.sleep(5)
@@ -469,29 +488,25 @@ Resources:
 
 
           def lambda_handler(event, context):
-              print(event)
+              # print(event)
+              account = context.invoked_function_arn.split(":")[4]
               if 'Payload' in event:
                   next_token = event['Payload']['NextToken']
-          #        date_filter = event['Payload']['StartDate']
                   logger.info("NextToken {} detected for Security Hub findings.".format(next_token))
               else:
                   next_token = ''
-          #        date_filter=event['StartDate']
                   logger.info("NextToken not detected for Security Hub findings.")
-              finding_filter = create_filter()
+              finding_filter = {}
               runs = 25
               for a in range(0, runs, 1):
                   if (next_token is not None):
-                      next_token, results, consolidated_results = get_findings(sechub, finding_filter, next_token)
-                      put_obj_to_s3(results, consolidated_results)
-                      sechub_count = sechub_count_value(results)
+                      next_token, results, consolidated_results = get_findings(sechub, finding_filter, next_token, account)
+                      put_obj_to_s3(results, consolidated_results, account)
                   else:
                       logger.info("NextToken not found... Ending Security Hub finding export.")
                       break
               return {
                   'NextToken': next_token,
-                  'SecHubCount': sechub_count,
-          #        'StartDate': date_filter
               }
 
     Metadata:
@@ -517,7 +532,7 @@ Resources:
           KeyType: AWS_OWNED_CMK
         ExtendedS3DestinationConfiguration:
           BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
-          Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/"
+          Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/${AWS::AccountId}-"
           ErrorOutputPrefix: !Sub "${CFDataName}/securityhub_errors/!{timestamp:yyyy/MM/}/!{firehose:error-output-type}"
           RoleARN: !GetAtt KinesisFirehoseRole.Arn
           CloudWatchLoggingOptions:
