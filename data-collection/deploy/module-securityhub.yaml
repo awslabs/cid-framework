@@ -4,23 +4,179 @@ Parameters:
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
-    Default: optimization_data
-  DestinationBucket:
+    Default: cid_security_hub
+  DestinationBucketPrefix:
     Type: String
-    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
-    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+    Description: "A Prefix of S3 Bucket name that will hold information. A Bucket name will be concatenated with account_id automatically (ex: cid-data-123456123456). You can keep this parameter as is."
+    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    Default: cid-
+  AcceptDataFromAccountIDs:
+    Type: String
+    AllowedPattern: ^(\d{12}(,\d{12})*)?$
+    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
+  SendDataToAccountID:
+    Type: String
+    AllowedPattern: ^(\d{12})?$
+    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
+
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
     Default: securityhub
   ResourcePrefix:
     Type: String
+    Default: cid-
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
-  LambdaAnalyticsARN:
-    Type: String
-    Description: Arn of lambda for Analytics
+
+
+Conditions:
+
+  AcceptData: !Not [!Equals [!Ref AcceptDataFromAccountIDs, '']]
+  SendData: !Not [!Equals [!Ref SendDataToAccountID, '']]
 
 Resources:
+
+  ReplicationRole:
+    Condition: SendData
+    Type: AWS::IAM::Role
+    Properties:
+      Path: !Sub /${ResourcePrefix}/
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - "s3.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: ReplicationPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetReplicationConfiguration
+                  - s3:ListBucket
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub"
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                Resource:  !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub/*"
+              - Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${SendDataToAccountID}-security-hub/security-hub/*"
+
+  DestinationBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub "${DestinationBucketPrefix}${AWS::AccountId}-security-hub"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+            BlockPublicAcls : true
+            BlockPublicPolicy : true
+            IgnorePublicAcls : true
+            RestrictPublicBuckets : true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: Object&Version Expiration
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 7
+      ReplicationConfiguration:
+        Fn::If:
+          - SendData
+          - Role: !GetAtt ReplicationRole.Arn
+            Rules:
+              - Destination:
+                  Bucket: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${SendDataToAccountID}-security-hub"
+                  StorageClass: STANDARD
+                Id: ReplicateSecurityHubData
+                Prefix: !Sub "${CFDataName}/"
+                Status: Enabled
+          - !Ref 'AWS::NoValue'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W51 #S3 bucket should likely have a bucket policy
+            reason: "No bucket policy required by default"
+          - id: W35 #S3 Bucket should have access logging configured
+            reason: "The bucket is used with Athena and logging can be extensive."
+      cfn-lint:
+        config:
+          ignore_checks:
+            - W3045 # Need to use AccessControl for replication
+
+  S3DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DestinationBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowSSLOnly
+            Action: s3:*
+            Effect: Deny
+            Principal: "*"
+            Resource: !Sub "${DestinationBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: AllowTLS12Only
+            Action: s3:*
+            Effect: Deny
+            Principal: "*"
+            Resource: !Sub "${DestinationBucket.Arn}/*"
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+          - Fn::If:
+              - AcceptData
+              - Sid: AllowReplicationWrite
+                Effect: Allow
+                Principal:
+                  AWS: !Split [',', !Ref AcceptDataFromAccountIDs]
+                Action:
+                  - s3:ReplicateDelete
+                  - s3:ReplicateObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${DestinationBucket}/*'
+              - !Ref 'AWS::NoValue'
+          - Fn::If:
+              - AcceptData
+              - Sid: AllowReplicationListAndVersioning
+                Effect: Allow
+                Principal:
+                  AWS: !Split [',', !Ref AcceptDataFromAccountIDs]
+                Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:GetBucketVersioning
+                  - s3:PutBucketVersioning
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${DestinationBucket}'
+              - !Ref 'AWS::NoValue'
+
+  GlueDatabase:
+    Type: "AWS::Glue::Database"
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Description: "CID Data Collection"
+        Name: !Ref DatabaseName
+
   LambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -108,7 +264,7 @@ Resources:
                 'sts:ExternalId': !Ref 'AWS::AccountId'
       Path: /
       Policies:
-        - PolicyName: "SecurityHub-S3-Access"
+        - PolicyName: "ResourcesAccess"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -151,7 +307,7 @@ Resources:
         - "Security Hub Findings - Imported"
         source:
         - "aws.securityhub" # only AWS can send events with source aws.*
-        - "cid.test" # uncomment for testing
+        # - "cid.test" # uncomment for testing
       Targets:
       - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
         RoleArn: !GetAtt EventBridgeInvokeFirehoseRole.Arn
@@ -508,7 +664,6 @@ Resources:
               return {
                   'NextToken': next_token,
               }
-
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -594,8 +749,41 @@ Resources:
           projection.enabled: 'true'
           storage.location.template: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/${!datehour}"
 
-  AnalyticsExecutor:
-    Type: Custom::LambdaAnalyticsExecutor
+  ReadAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
     Properties:
-      ServiceToken: !Ref LambdaAnalyticsARN
-      Name: !Ref CFDataName
+      ManagedPolicyName: !Sub ${ResourcePrefix}SecurityHubReadAccess
+      Description: 'Policy for QuickSight'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowGlue
+            Effect: Allow
+            Action:
+              - glue:GetPartition
+              - glue:GetPartitions
+              - glue:GetDatabase
+              - glue:GetDatabases
+              - glue:GetTable
+              - glue:GetTables
+            Resource:
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}
+          - Sid: AllowListBucket
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub
+          - Sid: AllowReadBucket
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub/*
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: 'W28'
+            reason: "Need an explicit name for reference"
