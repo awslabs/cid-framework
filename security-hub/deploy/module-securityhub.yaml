@@ -592,31 +592,14 @@ Resources:
                       logger.error(exception_handle)
                       next_token = response['NextToken']
               logger.info("Consolidating {} findings...".format(len(results)))
-              consolidated_results = json.dumps({
-                  "version": "0",
-                  "id": str(uuid.uuid4()),
-                  "detail_type": "sechub-backfill",
-                  "source": "security-hub-backfill_data",
-                  "account": account,
-                  "time": datetime.datetime.now().isoformat(),
-                  "region": REGION,
-                  "resources": [
-                      "backfill_resource"
-                  ],
-                  "detail": {
-                      "findings": results
-                  }
-              })
-              return next_token, results, consolidated_results
+              return next_token, results
 
-          def put_obj_to_s3(results, consolidated_results, account):
+          def put_obj_to_s3(results, account):
               ''' Upload to s3
               '''
               date = datetime.datetime.now()
               key = date.strftime(f"{PREFIX}/securityhub_events/%Y/%m/%d/{account}-backfill-{uuid.uuid4()}.gz")
               try:
-                  logger.info("Exporting {} findings to s3://{}/{}".format(len(results), BUCKET_NAME, key))
-
                   # Compress the JSON data with GZip
                   compressed_data = BytesIO()
                   with gzip.GzipFile(fileobj=compressed_data, mode='w') as gz_file:
@@ -624,13 +607,15 @@ Resources:
                           json_obj = json.dumps({
                               "version": "0",
                               "id": str(uuid.uuid4()),
-                              "detail_type": "sechub-backfill",
-                              "source": "security-hub-backfill_data",
-                              "account": account, # Source Account
+                              "detail_type": "Security Hub Findings - Backfill",
+                              "source": "backfill", # = 'aws.securityhub' if arrives via EventBridge
+                              "account": account, # This is an account of data collection, not account of finding
                               "time": date.isoformat(),
-                              "region": REGION,
+                              "region": REGION, # This is a region of data collection, not region of finding
                               "resources": [
-                                  "backfill_resource"
+                                  f.get('productfields', {}).get('aws_securityhub_findingid', '')
+                                  for f in results
+                                  if 'aws_securityhub_findingid' in f.get('productfields', {})
                               ],
                               "detail": {
                                   "findings": [result]
@@ -638,12 +623,11 @@ Resources:
                           })
                           gz_file.write(json_obj.encode() + b'\n')
                   compressed_data.seek(0)
-
                   response = s3.Bucket(BUCKET_NAME).put_object(
                       Key=key,
                       Body=compressed_data
                   )
-                  logger.info("Successfully exported {} findings to s3://{}/{}".format(len(results), BUCKET_NAME, key))
+                  logger.info(f"Successfully exported {len(results)} findings to s3://{BUCKET_NAME}/{key}")
               except ClientError as error_handle:
                   if error_handle.response['Error']['Code'] == 'ConnectTimeoutError':
                       time.sleep(5)
@@ -651,13 +635,12 @@ Resources:
               except Exception as exception_handle:
                   logger.error(exception_handle)
 
-
           def lambda_handler(event, context):
               # print(event)
               account = context.invoked_function_arn.split(":")[4]
               if 'Payload' in event:
                   next_token = event['Payload']['NextToken']
-                  logger.info("NextToken {} detected for Security Hub findings.".format(next_token))
+                  logger.info(f"NextToken {next_token} detected for Security Hub findings.")
               else:
                   next_token = ''
                   logger.info("NextToken not detected for Security Hub findings.")
@@ -665,8 +648,8 @@ Resources:
               runs = 25
               for a in range(0, runs, 1):
                   if (next_token is not None):
-                      next_token, results, consolidated_results = get_findings(securityhub, finding_filter, next_token, account)
-                      put_obj_to_s3(results, consolidated_results, account)
+                      next_token, results = get_findings(securityhub, finding_filter, next_token, account)
+                      put_obj_to_s3(results, account)
                   else:
                       logger.info("NextToken not found... Ending Security Hub finding export.")
                       break
