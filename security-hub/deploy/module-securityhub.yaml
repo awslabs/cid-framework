@@ -1,41 +1,67 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Retrieves AWS Security Hub details across AWS organization
+Description: Retrieve AWS Security Hub details across AWS organizations v0.0.1
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: 'Deployment parameters'
+        Parameters:
+          - ResourcePrefix
+          - DatabaseName
+          - DestinationBucketPrefix
+          - CFDataName
+      - Label:
+          default: 'Consolidate Security Hub Data Across AWS Organizations'
+        Parameters:
+          - AcceptDataFromAccountIDs
+          - SendDataToAccountID
+    ParameterLabels:
+      DatabaseName:
+        default: 'Database Name'
+      DestinationBucketPrefix:
+        default: 'Bucket Prefix'
+      ResourcePrefix:
+        default: 'Resource Prefix'
+      CFDataName:
+        default: 'Data Prefix (Do Not Change)'
+      AcceptDataFromAccountIDs:
+        default: 'Accept Data From'
+      SendDataToAccountID:
+        default: 'Send Data To'
+
 Parameters:
   DatabaseName:
     Type: String
-    Description: Name of the Athena database to be created to hold lambda information
+    Description: Name of the Athena database to be created to hold information
     Default: cid_security_hub
   DestinationBucketPrefix:
     Type: String
-    Description: "A Prefix of S3 Bucket name that will hold information. A Bucket name will be concatenated with account_id automatically (ex: cid-data-123456123456). You can keep this parameter as is."
+    Description: "A Prefix of S3 Bucket name that will hold information. A Bucket name will be concatenated with account_id automatically (ex: cid-123456123456-security-hub). You can keep this parameter as is."
     AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
     Default: cid-
   AcceptDataFromAccountIDs:
     Type: String
     AllowedPattern: ^(\d{12}(,\d{12})*)?$
-    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
+    Description: "(Ex: 1234567890123,1234567890123) List of Accounts that can send Security Hub Information. If not needed keep empty "
   SendDataToAccountID:
     Type: String
     AllowedPattern: ^(\d{12})?$
-    Description: "(Ex: 123456789,098654321,789054312) List of Payer IDs you wish to collect data for. Can just be one Accounts"
-
+    Description: "(Ex:1234567890123) List of Account IDs to send Security Hub information. If not needed keep empty. Make sure that this account already has the same stack with the same BucketPrefix with parameter AcceptDataFromAccountIDs configured."
   CFDataName:
     Type: String
-    Description: The name of what this cf is doing.
+    Description: Just additional prefix. Keep it as is.
     Default: securityhub
   ResourcePrefix:
     Type: String
     Default: cid-
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
 
-
 Conditions:
-
   AcceptData: !Not [!Equals [!Ref AcceptDataFromAccountIDs, '']]
   SendData: !Not [!Equals [!Ref SendDataToAccountID, '']]
 
 Resources:
-
   ReplicationRole:
     Condition: SendData
     Type: AWS::IAM::Role
@@ -44,8 +70,7 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
-          -
-            Effect: Allow
+          - Effect: Allow
             Principal:
               Service:
                 - "s3.amazonaws.com"
@@ -121,7 +146,7 @@ Resources:
           ignore_checks:
             - W3045 # Need to use AccessControl for replication
 
-  S3DataBucketPolicy:
+  DestinationBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
       Bucket: !Ref DestinationBucket
@@ -174,13 +199,13 @@ Resources:
     Properties:
       CatalogId: !Ref AWS::AccountId
       DatabaseInput:
-        Description: "CID Data Collection"
+        Description: "CID Security Hub Data"
         Name: !Ref DatabaseName
 
-  LambdaRole:
+  TransformationLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-TransformationLambdaRole"
       AssumeRolePolicyDocument:
         Statement:
           - Action:
@@ -192,24 +217,7 @@ Resources:
         Version: 2012-10-17
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Path: /
-      Policies:
-        - PolicyName: "S3-Access"
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: "Allow"
-                Action:
-                  - "s3:PutObject"
-                  - "s3:GetObject"
-                  - "s3:PutObjectAcl"
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
-              - Effect: "Allow"
-                Action:
-                  - "s3:ListBucket"
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+      Path: !Sub /${ResourcePrefix}/
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -287,7 +295,7 @@ Resources:
                   - "lambda:InvokeFunction"
                   - "lambda:GetFunctionConfiguration"
                 Resource:
-                - !GetAtt LambdaFunction.Arn
+                - !GetAtt TransformationLambda.Arn
               - Effect: "Allow"
                 Action:
                   - "logs:CreateLogStream"
@@ -334,7 +342,7 @@ Resources:
               - Action: lambda:InvokeFunction
                 Effect: Allow
                 Resource:
-                  - !GetAtt SecHubBackfillLambda.Arn
+                  - !GetAtt BackfillLambda.Arn
   SecHubStateMachineBackfill:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -364,7 +372,7 @@ Resources:
               "OutputPath": "$",
               "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
               "Parameters":{
-                "FunctionName": "${SecHubBackfillLambda.Arn}",
+                "FunctionName": "${BackfillLambda.Arn}",
                 "Payload.$": "$"
               }
             },
@@ -383,10 +391,10 @@ Resources:
           }
         }'
 
-  LambdaFunction:
+  TransformationLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-transformation-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-TransformationLambda'
       Description: "Lambda function to transform Security Hub events"
       Runtime: python3.12
       Architectures: [x86_64]
@@ -450,7 +458,7 @@ Resources:
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 900
-      Role: !GetAtt LambdaRole.Arn
+      Role: !GetAtt TransformationLambdaRole.Arn
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -459,7 +467,7 @@ Resources:
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
 
-  SecHubBackfillLambdaRole:
+  BackfillLambdaRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${ResourcePrefix}${CFDataName}-BackfillLambdaRole"
@@ -507,12 +515,12 @@ Resources:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
 
-  SecHubBackfillLambda:
+  BackfillLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-BackfillLambda'
       Description: !Sub "Lambda function to Backfill SecurityHub Active & Archived findings for last 90days ${CFDataName}"
-      Role: !GetAtt SecHubBackfillLambdaRole.Arn
+      Role: !GetAtt BackfillLambdaRole.Arn
       Runtime: python3.12
       Architectures: [x86_64]
       Environment:
@@ -552,17 +560,17 @@ Resources:
           PREFIX = os.environ['PREFIX']
           REGION = os.environ['AWS_REGION']
 
-          sechub = boto3.client('securityhub')
+          securityhub = boto3.client('securityhub')
           s3 = boto3.resource('s3')
 
-          def get_findings(sechub, finding_filter, next_token, account, max_iterator=50):
+          def get_findings(securityhub, finding_filter, next_token, account, max_iterator=50):
               ''' get findings
               '''
               results = []
               logger.info("Running export for Security Hub findings...")
               for x in range(0, max_iterator, 1):
                   try:
-                      response = sechub.get_findings(
+                      response = securityhub.get_findings(
                           Filters=finding_filter,
                           NextToken=next_token,
                           MaxResults=100,
@@ -656,7 +664,7 @@ Resources:
               runs = 25
               for a in range(0, runs, 1):
                   if (next_token is not None):
-                      next_token, results, consolidated_results = get_findings(sechub, finding_filter, next_token, account)
+                      next_token, results, consolidated_results = get_findings(securityhub, finding_filter, next_token, account)
                       put_obj_to_s3(results, consolidated_results, account)
                   else:
                       logger.info("NextToken not found... Ending Security Hub finding export.")
@@ -704,7 +712,7 @@ Resources:
             - Type: Lambda
               Parameters:
               - ParameterName: LambdaArn
-                ParameterValue: !GetAtt LambdaFunction.Arn
+                ParameterValue: !GetAtt TransformationLambda.Arn
               - ParameterName: BufferIntervalInSeconds
                 ParameterValue: 600
               - ParameterName: BufferSizeInMBs
@@ -787,3 +795,9 @@ Resources:
         rules_to_suppress:
           - id: 'W28'
             reason: "Need an explicit name for reference"
+
+Outputs:
+  ReadAccessPolicyARN:
+    Description: "Read Access Policy"
+    Value: !Ref ReadAccessPolicy
+    Export: { Name: "cid-SecurityHub-ReadAccessPolicyARN" }
