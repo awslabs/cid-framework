@@ -323,7 +323,7 @@ Resources:
       State: "ENABLED"
       Name: !Sub "${ResourcePrefix}${CFDataName}-SecurityHubToFirehose"
 
-  SecHubStateMachineRole:
+  BackfillStateMachineRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -343,11 +343,12 @@ Resources:
                 Effect: Allow
                 Resource:
                   - !GetAtt BackfillLambda.Arn
-  SecHubStateMachineBackfill:
+
+  BackfillStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-BackfillData"
-      RoleArn: !GetAtt SecHubStateMachineRole.Arn
+      RoleArn: !GetAtt BackfillStateMachineRole.Arn
       DefinitionString: !Sub '
         {
           "StartAt": "GetSecurityHubFindings",
@@ -679,6 +680,54 @@ Resources:
             reason: "No need for VPC in this case"
           - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
             reason: "No need for simultaneous execution"
+
+  BackfillCustomResourceLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StepFunctionsStartExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !GetAtt BackfillStateMachine.Arn
+  BackfillCustomResourceLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Custom Resource for Triggering Backfill of Security Hub Data Collection "
+      Runtime: python3.12
+      Architectures: [x86_64]
+      MemorySize: 2688
+      Timeout: 60
+      Handler: index.handler
+      Role: !GetAtt BackfillCustomResourceLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Create':
+                      response = boto3.client('stepfunctions').start_execution(stateMachineArn=event['ResourceProperties']['StateMachineArn'], input='{}')
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+  TriggerBackfillStateMachine:
+    Type: Custom::TriggerBackfillStateMachine
+    Properties:
+      ServiceToken: !GetAtt BackfillCustomResourceLambda.Arn
+      StateMachineArn: !Ref BackfillStateMachine
+
 
   FirehoseLogGroup:
     Type: AWS::Logs::LogGroup
