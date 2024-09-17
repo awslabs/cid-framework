@@ -358,6 +358,7 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonES-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSComputeSavingsPlan-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSLambda-StateMachine",
+        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionalServices-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionNames-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-CopyJobs-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",

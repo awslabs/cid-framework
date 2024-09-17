@@ -278,6 +278,22 @@ Resources:
             BlockPublicPolicy : true
             IgnorePublicAcls : true
             RestrictPublicBuckets : true
+      LifecycleConfiguration:
+        Rules:
+          - Id: RemoveNonCurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+              NewerNoncurrentVersions: 1
+            # ExpirationInDays: 365 # Set Expiration of all objects here (not recommended but can be useful in case of big workloads) 
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: CleanupOldPricingFiles
+            Status: Enabled
+            Prefix: pricing/pricing-
+            ExpirationInDays: 7
     Metadata:
       cfn_nag:
         rules_to_suppress:
