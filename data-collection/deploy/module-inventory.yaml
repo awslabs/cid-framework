@@ -1278,7 +1278,7 @@ Resources:
                   logger.info(exc)
 
       Handler: 'index.lambda_handler'
-      MemorySize: 2688
+      MemorySize: 5376
       Timeout: 300
       Role: !GetAtt LambdaRole.Arn
       Environment:
