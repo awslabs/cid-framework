@@ -12,7 +12,7 @@ Metadata:
           - DestinationBucketPrefix
           - CFDataName
       - Label:
-          default: 'Consolidate Security Hub Data Across AWS Organizations'
+          default: '(OPTIONAL) Consolidate Security Hub Data Across AWS Organizations'
         Parameters:
           - AcceptDataFromAccountIDs
           - SendDataToAccountID
