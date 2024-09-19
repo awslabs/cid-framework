@@ -56,7 +56,7 @@ Metadata:
       CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       ExcludedLinkedAccounts:
-        default: "Comma Delimited list of Linked Account IDs to be excluded from the data collection (applies only to Linked Account modules)"
+        default: "(optional) Comma Delimited list of Linked Account IDs to be excluded from the data collection"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -143,7 +143,7 @@ Parameters:
     AllowedPattern: (^(([a-z]{2}-([a-z]-?){4,10}-[1-9]{1}|[a-z]{2}-([a-z]-?){4,10}-[1-9]{1},?)+|)$)
   ExcludedLinkedAccounts:
     Type: String
-    Description: "(Ex: 098765432100,123456654321) List of Linked Account IDs to be excluded from the data collection. ONLY APPLIES TO MODULES THAT REQUIRE LINKED ACCOUNT ACCESS. LEAVE BLANK IF YOU DO NOT WANT TO EXCLUDE ANY LINKED ACCOUNTS"
+    Description: "(Ex: 098765432100,123456654321) List of Linked Accounts to be excluded from the data collection. Applicable only for modules which utilize linked accounts. More details about modules available here https://github.com/awslabs/cid-framework/tree/main/data-collection"
     AllowedPattern: (^(\d{12})(,\d{12})*$)|^$
     Default: ""
   DatabaseName:
