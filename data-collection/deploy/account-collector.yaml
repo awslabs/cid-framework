@@ -18,6 +18,9 @@ Parameters:
   DestinationBucketARN:
     Type: String
     Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+  ExcludedLinkedAccounts:
+    Type: String
+    Description: List of Linked Accounts to exclude
 Outputs:
   LambdaFunctionName:
     Value: !Ref LambdaFunction
@@ -117,6 +120,7 @@ Resources:
             PREDEF_ACCOUNT_LIST_KEY = os.environ['PREDEF_ACCOUNT_LIST_KEY']
             LINKED_ACCOUNT_LIST_KEY = os.environ['LINKED_ACCOUNT_LIST_KEY']
             PAYER_ACCOUNT_LIST_KEY = os.environ['PAYER_ACCOUNT_LIST_KEY']
+            EXCLUDED_LINKED_ACCOUNT_LIST = [a.strip() for a in os.environ.get('EXCLUDED_LINKED_ACCOUNT_LIST', '').split(',') if a]
             TMP_FILE = "/tmp/data.json"
 
             logger = logging.getLogger(__name__)
@@ -199,7 +203,10 @@ Resources:
                             org_account = json.loads(org_account_data['account'])
                             organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
                             for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
-                                yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
+                                if account.get('Id') not in EXCLUDED_LINKED_ACCOUNT_LIST:
+                                    yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
+                                else:
+                                    logger.info(f'Excluding account {account.get("Id")}')
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     logger.error(f'{org_account}: {exc}')
 
@@ -250,6 +257,7 @@ Resources:
           PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
           LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
           PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
+          EXCLUDED_LINKED_ACCOUNT_LIST: !Ref ExcludedLinkedAccounts
     Metadata:
       cfn_nag:
         rules_to_suppress:

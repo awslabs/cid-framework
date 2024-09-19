@@ -16,6 +16,7 @@ Metadata:
           - Schedule
           - ScheduleFrequent
           - CFNSourceBucket
+          - ExcludedLinkedAccounts
       - Label:
           default: 'Available modules'
         Parameters:
@@ -54,6 +55,8 @@ Metadata:
         default: "Role Prefix"
       CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
+      ExcludedLinkedAccounts:
+        default: "Comma Delimited list of linked Account IDs to be excluded from the data collection"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -138,6 +141,11 @@ Parameters:
     Description: "Ex: us-east-1,us-east-2,us-west-1,us-west-2,eu-central-1,eu-west-1,eu-west-2,eu-west-3  if empty, the current region will be used. You can add regions later by updating the stack."
     Default: ""
     AllowedPattern: (^(([a-z]{2}-([a-z]-?){4,10}-[1-9]{1}|[a-z]{2}-([a-z]-?){4,10}-[1-9]{1},?)+|)$)
+  ExcludedLinkedAccounts:
+    Type: String
+    Description: "(Ex: 098765432100,123456654321) List of Linked Account IDs to be excluded from the data collection. LEAVE BLANK IF YOU DONT WANT TO EXCLUDE ANY ACCOUNTS"
+    AllowedPattern: (^(\d{12})(,\d{12})*$)|^$
+    Default: ""
   DatabaseName:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
@@ -1196,6 +1204,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ExcludedLinkedAccounts: !Ref ExcludedLinkedAccounts
 
   DataCollectionReadAccess:
     Type: AWS::IAM::ManagedPolicy
