@@ -203,10 +203,10 @@ Resources:
                             org_account = json.loads(org_account_data['account'])
                             organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
                             for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
-                                if account.get('Id') not in EXCLUDED_LINKED_ACCOUNT_LIST:
-                                    yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
-                                else:
+                                if account.get('Id') in EXCLUDED_LINKED_ACCOUNT_LIST:
                                     logger.info(f'Excluding account {account.get("Id")}')
+                                    continue
+                                yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     logger.error(f'{org_account}: {exc}')
 
