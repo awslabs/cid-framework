@@ -87,6 +87,11 @@ Parameters:
     Description: Collects Marketplace Licensing Information from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeQuickSightModule:
+    Type: String
+    Description: Collects QuickSight user, groups, access from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
@@ -96,7 +101,8 @@ Conditions:
   EnableCostOptimizationHubModule: !Equals [!Ref IncludeCostOptimizationHubModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
   EnableLicenceManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
-
+  IncludeQuickSightModulePolicy: !Equals [!Ref IncludeQuickSightModule, "yes"]
+  
 Outputs:
   LambdaRole:
     Description: Role for lambda to assume in cost account
