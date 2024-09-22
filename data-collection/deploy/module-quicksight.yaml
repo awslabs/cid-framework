@@ -103,8 +103,8 @@ Resources:
       Code:
         ZipFile: |
           #Authors:
-          # Stephanie Gooch - initial version
-          # Mohideen - Added Budgets tag collection module
+          #Authors:
+          # Soham Majumder
           import os
           import json
           import logging
@@ -122,7 +122,9 @@ Resources:
           BUCKET = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["PREFIX"]
           ROLE_NAME = os.environ['ROLE_NAME']
-          TMP_FILE = "/tmp/data.json"
+          TMP_FILE_USER = "/tmp/User.json"
+          TMP_FILE_GROUP = "/tmp/Group.json"
+          TMP_FILE_GROUPMEMBERSHIP = "/tmp/GroupMembership.json"
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -140,60 +142,123 @@ Resources:
                   RoleSessionName="data_collection"
               )['Credentials']
               return boto3.client(
-                  service,
+                  service,region_name=region,
                   aws_access_key_id=cred['AccessKeyId'],
                   aws_secret_access_key=cred['SecretAccessKey'],
                   aws_session_token=cred['SessionToken']
               )
 
-          def lambda_handler(event, context): #pylint: disable=W0613
+
+          def lambda_handler(event, context): 
               logger.info(f"Event data {json.dumps(event)}")
               if 'account' not in event:
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
+                  raise ValueError("Please do not trigger this Lambda manually. Find the corresponding state machine in Step Functions and Trigger from there.")
+                  
               collection_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-              aws_partition = boto3.session.Session().get_partition_for_region(boto3.session.Session().region_name)
               account = json.loads(event["account"])
               account_id = account["account_id"]
               account_name = account["account_name"]
               payer_id = account["payer_id"]
 
               logger.info(f"Collecting data for account: {account_id}")
-              budgets_client = assume_role(account_id, "budgets", "us-east-1") # must be us-east-1
+              quicksight_client = assume_role(account_id, "quicksight", "us-east-1") # must be us-east-1
+              
+              namespaces = list_namespaces(account_id=account_id, quicksight=quicksight_client)
+              
+              users = []
+              groups = []
+              group_memberships = []
+              
+              for namespace in namespaces:
+                  capacityRegion=namespace['CapacityRegion']
+                  quicksightClient=quicksight_client
+                  
+                  print(f"namespace={namespace}, Capacity Region{capacityRegion}, SessionRegion={quicksight_client.meta.region_name}")
+                  
+                  if(quicksight_client.meta.region_name != capacityRegion):
+                      print(f"CapacityRegion is Different than Boto3 Session Region - Switiching to {capacityRegion}")
+                      quicksightClient=assume_role(account_id, "quicksight", capacityRegion)
+                      print(f"CapacityRegion is {quicksightClient.meta.region_name}")
+                  
+                  namespace_users = list_users(account_id=account_id,namespace=namespace['Name'],quicksight=quicksightClient)
+                  users.extend(namespace_users)
+                  
+                  namespace_groups = list_groups(account_id=account_id,namespace=namespace['Name'],quicksight=quicksightClient)
+                  groups.extend(namespace_groups)
+                  
+                  for group in namespace_groups:
+                      group_members = list_group_memberships(account_id=account_id, namespace=namespace['Name'], group_name=group['GroupName'], quicksight=quicksightClient)
+                      group_memberships.extend(group_members)
+
+              #Upload the User, Groups, GroupMembershipData to S3            
+              if(users):
+                  s3_upload(account_id=account_id, payer_id=payer_id, itemList=users, data_type="user", TMP_FILE=TMP_FILE_USER)
+              if(groups):
+                  s3_upload(account_id=account_id, payer_id=payer_id, itemList=groups, data_type="group", TMP_FILE=TMP_FILE_GROUP)
+              if(group_memberships):
+                  s3_upload(account_id=account_id, payer_id=payer_id, itemList=group_memberships, data_type="groupmembership", TMP_FILE=TMP_FILE_GROUPMEMBERSHIP)
+
+
+          def list_namespaces(account_id, quicksight):
+              namespaces = []
+              paginator = quicksight.get_paginator('list_namespaces')
+              try:
+                  for page in paginator.paginate(AwsAccountId=account_id):
+                      namespaces.extend(page['Namespaces'])
+              except ClientError as e:
+                  print(e.response['Error']['Message'])
+              return namespaces
+
+          def list_users(account_id, namespace, quicksight):
+              users = []
+              paginator = quicksight.get_paginator('list_users')
+              try:
+                  for page in paginator.paginate(AwsAccountId=account_id, Namespace=namespace):
+                      users.extend(page['UserList'])
+              except ClientError as e:
+                  print(e.response['Error']['Message'])
+              return users
+
+          def list_groups(account_id, namespace, quicksight):
+              groups = []
+              paginator = quicksight.get_paginator('list_groups')
+              try:
+                  for page in paginator.paginate(AwsAccountId=account_id, Namespace=namespace):
+                      if 'GroupList' in page and page['GroupList']:
+                          groups.extend(page['GroupList'])
+                      else:
+                          print(f"No groups found in namespace: {namespace}")
+              except ClientError as e:
+                  print(e.response['Error']['Message'])
+              return groups
+
+          def list_group_memberships(account_id, namespace, group_name, quicksight):
+              members = []
+              paginator = quicksight.get_paginator('list_group_memberships')
+              try:
+                  for page in paginator.paginate(AwsAccountId=account_id, Namespace=namespace, GroupName=group_name):
+                      if 'GroupMemberList' in page and page['GroupMemberList']:
+                          members.extend(page['GroupMemberList'])
+                      else:
+                          print(f"No group members found for group: {group_name} in namespace: {namespace}")
+              except ClientError as e:
+                  print(e.response['Error']['Message'])
+              return members
+
+          #Function to Upload the TMP_FILE(s) to S3 
+          def s3_upload(account_id, payer_id, itemList, data_type, TMP_FILE):
+              
               count = 0
               with open(TMP_FILE, "w", encoding='utf-8') as f:
-                  for budget in budgets_client.get_paginator("describe_budgets").paginate(AccountId=account_id).search('Budgets'):
-                      if not budget: continue
-                      budget['collection_time'] = collection_time
-
-                      # Fetch tags for the budget using List tag for resource API
-                      budget_name = budget['BudgetName']
-                      budget_tags = budgets_client.list_tags_for_resource(ResourceARN=f"arn:{aws_partition}:budgets::{account_id}:budget/{budget_name}")
-                      budget.update({
-                          'Account_ID': account_id,
-                          'Account_Name': account_name,
-                          'Tags': budget_tags.get('ResourceTags') or []
-                      })
-
-                      # Fetch CostFilters if available
-                      if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
-                          budget.update({'CostFilters': {'Filter': ['None']}})
-
-                      f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
+                  for item in itemList:
+                      f.write(json.dumps(item, cls=DateTimeEncoder) + "\n")
                       count += 1
-              logger.info(f"Budgets collected: {count}")
-              s3_upload(account_id, payer_id)
+              logger.info(f"{data_type} collected: {count}")
 
-
-          def s3_upload(account_id, payer_id):
-              if os.path.getsize(TMP_FILE) == 0:
-                  logger.info(f"No data in file for {PREFIX}")
-                  return
-              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-data/payer_id={payer_id}/year=%Y/month=%m/budgets-{account_id}.json")
+              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-{data_type}-data/payer_id={payer_id}/{data_type}-{account_id}.json")
               boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
               logger.info(f"Budget data for {account_id} stored at s3://{BUCKET}/{key}")
+
 
       Handler: 'index.lambda_handler'
       MemorySize: 2688
@@ -219,15 +284,35 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
       RetentionInDays: 60
 
-  Crawler:
+  QuickSightUserCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-users-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-user-data/"
+
+  QuickSightGroupCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-groups-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-group-data/"
+
+  QuickSightGroupMembershipCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-groupmemberships-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-groupmemberships-data/"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine

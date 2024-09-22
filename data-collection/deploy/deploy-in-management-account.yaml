@@ -127,6 +127,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}quicksight-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -353,6 +354,28 @@ Resources:
               - "license-manager:ListReceivedLicenses"
               - "license-manager:ListReceivedGrantsForOrganization"
             Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  QuickSightReadOnlyPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeTransitGatewayModulePolicy
+    Properties:
+      PolicyName: TransitGatewayPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "quicksight:ListNamespaces"
+              - "quicksight:ListUsers"
+              - "quicksight:ListUserGroups"
+              - "quicksight:ListGroupMemberships"
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
     Metadata:

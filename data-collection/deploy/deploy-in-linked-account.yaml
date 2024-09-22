@@ -18,6 +18,7 @@ Metadata:
         - IncludeRDSUtilizationModule
         - IncludeTAModule
         - IncludeTransitGatewayModule
+        - IncludeQuickSightModule
     ParameterLabels:
       DataCollectionAccountID:
         default: 'Data Collection Account ID'
@@ -37,6 +38,8 @@ Metadata:
         default: 'Include Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include Transit Gateway Module'
+      IncludeQuickSightModule:
+        default: 'Include QuickSight Module'  
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -80,6 +83,12 @@ Parameters:
     AllowedValues: ['yes', 'no']
     Default: 'no'
 
+  IncludeQuickSightModule:
+    Type: String
+    Description: Collects QuickSight user, groups, access from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
+
 Conditions:
   IncludeTAModulePolicy: !Equals
     - !Ref IncludeTAModule
@@ -99,6 +108,10 @@ Conditions:
   IncludeTransitGatewayModulePolicy: !Equals
     - !Ref IncludeTransitGatewayModule
     - "yes"
+  IncludeQuickSightModulePolicy: !Equals
+    - !Ref IncludeQuickSightModule
+    - "yes"
+
 
 Outputs:
   LambdaRole:
@@ -126,6 +139,7 @@ Resources:
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
                   - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}quicksight-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -262,6 +276,28 @@ Resources:
               - "cloudwatch:Describe*"
               - "cloudwatch:Get*"
               - "cloudwatch:List*"
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  QuickSightReadOnlyPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeTransitGatewayModulePolicy
+    Properties:
+      PolicyName: TransitGatewayPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "quicksight:ListNamespaces"
+              - "quicksight:ListUsers"
+              - "quicksight:ListUserGroups"
+              - "quicksight:ListGroupMemberships"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
