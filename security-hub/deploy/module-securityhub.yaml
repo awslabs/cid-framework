@@ -97,7 +97,7 @@ Resources:
                   - s3:ReplicateObject
                   - s3:ReplicateDelete
                   - s3:ReplicateTags
-                Resource: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${SendDataToAccountID}-security-hub/security-hub/*"
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${SendDataToAccountID}-security-hub/${CFDataName}/*"
 
   DestinationBucket:
     Type: 'AWS::S3::Bucket'
