@@ -809,7 +809,7 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
               - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*
-              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}
           - Sid: AllowListBucket
             Effect: Allow
             Action: s3:ListBucket
