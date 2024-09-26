@@ -103,8 +103,7 @@ Resources:
       Code:
         ZipFile: |
           #Authors:
-          #Authors:
-          # Soham Majumder
+          #Authors: Soham Majumder
           import os
           import json
           import logging
