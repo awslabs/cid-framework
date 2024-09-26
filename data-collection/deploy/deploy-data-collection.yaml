@@ -269,6 +269,7 @@ Conditions:
       - !Condition DeployRDSUtilizationModule
       - !Condition DeployOrgDataModule
       - !Condition DeployBudgetsModule
+      - !Condition DeployQuickSightModule
     - Fn::Or:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
@@ -1215,7 +1216,7 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref Schedule
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix

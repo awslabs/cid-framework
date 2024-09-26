@@ -205,7 +205,7 @@ Resources:
               try:
                   for page in paginator.paginate(AwsAccountId=account_id):
                       namespaces.extend(page['Namespaces'])
-              except ClientError as e:
+              except Exception as e:
                   print(e.response['Error']['Message'])
               return namespaces
 
@@ -215,7 +215,7 @@ Resources:
               try:
                   for page in paginator.paginate(AwsAccountId=account_id, Namespace=namespace):
                       users.extend(page['UserList'])
-              except ClientError as e:
+              except Exception as e:
                   print(e.response['Error']['Message'])
               return users
 
@@ -228,7 +228,7 @@ Resources:
                           groups.extend(page['GroupList'])
                       else:
                           print(f"No groups found in namespace: {namespace}")
-              except ClientError as e:
+              except Exception as e:
                   print(e.response['Error']['Message'])
               return groups
 
@@ -241,7 +241,7 @@ Resources:
                           members.extend(page['GroupMemberList'])
                       else:
                           print(f"No group members found for group: {group_name} in namespace: {namespace}")
-              except ClientError as e:
+              except Exception as e:
                   print(e.response['Error']['Message'])
               return members
 
@@ -307,12 +307,12 @@ Resources:
   QuickSightGroupMembershipCrawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-groupmemberships-Crawler'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-groupmembership-Crawler'
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
-          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-groupmemberships-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-groupmembership-data/"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
@@ -326,7 +326,7 @@ Resources:
       DefinitionSubstitutions:
         AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
-        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-users-Crawler", "${ResourcePrefix}${CFDataName}-groups-Crawler","${ResourcePrefix}${CFDataName}-groupmembership-Crawler"]'
         CollectionType: 'LINKED'
         Params: ''
         Module: !Ref CFDataName
@@ -361,19 +361,21 @@ Resources:
       Description: !Sub "Provides a summary view of the ${CFDataName}"
       Name: !Sub "${CFDataName}_view"
       QueryString: !Sub |
-        CREATE OR REPLACE VIEW budgets_view AS
-        SELECT
-          budgetname budget_name
-        , CAST(budgetlimit.amount AS decimal) budget_amount
-        , CAST(calculatedspend.actualspend.amount AS decimal) actualspend
-        , CAST(calculatedspend.forecastedspend.amount AS decimal) forecastedspend
-        , timeunit
-        , budgettype budget_type
-        , account_id
-        , timeperiod.start start_date
-        , timeperiod."end"  end_date
-        , year budget_year
-        , month budget_month
-        FROM
-          ${DatabaseName}.budgets_data
-        WHERE (budgettype = 'COST')  AND costfilters.filter[1] = 'None'
+        CREATE OR REPLACE VIEW ${CFDataName}_view AS
+        SELECT 
+        quser.arn userarn,
+        quser.username,
+        quser.email,
+        quser.role,
+        quser.active,
+        quser.principalid,
+        qgroup.groupname,
+        quser.account_id,
+        quser.payer_id
+        FROM "optimization_data"."quicksight_groupmembership_data" qgroupmem
+          join "optimization_data"."quicksight_user_data" quser on quser.arn = qgroupmem.arn
+          and quser.payer_id = qgroupmem.payer_id
+          and quser.account_id = qgroupmem.account_id
+          join "optimization_data"."quicksight_group_data" qgroup on qgroup.groupname = qgroupmem.groupname
+          and qgroup.payer_id = qgroupmem.payer_id
+          and qgroup.account_id = qgroupmem.account_id

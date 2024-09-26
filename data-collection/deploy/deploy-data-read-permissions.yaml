@@ -29,6 +29,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeLicenseManagerModule
+          - IncludeQuickSightModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -70,6 +71,8 @@ Metadata:
         default: "Include AWS Health Events Module"
       IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
+      IncludeQuickSightModule:
+        default: "Include QuickSight Users Module"  
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -165,6 +168,11 @@ Parameters:
     Description: Collects Marketplace Licensing information
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeQuickSightModule:
+    Type: String
+    Description: Collects QuickSight Users from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -200,6 +208,7 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeQuickSightModule: !Ref IncludeQuickSightModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
@@ -233,6 +242,8 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
+        - ParameterKey: IncludeQuickSightModule
+          ParameterValue: !Ref IncludeQuickSightModule  
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]

@@ -101,7 +101,7 @@ Conditions:
   EnableCostOptimizationHubModule: !Equals [!Ref IncludeCostOptimizationHubModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
   EnableLicenceManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
-  IncludeQuickSightModulePolicy: !Equals [!Ref IncludeQuickSightModule, "yes"]
+  EnableQuickSightModulePolicy: !Equals [!Ref IncludeQuickSightModule, "yes"]
   
 Outputs:
   LambdaRole:
@@ -369,9 +369,9 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   QuickSightReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
-    Condition: IncludeTransitGatewayModulePolicy
+    Condition: EnableQuickSightModulePolicy
     Properties:
-      PolicyName: TransitGatewayPolicy
+      PolicyName: QuickSightReadOnlyPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:

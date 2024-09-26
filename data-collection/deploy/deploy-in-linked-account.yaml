@@ -286,9 +286,9 @@ Resources:
             reason: "Policy is used for scanning of a wide range of resources"
   QuickSightReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
-    Condition: IncludeTransitGatewayModulePolicy
+    Condition: IncludeQuickSightModulePolicy
     Properties:
-      PolicyName: TransitGatewayPolicy
+      PolicyName: QuicksightReadOnlyPolicy
       PolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -297,6 +297,7 @@ Resources:
               - "quicksight:ListNamespaces"
               - "quicksight:ListUsers"
               - "quicksight:ListUserGroups"
+              - "quicksight:ListGroups"
               - "quicksight:ListGroupMemberships"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
