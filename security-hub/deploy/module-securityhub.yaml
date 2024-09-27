@@ -14,6 +14,7 @@ Metadata:
       - Label:
           default: '(OPTIONAL) Consolidate Security Hub Data Across AWS Organizations'
         Parameters:
+          - CollectSecurityHubData
           - AcceptDataFromAccountIDs
           - SendDataToAccountID
     ParameterLabels:
@@ -29,6 +30,8 @@ Metadata:
         default: 'Accept Data From'
       SendDataToAccountID:
         default: 'Send Data To'
+      CollectSecurityHubData:
+        default: 'Collect Data'
 
 Parameters:
   DatabaseName:
@@ -48,6 +51,11 @@ Parameters:
     Type: String
     AllowedPattern: ^(\d{12})?$
     Description: "(Ex:1234567890123) List of Account IDs to send Security Hub information. If not needed keep empty. Make sure that this account already has the same stack with the same BucketPrefix with parameter AcceptDataFromAccountIDs configured."
+  CollectSecurityHubData:
+    Type: String
+    Description: "Set a collection of AWS Security Hub data from the current account. Set it to 'no' only if Data Collection part is not needed (ex: data are replicated from another account)."
+    Default: 'yes'
+    AllowedValues: ['yes', 'no']
   CFDataName:
     Type: String
     Description: Just additional prefix. Keep it as is.
@@ -58,8 +66,9 @@ Parameters:
     Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
 
 Conditions:
+  CollectSecurityHubData: !Equals [!Ref CollectSecurityHubData, 'yes']
   AcceptData: !Not [!Equals [!Ref AcceptDataFromAccountIDs, '']]
-  SendData: !Not [!Equals [!Ref SendDataToAccountID, '']]
+  SendData: !And [!Condition CollectSecurityHubData, !Not [!Equals [!Ref SendDataToAccountID, '']]]
 
 Resources:
   ReplicationRole:
@@ -203,6 +212,7 @@ Resources:
         Name: !Ref DatabaseName
 
   TransformationLambdaRole:
+    Condition: CollectSecurityHubData
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${ResourcePrefix}${CFDataName}-TransformationLambdaRole"
@@ -225,6 +235,7 @@ Resources:
             reason: "Need explicit name to identify role actions"
 
   EventBridgeInvokeFirehoseRole:
+    Condition: CollectSecurityHubData
     UpdateReplacePolicy: "Delete"
     Type: "AWS::IAM::Role"
     DeletionPolicy: "Delete"
@@ -257,6 +268,7 @@ Resources:
             reason: "Need explicit name to identify role actions"
 
   KinesisFirehoseRole:
+    Condition: CollectSecurityHubData
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${ResourcePrefix}${CFDataName}-KinesisFireHoseRole"
@@ -308,6 +320,7 @@ Resources:
             reason: "Need explicit name to identify role actions"
 
   EventRuleSecurityHubKinesisIntegration:
+    Condition: CollectSecurityHubData
     Type: "AWS::Events::Rule"
     Properties:
       EventPattern:
@@ -324,6 +337,7 @@ Resources:
       Name: !Sub "${ResourcePrefix}${CFDataName}-SecurityHubToFirehose"
 
   BackfillStateMachineRole:
+    Condition: CollectSecurityHubData
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -345,6 +359,7 @@ Resources:
                   - !GetAtt BackfillLambda.Arn
 
   BackfillStateMachine:
+    Condition: CollectSecurityHubData
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-BackfillData"
@@ -393,6 +408,7 @@ Resources:
         }'
 
   TransformationLambda:
+    Condition: CollectSecurityHubData
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-TransformationLambda'
@@ -469,6 +485,7 @@ Resources:
             reason: "No need for simultaneous execution"
 
   BackfillLambdaRole:
+    Condition: CollectSecurityHubData
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "${ResourcePrefix}${CFDataName}-BackfillLambdaRole"
@@ -517,6 +534,7 @@ Resources:
             reason: "Need explicit name to identify role actions"
 
   BackfillLambda:
+    Condition: CollectSecurityHubData
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-BackfillLambda'
@@ -665,6 +683,7 @@ Resources:
             reason: "No need for simultaneous execution"
 
   BackfillCustomResourceLambdaRole:
+    Condition: CollectSecurityHubData
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -685,6 +704,7 @@ Resources:
                 Action: states:StartExecution
                 Resource: !GetAtt BackfillStateMachine.Arn
   BackfillCustomResourceLambda:
+    Condition: CollectSecurityHubData
     Type: AWS::Lambda::Function
     Properties:
       Description: "Custom Resource for Triggering Backfill of Security Hub Data Collection "
@@ -705,7 +725,16 @@ Resources:
                   cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
               except Exception as e:
                   cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
   TriggerBackfillStateMachine:
+    Condition: CollectSecurityHubData
     Type: Custom::TriggerBackfillStateMachine
     Properties:
       ServiceToken: !GetAtt BackfillCustomResourceLambda.Arn
@@ -713,42 +742,49 @@ Resources:
 
 
   FirehoseLogGroup:
+    Condition: CollectSecurityHubData
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/kinesis/${ResourcePrefix}${CFDataName}-detail-stream"
       RetentionInDays: 60
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W84 # CloudWatchLogs LogGroup should specify a KMS Key Id to encrypt the log data
+            reason: "No need for KMS key in this case"
 
   SecHubEventsFirehoseDeliveryStream:
-      Type: AWS::KinesisFirehose::DeliveryStream
-      Properties:
-        DeliveryStreamName: !Sub '${ResourcePrefix}${CFDataName}-detail-stream'
-        DeliveryStreamType: DirectPut
-        DeliveryStreamEncryptionConfigurationInput:
-          KeyType: AWS_OWNED_CMK
-        ExtendedS3DestinationConfiguration:
-          BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
-          Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/${AWS::AccountId}-"
-          ErrorOutputPrefix: !Sub "${CFDataName}/securityhub_errors/!{timestamp:yyyy/MM/}/!{firehose:error-output-type}"
-          RoleARN: !GetAtt KinesisFirehoseRole.Arn
-          CloudWatchLoggingOptions:
-            Enabled: true
-            LogGroupName: !Ref FirehoseLogGroup
-            LogStreamName: SecHubEventsFirehoseDeliveryStreamLog
-          BufferingHints:
-            IntervalInSeconds: 900
-            SizeInMBs: 30
-          CompressionFormat: "GZIP"
-          ProcessingConfiguration:
-            Enabled: true
-            Processors:
-            - Type: Lambda
-              Parameters:
-              - ParameterName: LambdaArn
-                ParameterValue: !GetAtt TransformationLambda.Arn
-              - ParameterName: BufferIntervalInSeconds
-                ParameterValue: 600
-              - ParameterName: BufferSizeInMBs
-                ParameterValue: 3
+    Condition: CollectSecurityHubData
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub '${ResourcePrefix}${CFDataName}-detail-stream'
+      DeliveryStreamType: DirectPut
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+        Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/${AWS::AccountId}-"
+        ErrorOutputPrefix: !Sub "${CFDataName}/securityhub_errors/!{timestamp:yyyy/MM/}/!{firehose:error-output-type}"
+        RoleARN: !GetAtt KinesisFirehoseRole.Arn
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: SecHubEventsFirehoseDeliveryStreamLog
+        BufferingHints:
+          IntervalInSeconds: 900
+          SizeInMBs: 30
+        CompressionFormat: "GZIP"
+        ProcessingConfiguration:
+          Enabled: true
+          Processors:
+          - Type: Lambda
+            Parameters:
+            - ParameterName: LambdaArn
+              ParameterValue: !GetAtt TransformationLambda.Arn
+            - ParameterName: BufferIntervalInSeconds
+              ParameterValue: 600
+            - ParameterName: BufferSizeInMBs
+              ParameterValue: 3
 
   TableSecurityHubEvents:
     Type: AWS::Glue::Table
