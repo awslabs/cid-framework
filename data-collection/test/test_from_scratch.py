@@ -175,6 +175,10 @@ def test_license_manager_grants(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."license_manager_grants" LIMIT 10;')
     assert len(data) > 0, 'license_manager_grants is empty'
 
+def test_license_manager_licenses(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."license_manager_licenses" LIMIT 10;')
+    assert len(data) > 0, 'license_manager_licenses is empty'
+
 def test_quicksight_users(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_user_data" LIMIT 10;')
     assert len(data) > 0, 'quicksight_user_data is empty'
