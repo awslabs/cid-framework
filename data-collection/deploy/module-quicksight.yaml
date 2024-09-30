@@ -1,3 +1,4 @@
+#IAKOV's version
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Retrieves Quicksight User, Group, Group Members data
 Parameters:
@@ -116,9 +117,7 @@ Resources:
           BUCKET = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["PREFIX"]
           ROLE_NAME = os.environ['ROLE_NAME']
-          TMP_FILEUSER = "/tmp/User.json"
-          TMP_FILEGROUP = "/tmp/Group.json"
-          TMP_FILEGROUPMEMBERSHIP = "/tmp/GroupMembership.json"
+          TMP_FILE = "/tmp/tmp.json"
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -129,7 +128,6 @@ Resources:
                   if isinstance(o, (datetime.date, datetime.datetime)):
                       return o.isoformat()
                   return None
-
 
           def assume_role(account_id, service, region):
               """Assumes Role for accessing Quicksight data"""
@@ -156,27 +154,23 @@ Resources:
               account_id = account["account_id"]
               payer_id = account["payer_id"]
 
-              logger.info("Collecting data for account: %s", account_id)
-              quicksight_client = assume_role(account_id, "quicksight", "us-east-1") # must be us-east-1
-              namespaces = list_namespaces(account_id=account_id, quicksight=quicksight_client)
+              logger.debug("Collecting data for account: %s", account_id)
+              logger.info("Current Region=%s", os.environ['AWS_REGION'])
+              #Assume Quicksight Client Role Starting with the current region
+              quicksight_client = assume_role(account_id, "quicksight", os.environ['AWS_REGION'])
+              namespaces = list(list_namespaces(account_id=account_id, quicksight=quicksight_client))
+              logger.info("processing namespaces=%s",namespaces)
 
               users = []
               groups = []
               group_memberships = []
 
               for namespace in namespaces:
-                  capacity_region=namespace['CapacityRegion']
-                  # quicksight_client=quicksight_client
-                  logger.info("""namespace={namespace},
-                        Capacity Region{capacity_region}, 
-                        SessionRegion={quicksight_client.meta.region_name}
-                        """)
-
+                  logger.debug(f"processing namespace={namespace}")
+                  capacity_region = namespaces[0]['CapacityRegion']
                   if quicksight_client.meta.region_name != capacity_region:
-                      print("""capacity_region is Different than Boto3 Session Region
-                            - Switiching to {capacity_region}""")
-                      quicksight_client=assume_role(account_id, "quicksight", capacity_region)
-                      print(f"capacity_region is {quicksight_client.meta.region_name}")
+                      logger.debug("Switiching to %s", capacity_region)
+                      quicksight_client = assume_role(account_id, "quicksight", capacity_region)
 
                   namespace_users = list_users(account_id=account_id,
                                               namespace=namespace['Name'],
@@ -189,124 +183,96 @@ Resources:
                   groups.extend(namespace_groups)
 
                   for group in namespace_groups:
-                      group_members = list_group_memberships(account_id=account_id,
-                                                            namespace=namespace['Name'],
-                                                            group_name=group['GroupName'],
-                                                            quicksight=quicksight_client)
+                      group_members = list_group_memberships(
+                          account_id=account_id,
+                          namespace=namespace['Name'],
+                          group_name=group['GroupName'],
+                          quicksight=quicksight_client,
+                      )
+                      for group_member in group_members:
+                          group_member["GroupName"] = group['GroupName']
+                          group_member["GroupArn"] = group['Arn']
                       group_memberships.extend(group_members)
 
               #Upload the User, Groups, GroupMembershipData to S3
+              s3_upload(account_id=account_id, payer_id=payer_id, item_list=users, data_type="user")
+              s3_upload(account_id=account_id, payer_id=payer_id, item_list=groups, data_type="group")
               s3_upload(account_id=account_id,
-                          payer_id=payer_id,
-                          item_list=users,
-                          data_type="user",
-                          tmp_file=TMP_FILEUSER)
-
-              s3_upload(account_id=account_id,
-                          payer_id=payer_id,
-                          item_list=groups,
-                          data_type="group",
-                          tmp_file=TMP_FILEGROUP)
-
-              s3_upload(account_id=account_id,
-                          payer_id=payer_id,
-                          item_list=group_memberships,
-                          data_type="groupmembership",
-                          tmp_file=TMP_FILEGROUPMEMBERSHIP)
-
-              # if users:
-              #     s3_upload(account_id=account_id,
-              #               payer_id=payer_id,
-              #               item_list=users,
-              #               data_type="user",
-              #               tmp_file=TMP_FILEUSER)
-              # if groups:
-              #     s3_upload(account_id=account_id,
-              #               payer_id=payer_id,
-              #               item_list=groups,
-              #               data_type="group",
-              #               tmp_file=TMP_FILEGROUP)
-              # if group_memberships:
-              #     s3_upload(account_id=account_id,
-              #               payer_id=payer_id,
-              #               item_list=group_memberships,
-              #               data_type="groupmembership",
-              #               tmp_file=TMP_FILEGROUPMEMBERSHIP)
+                        payer_id=payer_id,
+                        item_list=group_memberships,
+                        data_type="groupmembership")
 
 
           def list_namespaces(account_id, quicksight):
-              """Listing of Namespaces.
-              Namespace: – Is a way to organize groups and users within a single AWS account, 
-              allowing different teams or departments to work with their own data and assignments, 
-              and manage access to those assets."""
-              namespaces = []
-              paginator = quicksight.get_paginator('list_namespaces')
+              """Listing of Namespaces"""
               try:
-                  for page in paginator.paginate(AwsAccountId=account_id):
-                      namespaces.extend(page['Namespaces'])
+                  return list(quicksight.get_paginator('list_namespaces')
+                              .paginate(AwsAccountId=account_id)
+                              .search('Namespaces'))
               except quicksight.exceptions.ResourceNotFoundException as e:
-                  logger.error("No Namespace data found. Error: %s", e)
+                  logger.debug("No Namespace data found. Error: %s", e)
               except Exception as e:
                   logger.error("Error in list_namespaces: %s",e)
-              return namespaces
+              return []
 
           def list_users(account_id, namespace, quicksight):
               """Listing of Users under Namespace in the Account"""
-              users = []
-
               try:
-                  users.extend(list(quicksight.get_paginator('list_users').
-                                    paginate(AwsAccountId=account_id,
-                                            Namespace=namespace).
-                                            search('UserList')))
+                  return list(
+                      quicksight
+                          .get_paginator('list_users')
+                          .paginate(AwsAccountId=account_id, Namespace=namespace)
+                          .search('UserList')
+                  )
               except quicksight.exceptions.ResourceNotFoundException as e:
-                  logger.error("No User data found. Error: %s", e)
+                  logger.debug("No User data found. %s", e)
               except Exception as e:
                   logger.error('Error in list_users %s', e)
-              return users
+              return []
 
           def list_groups(account_id, namespace, quicksight):
               """Listing of Groups under Namespace in the Account"""
-              groups = []
-
               try:
-                  groups.extend(list(quicksight.get_paginator('list_groups').
-                                    paginate(AwsAccountId=account_id,
-                                            Namespace=namespace).
-                                            search('GroupList')))
-              except quicksight.exceptions.ResourceNotFoundException as e:
-                  logger.error("No Group data found. Error: %s", e)
-              except Exception as e:
-                  logger.error('Error in list_groups %s', e)
-              return groups
+                  return list(
+                      quicksight
+                          .get_paginator('list_groups')
+                          .paginate(AwsAccountId=account_id, Namespace=namespace)
+                          .search('GroupList')
+                  )
+              except quicksight.exceptions.ResourceNotFoundException as exc:
+                  logger.debug("No Group data found. %s", exc)
+              except Exception as exc:
+                  logger.error('Error in list_groups %s', exc)
+              return []
 
           def list_group_memberships(account_id, namespace, group_name, quicksight):
               """Listing User & Group mapping"""
-              members = []
               try:
-                  members.extend(list(quicksight.get_paginator('list_group_memberships').
-                                    paginate(AwsAccountId=account_id,
-                                              Namespace=namespace,
-                                              GroupName=group_name).
-                                            search('GroupMemberList')))
-              except quicksight.exceptions.ResourceNotFoundException as e:
-                  logger.error("No Group Membership data found. Error: %s", e)
-              except Exception as e:
-                  logger.error('Error in list_group_membership %s', e)
-              return members
+                  return list(
+                      quicksight
+                        .get_paginator('list_group_memberships')
+                        .paginate(AwsAccountId=account_id, Namespace=namespace, GroupName=group_name)
+                        .search('GroupMemberList')
+                  )
+              except quicksight.exceptions.ResourceNotFoundException as exc:
+                  logger.debug("No Group Membership data found. %s", exc)
+              except Exception as exc:
+                  logger.error('Error in list_group_membership %s', exc)
+              return []
 
-          #Function to Upload the tmp_file(s) to S3
-          def s3_upload(account_id, payer_id, item_list, data_type, tmp_file):
-              """Upload TMP_XXXX files to S3 Bucket"""
+          def s3_upload(account_id, payer_id, item_list, data_type):
+              """Upload data to S3 Bucket"""
               count = 0
-              with open(tmp_file, "w", encoding='utf-8') as f:
+              with open(TMP_FILE, "w", encoding='utf-8') as f:
                   for item in item_list:
+                      item['payer_id'] = payer_id
+                      item['account_id'] = account_id
+                      item['namespace'] = item.get('Arn','/').split('/')[1] #getting namespace from object ARN
                       f.write(json.dumps(item, cls=DateTimeEncoder) + "\n")
                       count += 1
               logger.info("%s collected:%s", data_type, count)
-
-              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-{data_type}-data/payer_id={payer_id}/{data_type}-{account_id}.json")
-              boto3.client('s3').upload_file(tmp_file, BUCKET, key)
+              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-{data_type}-data/{data_type}-{account_id}.json")
+              boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
               logger.info("Quicksight data for %s stored at s3://%s/%s", account_id, BUCKET, key)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
@@ -409,7 +375,6 @@ Resources:
       Description: !Sub "Provides a summary view of the ${CFDataName}"
       Name: !Sub "${CFDataName}_view"
       QueryString: !Sub |
-        CREATE OR REPLACE VIEW ${CFDataName}_view AS
         SELECT 
         quser.arn userarn,
         quser.username,
@@ -417,13 +382,17 @@ Resources:
         quser.role,
         quser.active,
         quser.principalid,
-        qgroup.groupname,
+        grp.groupname,
         quser.account_id,
         quser.payer_id
-        FROM "optimization_data"."quicksight_groupmembership_data" qgroupmem
-          join "optimization_data"."quicksight_user_data" quser on quser.arn = qgroupmem.arn
-          and quser.payer_id = qgroupmem.payer_id
-          and quser.account_id = qgroupmem.account_id
-          join "optimization_data"."quicksight_group_data" qgroup on qgroup.groupname = qgroupmem.groupname
-          and qgroup.payer_id = qgroupmem.payer_id
-          and qgroup.account_id = qgroupmem.account_id
+        FROM "${DatabaseName}"."quicksight_groupmembership_data" grpmem
+          join "${DatabaseName}"."quicksight_user_data" quser on 
+                    quser.arn=grpmem.arn 
+                and quser.payer_id=grpmem.payer_id 
+                and quser.account_id=grpmem.account_id
+                and quser.namespace=grpmem.namespace
+          join "${DatabaseName}"."quicksight_group_data" grp on 
+                    grp.arn = grpmem.grouparn          
+                and grp.payer_id=grpmem.payer_id 
+                and grp.account_id=grpmem.account_id
+                and grp.namespace=grpmem.namespace
