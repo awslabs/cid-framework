@@ -430,7 +430,7 @@ Resources:
           def rename_keys(payload):
               """Recursively rename all special characters in keys to '_'. """
               if isinstance(payload, dict):
-                  return {re.sub(r'\W+', '_', key): rename_keys(value) for key, value in payload.items()}
+                  return {re.sub(r'\W+', '_', key).lower(): rename_keys(value) for key, value in payload.items()}
               elif isinstance(payload, list):
                   return [rename_keys(item) for item in payload]
               return payload
@@ -573,7 +573,7 @@ Resources:
           def rename_keys(payload):
               """Recursively rename all special characters in keys to '_'. """
               if isinstance(payload, dict):
-                  return {re.sub(r'\W+', '_', key): rename_keys(value) for key, value in payload.items()}
+                  return {re.sub(r'\W+', '_', key).lower(): rename_keys(value) for key, value in payload.items()}
               elif isinstance(payload, list):
                   return [rename_keys(item) for item in payload]
               return payload
