@@ -220,7 +220,6 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeSecurityHubModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
