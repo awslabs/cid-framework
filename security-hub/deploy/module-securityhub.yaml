@@ -419,58 +419,45 @@ Resources:
         ZipFile: |
           ''' This function just transforms Security Hub events before it is written by Firehose.
           '''
-          import os
           import re
           import json
           import logging
           import base64
 
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
           def rename_keys(payload):
               """Recursively rename all special characters in keys to '_'. """
               if isinstance(payload, dict):
-                  renamed_payload = {}
-                  for key, value in payload.items():
-                      renamed_key = re.sub(r'\W+', '_', key)
-                      renamed_value = rename_keys(value)
-                      renamed_payload[renamed_key] = renamed_value
-                  return renamed_payload
+                  return {re.sub(r'\W+', '_', key): rename_keys(value) for key, value in payload.items()}
               elif isinstance(payload, list):
-                  renamed_list = []
-                  for item in payload:
-                      renamed_item = rename_keys(item)
-                      renamed_list.append(renamed_item)
-                  return renamed_list
-              elif isinstance(payload, (str, int, float, bool, type(None))):
-                  return payload
-              else:
-                  if hasattr(payload, "__dict__"):
-                      renamed_payload = {}
-                      for key, value in payload.__dict__.items():
-                          renamed_key = re.sub(r'\W+', '_', key)
-                          renamed_value = rename_keys(value)
-                          renamed_payload[renamed_key] = renamed_value
-                      return renamed_payload
-                  else:
-                      return payload
+                  return [rename_keys(item) for item in payload]
+              return payload
 
           def lambda_handler(event, context):
-              logger = logging.getLogger()
               payload = event['records']
               transformed_records = []
-
+              separators = (',', ':') # saving one space character
               for record in payload:
-                  data = record['data']
-                  decoded_data = base64.b64decode(data).decode('utf-8')
-                  print(f"Input record JSON: {decoded_data}")
-                  renamed_payload = rename_keys(json.loads(decoded_data))
-                  flattened_data = json.dumps(renamed_payload, separators=(',', ':'))
-                  transformed_record = {
-                      'recordId': record['recordId'],
-                      'result': 'Ok',
-                      'data': base64.b64encode(flattened_data.encode('utf-8')).decode('utf-8')
-                  }
-                  print(f"Transformed record: {transformed_record}")
-                  transformed_records.append(transformed_record)
+                  try:
+                      data = record['data']
+                      decoded_data = base64.b64decode(data).decode('utf-8')
+                      logger.debug(f"Input record: {json.dumps(decoded_data)}")
+                      renamed_payload = rename_keys(json.loads(decoded_data))
+                      if isinstance(renamed_payload, list):
+                          flattened_data = '\n'.join([json.dumps(item, separators=separators) for item in renamed_payload])
+                      else: # not expecting single records, but just in case
+                          flattened_data = json.dumps(renamed_payload, separators=separators)
+                      transformed_record = {
+                          'recordId': record['recordId'],
+                          'result': 'Ok',
+                          'data': base64.b64encode(flattened_data.encode('utf-8')).decode('utf-8')
+                      }
+                      logger.debug(f"Transformed record: {json.dumps(transformed_record)}")
+                      transformed_records.append(transformed_record)
+                  except Exception as exc:
+                      logger.error(f'Error while processing record {exc}. Please activate debug log to get more info')
               return {'records': transformed_records}
       Handler: "index.lambda_handler"
       MemorySize: 2688
