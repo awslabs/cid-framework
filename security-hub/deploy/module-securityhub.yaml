@@ -569,6 +569,14 @@ Resources:
           securityhub = boto3.client('securityhub')
           s3 = boto3.resource('s3')
 
+          def rename_keys(payload):
+              """Recursively rename all special characters in keys to '_'. """
+              if isinstance(payload, dict):
+                  return {re.sub(r'\W+', '_', key): rename_keys(value) for key, value in payload.items()}
+              elif isinstance(payload, list):
+                  return [rename_keys(item) for item in payload]
+              return payload
+
           def get_findings(securityhub, finding_filter, next_token, account, max_iterator=50):
               ''' get findings
               '''
@@ -623,7 +631,7 @@ Resources:
                                   if 'aws_securityhub_findingid' in f.get('productfields', {})
                               ],
                               "detail": {
-                                  "findings": [result]
+                                  "findings": [rename_keys(result)]
                               }
                           })
                           gz_file.write(json_obj.encode() + b'\n')
