@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Retrieve AWS Security Hub details across AWS organizations v0.0.1
+Description: Retrieve AWS Security Hub details across AWS organizations v0.0.2
 
 Metadata:
   AWS::CloudFormation::Interface:
