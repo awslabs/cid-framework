@@ -782,9 +782,9 @@ Resources:
             - ParameterName: LambdaArn
               ParameterValue: !GetAtt TransformationLambda.Arn
             - ParameterName: BufferIntervalInSeconds
-              ParameterValue: 600
-            - ParameterName: BufferSizeInMBs
-              ParameterValue: 3
+              ParameterValue: 600 # Buffer for X seconds before processing. This reduces number of lambda invocations.
+            - ParameterName: BufferSizeInMBs 
+              ParameterValue: 3 # Must be less then Lambda payload size (6MB)
 
   TableSecurityHubEvents:
     Type: AWS::Glue::Table
