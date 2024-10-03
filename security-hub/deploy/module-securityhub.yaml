@@ -548,6 +548,7 @@ Resources:
           https://aws.amazon.com/blogs/security/export-historical-security-hub-findings-to-an-s3-bucket-to-enable-complex-analytics/
           """
           import os
+          import re
           import gzip
           import time
           import json
