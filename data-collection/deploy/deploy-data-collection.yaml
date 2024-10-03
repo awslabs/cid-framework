@@ -33,7 +33,6 @@ Metadata:
           - IncludeTransitGatewayModule
           - IncludeAWSFeedsModule
           - IncludeLicenseManagerModule
-          - IncludeSecurityHubModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket prefix'
@@ -83,8 +82,6 @@ Metadata:
         default: 'Include AWS Health Events Module'
       IncludeLicenseManagerModule:
         default: 'Include Marketplace Licensing Collection'
-      IncludeSecurityHubModule:
-        default: 'Include AWS Security Hub Module'
 
 Mappings:
   RegionMap:
@@ -224,11 +221,6 @@ Parameters:
     Description: Collects Marketplace Licenses and Grants
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeSecurityHubModule:
-    Type: String
-    Description: Collects AWS Security Hub Events
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
 
 
 Conditions:
@@ -246,7 +238,6 @@ Conditions:
   DeployAWSFeedsModule: !Equals [ !Ref IncludeAWSFeedsModule, "yes"]
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
-  DeploySecurityHubModule: !Equals [!Ref IncludeSecurityHubModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -266,7 +257,6 @@ Conditions:
       - !Condition DeployTransitGatewayModule
       - !Condition DeployHealthEventsModule
       - !Condition DeployLicenseManagerModule
-      - !Condition DeploySecurityHubModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -929,17 +919,6 @@ Resources:
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
-
-  SecurityHubModule:
-    Type: AWS::CloudFormation::Stack
-    Condition: DeploySecurityHubModule
-    Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-securityhub.yaml"
-      Parameters:
-        DatabaseName: !Ref DatabaseName
-        DestinationBucket: !Ref S3Bucket
-        ResourcePrefix: !Ref ResourcePrefix
-        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
 
   BackupModule:
     Type: AWS::CloudFormation::Stack
