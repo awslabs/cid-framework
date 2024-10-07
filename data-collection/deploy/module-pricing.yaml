@@ -402,7 +402,7 @@ Resources:
                 Action:
                   - "s3:GetObject"
                 Resource:
-                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${CodeBucket}/*'
         - PolicyName: "AllowReadRegionsSSM"
           PolicyDocument:
             Version: "2012-10-17"
@@ -412,8 +412,8 @@ Resources:
                   - "ssm:GetParameter"
                   - "ssm:GetParametersByPath"
                 Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*"
-                  - !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions"
 
     Metadata:
       cfn_nag:
@@ -656,13 +656,13 @@ Resources:
               "States": {
                 "PricingCollectorInvoke": {
                   "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Resource": "arn:${Partition}:states:::lambda:invoke",
                   "Parameters": {
                     "Payload": {
                       "service": "${Service}",
                       "path": "${Path}"
                     },
-                    "FunctionName": "arn:aws:lambda:${DeployRegion}:${Account}:function:${Prefix}pricing-Lambda"
+                    "FunctionName": "arn:${Partition}:lambda:${DeployRegion}:${Account}:function:${Prefix}pricing-Lambda"
                   },
                   "Retry": [
                     {
@@ -681,9 +681,9 @@ Resources:
                 },
                 "CrawlerStepFunctionStartExecution": {
                   "Type": "Task",
-                  "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                  "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
                   "Parameters": {
-                    "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                    "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
                     "Input": {
                       "crawlers": ${Crawlers}
                     }
@@ -701,6 +701,7 @@ Resources:
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
+            Partition: !Ref AWS::Partition
         Metadata:
           cfn-lint:
             config:

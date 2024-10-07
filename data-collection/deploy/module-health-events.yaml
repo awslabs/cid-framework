@@ -492,7 +492,7 @@ Resources:
                 "States": {
                   "DetailLambda Invoke": {
                     "Type": "Task",
-                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "Resource": "arn:${Partition}:states:::lambda:invoke",
                     "OutputPath": "$.Payload",
                     "Parameters": {
                       "Payload.$": "$",
@@ -518,7 +518,7 @@ Resources:
               "Label": "DetailProcessorMap",
               "MaxConcurrency": ${MaxConcurrentBatches},
               "ItemReader": {
-                "Resource": "arn:aws:states:::s3:getObject",
+                "Resource": "arn:${Partition}:states:::s3:getObject",
                 "ReaderConfig": {
                   "InputType": "CSV",
                   "CSVHeaderLocation": "FIRST_ROW"
@@ -539,9 +539,9 @@ Resources:
             },
             "CrawlerStepFunctionStartExecution": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
               "Parameters": {
-                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
                 "Input": {
                   "crawlers": ${Crawlers}
                 }
@@ -562,6 +562,7 @@ Resources:
         Prefix: !Ref ResourcePrefix
         ItemsPerBatch: 50
         MaxConcurrentBatches: 1
+        Partition: !Ref AWS::Partition
     Metadata:
       cfn-lint:
         config:
