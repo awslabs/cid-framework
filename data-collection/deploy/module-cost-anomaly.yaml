@@ -47,6 +47,9 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Outputs:
   StepFunctionARN:
@@ -103,7 +106,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub "${ResourcePrefix}${CFDataName}-Lambda"
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -306,17 +309,88 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Name: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+      Configuration: |
+        {
+          "Version": 1.0,
+          "Grouping": {
+            "TableGroupingPolicy": "CombineCompatibleSchemas"
+          },
+          "CrawlerOutput": {
+            "Tables": {
+              "TableThreshold": 1
+            }
+          }
+        }
+
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      TableInput:
+        Name: cost_anomaly_data
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          compressionType: none
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: anomalyid
+              Type: string
+            - Name: anomalystartdate
+              Type: string
+            - Name: anomalyenddate
+              Type: string
+            - Name: dimensionvalue
+              Type: string
+            - Name: maximpact
+              Type: double
+            - Name: totalactualspend
+              Type: double
+            - Name: totalexpectedspend
+              Type: double
+            - Name: totalimpact
+              Type: double
+            - Name: totalimpactpercentage
+              Type: double
+            - Name: monitorarn
+              Type: string
+            - Name: linkedaccount
+              Type: string
+            - Name: linkedaccountname
+              Type: string
+            - Name: region
+              Type: string
+            - Name: service
+              Type: string
+            - Name: usagetype
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            Parameters:
+              paths: anomalyid,anomalystartdate,anomalyenddate,dimensionvalue,maximpact,totalactualspend,totalexpectedspend,totalimpact,totalimpactpercentage,monitorarn,linkedaccount,linkedaccountname,region,service,usagetype
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-StateMachine"
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:
@@ -327,22 +401,22 @@ Resources:
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
         CollectionType: "Payers"
-        Params: ''
+        Params: ""
         Module: !Ref CFDataName
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
 
   ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
+    Type: "AWS::Scheduler::Schedule"
     Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      Description: !Sub "Scheduler for the ODC ${CFDataName} module"
+      Name: !Sub "${ResourcePrefix}${CFDataName}-RefreshSchedule"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
         MaximumWindowInMinutes: 30
-        Mode: 'FLEXIBLE'
+        Mode: "FLEXIBLE"
       Target:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN

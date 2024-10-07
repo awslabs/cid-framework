@@ -35,7 +35,7 @@ Parameters:
     Description: Arn of lambda for Analytics
   AwsServices:
     Type: CommaDelimitedList
-    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, RegionNames, AWSLambda
+    Default: AmazonRDS, AmazonEC2, AmazonElastiCache, AmazonES, AWSComputeSavingsPlan, AWSLambda, RegionalServices, RegionNames
     Description: Services for pulling price data
   CodeBucket:
     Type: String
@@ -46,314 +46,330 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  RdsGravitonPath:
-    Type: String
-    Description: Path to the RDS Graviton mapping file
-    Default: cfn/data-collection/data/rds_graviton_mapping.csv
 
 Mappings:
   ServicesMap:
+
     AmazonRDS:
       path: rds
       partition:
-          - { Name: region, Type: string }
+      - { Name: region, Type: string }
       fields:
-          - { Type: string, Name: sku }
-          - { Type: string, Name: offertermcode }
-          - { Type: string, Name: ratecode }
-          - { Type: string, Name: termtype }
-          - { Type: string, Name: pricedescription }
-          - { Type: string, Name: effectivedate } # cannot do timestamp or date here
-          - { Type: string, Name: startingrange }
-          - { Type: string, Name: endingrange }
-          - { Type: string, Name: unit }
-          - { Type: double, Name: priceperunit }
-          - { Type: string, Name: currency }
-          - { Type: string, Name: relatedto }
-          - { Type: string, Name: leasecontractlength }
-          - { Type: string, Name: purchaseoption }
-          - { Type: string, Name: offeringclass }
-          - { Type: string, Name: product family }
-          - { Type: string, Name: servicecode }
-          - { Type: string, Name: location }
-          - { Type: string, Name: location type }
-          - { Type: string, Name: instance type }
-          - { Type: string, Name: current generation }
-          - { Type: string, Name: instance family }
-          - { Type: string, Name: vcpu }
-          - { Type: string, Name: physical processor }
-          - { Type: string, Name: clock speed }
-          - { Type: string, Name: memory }
-          - { Type: string, Name: storage }
-          - { Type: string, Name: network performance }
-          - { Type: string, Name: processor architecture }
-          - { Type: string, Name: storage media }
-          - { Type: string, Name: volume type }
-          - { Type: string, Name: min volume size }
-          - { Type: string, Name: max volume size }
-          - { Type: string, Name: engine code }
-          - { Type: string, Name: database engine }
-          - { Type: string, Name: database edition }
-          - { Type: string, Name: license model }
-          - { Type: string, Name: deployment option }
-          - { Type: string, Name: group }
-          - { Type: string, Name: group description }
-          - { Type: string, Name: usagetype }
-          - { Type: string, Name: operation }
-          - { Type: string, Name: acu }
-          - { Type: string, Name: dedicated ebs throughput }
-          - { Type: string, Name: deployment model }
-          - { Type: string, Name: enhanced networking supported }
-          - { Type: string, Name: instance type family }
-          - { Type: string, Name: normalization size factor }
-          - { Type: string, Name: pricing unit }
-          - { Type: string, Name: processor features }
-          - { Type: string, Name: region code }
-          - { Type: string, Name: servicename }
-          - { Type: string, Name: volume name }
-          - { Type: string, Name: engine media type }
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "OfferTermCode" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "TermType" }
+      - { Type: string, Name: "PriceDescription" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "StartingRange" }
+      - { Type: string, Name: "EndingRange" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "PricePerUnit" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "RelatedTo" }
+      - { Type: string, Name: "LeaseContractLength" }
+      - { Type: string, Name: "PurchaseOption" }
+      - { Type: string, Name: "OfferingClass" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "serviceCode" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "Instance Type" }
+      - { Type: string, Name: "Current Generation" }
+      - { Type: string, Name: "Instance Family" }
+      - { Type: string, Name: "vCPU" }
+      - { Type: string, Name: "Physical Processor" }
+      - { Type: string, Name: "Clock Speed" }
+      - { Type: string, Name: "Memory" }
+      - { Type: string, Name: "Storage" }
+      - { Type: string, Name: "Network Performance" }
+      - { Type: string, Name: "Processor Architecture" }
+      - { Type: string, Name: "Storage Media" }
+      - { Type: string, Name: "Volume Type" }
+      - { Type: string, Name: "Min Volume Size" }
+      - { Type: string, Name: "Max Volume Size" }
+      - { Type: string, Name: "Engine Code" }
+      - { Type: string, Name: "Database Engine" }
+      - { Type: string, Name: "Database Edition" }
+      - { Type: string, Name: "License Model" }
+      - { Type: string, Name: "Deployment Option" }
+      - { Type: string, Name: "Group" }
+      - { Type: string, Name: "Group Description" }
+      - { Type: string, Name: "usageType" }
+      - { Type: string, Name: "operation" }
+      - { Type: string, Name: "ACU" }
+      - { Type: string, Name: "Dedicated EBS Throughput" }
+      - { Type: string, Name: "Deployment Model" }
+      - { Type: string, Name: "Engine Major Version" }
+      - { Type: string, Name: "Engine Media Type" }
+      - { Type: string, Name: "Enhanced Networking Supported" }
+      - { Type: string, Name: "Extended Support Pricing Year" }
+      - { Type: string, Name: "Instance Type Family" }
+      - { Type: string, Name: "LimitlessPreview" }
+      - { Type: string, Name: "Normalization Size Factor" }
+      - { Type: string, Name: "Pricing Unit" }
+      - { Type: string, Name: "Processor Features" }
+      - { Type: string, Name: "Region Code" }
+      - { Type: string, Name: "serviceName" }
+      - { Type: string, Name: "Volume Name" }
+      jsonPaths: ["SKU","OfferTermCode","RateCode","TermType","PriceDescription","EffectiveDate","StartingRange","EndingRange","Unit","PricePerUnit","Currency","RelatedTo","LeaseContractLength","PurchaseOption","OfferingClass","Product Family","serviceCode","Location","Location Type","Instance Type","Current Generation","Instance Family","vCPU","Physical Processor","Clock Speed","Memory","Storage","Network Performance","Processor Architecture","Storage Media","Volume Type","Min Volume Size","Max Volume Size","Engine Code","Database Engine","Database Edition","License Model","Deployment Option","Group","Group Description","usageType","operation","ACU","Dedicated EBS Throughput","Deployment Model","Engine Major Version","Engine Media Type","Enhanced Networking Supported","Extended Support Pricing Year","Instance Type Family","LimitlessPreview","Normalization Size Factor","Pricing Unit","Processor Features","Region Code","serviceName","Volume Name"]
+
     AmazonEC2:
       path: ec2
       partition:
-          - { Name: region, Type: string }
+      - { Name: region, Type: string }
       fields:
-          - { Type: string, Name: sku }
-          - { Type: string, Name: offertermcode }
-          - { Type: string, Name: ratecode }
-          - { Type: string, Name: termtype }
-          - { Type: string, Name: pricedescription }
-          - { Type: string, Name: effectivedate }
-          - { Type: string, Name: startingrange }
-          - { Type: string, Name: endingrange }
-          - { Type: string, Name: unit }
-          - { Type: double, Name: priceperunit }
-          - { Type: string, Name: currency }
-          - { Type: string, Name: relatedto }
-          - { Type: string, Name: leasecontractlength }
-          - { Type: string, Name: purchaseoption }
-          - { Type: string, Name: offeringclass }
-          - { Type: string, Name: product family }
-          - { Type: string, Name: servicecode }
-          - { Type: string, Name: location }
-          - { Type: string, Name: location type }
-          - { Type: string, Name: instance type }
-          - { Type: string, Name: current generation }
-          - { Type: string, Name: instance family }
-          - { Type: string, Name: vcpu }
-          - { Type: string, Name: physical processor }
-          - { Type: string, Name: clock speed }
-          - { Type: string, Name: memory }
-          - { Type: string, Name: storage }
-          - { Type: string, Name: network performance }
-          - { Type: string, Name: processor architecture }
-          - { Type: string, Name: storage media }
-          - { Type: string, Name: volume type }
-          - { Type: string, Name: max volume size }
-          - { Type: string, Name: max iops/volume }
-          - { Type: string, Name: max iops burst performance }
-          - { Type: string, Name: max throughput/volume }
-          - { Type: string, Name: provisioned }
-          - { Type: string, Name: tenancy }
-          - { Type: string, Name: ebs optimized }
-          - { Type: string, Name: operating system }
-          - { Type: string, Name: license model }
-          - { Type: string, Name: group }
-          - { Type: string, Name: group description }
-          - { Type: string, Name: transfer type }
-          - { Type: string, Name: from location }
-          - { Type: string, Name: from location type }
-          - { Type: string, Name: to location }
-          - { Type: string, Name: to location type }
-          - { Type: string, Name: usagetype }
-          - { Type: string, Name: operation }
-          - { Type: string, Name: availabilityzone }
-          - { Type: string, Name: capacitystatus }
-          - { Type: string, Name: classicnetworkingsupport }
-          - { Type: string, Name: dedicated ebs throughput }
-          - { Type: string, Name: ecu }
-          - { Type: string, Name: elastic graphics type }
-          - { Type: string, Name: enhanced networking supported }
-          - { Type: string, Name: from region code }
-          - { Type: string, Name: gpu }
-          - { Type: string, Name: gpu memory }
-          - { Type: string, Name: instance }
-          - { Type: string, Name: instance capacity - 10xlarge }
-          - { Type: string, Name: instance capacity - 12xlarge }
-          - { Type: string, Name: instance capacity - 16xlarge }
-          - { Type: string, Name: instance capacity - 18xlarge }
-          - { Type: string, Name: instance capacity - 24xlarge }
-          - { Type: string, Name: instance capacity - 2xlarge }
-          - { Type: string, Name: instance capacity - 32xlarge }
-          - { Type: string, Name: instance capacity - 4xlarge }
-          - { Type: string, Name: instance capacity - 8xlarge }
-          - { Type: string, Name: instance capacity - 9xlarge }
-          - { Type: string, Name: instance capacity - large }
-          - { Type: string, Name: instance capacity - medium }
-          - { Type: string, Name: instance capacity - metal }
-          - { Type: string, Name: instance capacity - xlarge }
-          - { Type: string, Name: instancesku }
-          - { Type: string, Name: intel avx2 available }
-          - { Type: string, Name: intel avx available }
-          - { Type: string, Name: intel turbo available }
-          - { Type: string, Name: marketoption }
-          - { Type: string, Name: normalization size factor }
-          - { Type: string, Name: physical cores }
-          - { Type: string, Name: pre installed s/w }
-          - { Type: string, Name: processor features }
-          - { Type: string, Name: product type }
-          - { Type: string, Name: region code }
-          - { Type: string, Name: resource type }
-          - { Type: string, Name: servicename }
-          - { Type: string, Name: snapshotarchivefeetype }
-          - { Type: string, Name: to region code }
-          - { Type: string, Name: volume api name }
-          - { Type: string, Name: vpcnetworkingsupport }
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "OfferTermCode" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "TermType" }
+      - { Type: string, Name: "PriceDescription" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "StartingRange" }
+      - { Type: string, Name: "EndingRange" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "PricePerUnit" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "RelatedTo" }
+      - { Type: string, Name: "LeaseContractLength" }
+      - { Type: string, Name: "PurchaseOption" }
+      - { Type: string, Name: "OfferingClass" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "serviceCode" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "Instance Type" }
+      - { Type: string, Name: "Current Generation" }
+      - { Type: string, Name: "Instance Family" }
+      - { Type: string, Name: "vCPU" }
+      - { Type: string, Name: "Physical Processor" }
+      - { Type: string, Name: "Clock Speed" }
+      - { Type: string, Name: "Memory" }
+      - { Type: string, Name: "Storage" }
+      - { Type: string, Name: "Network Performance" }
+      - { Type: string, Name: "Processor Architecture" }
+      - { Type: string, Name: "Storage Media" }
+      - { Type: string, Name: "Volume Type" }
+      - { Type: string, Name: "Max Volume Size" }
+      - { Type: string, Name: "Max IOPS/volume" }
+      - { Type: string, Name: "Max IOPS Burst Performance" }
+      - { Type: string, Name: "Max throughput/volume" }
+      - { Type: string, Name: "Provisioned" }
+      - { Type: string, Name: "Tenancy" }
+      - { Type: string, Name: "EBS Optimized" }
+      - { Type: string, Name: "Operating System" }
+      - { Type: string, Name: "License Model" }
+      - { Type: string, Name: "Group" }
+      - { Type: string, Name: "Group Description" }
+      - { Type: string, Name: "Transfer Type" }
+      - { Type: string, Name: "From Location" }
+      - { Type: string, Name: "From Location Type" }
+      - { Type: string, Name: "To Location" }
+      - { Type: string, Name: "To Location Type" }
+      - { Type: string, Name: "usageType" }
+      - { Type: string, Name: "operation" }
+      - { Type: string, Name: "AvailabilityZone" }
+      - { Type: string, Name: "CapacityStatus" }
+      - { Type: string, Name: "ClassicNetworkingSupport" }
+      - { Type: string, Name: "Dedicated EBS Throughput" }
+      - { Type: string, Name: "ECU" }
+      - { Type: string, Name: "Elastic Graphics Type" }
+      - { Type: string, Name: "Enhanced Networking Supported" }
+      - { Type: string, Name: "From Region Code" }
+      - { Type: string, Name: "GPU" }
+      - { Type: string, Name: "GPU Memory" }
+      - { Type: string, Name: "Instance" }
+      - { Type: string, Name: "Instance Capacity - 10xlarge" }
+      - { Type: string, Name: "Instance Capacity - 12xlarge" }
+      - { Type: string, Name: "Instance Capacity - 16xlarge" }
+      - { Type: string, Name: "Instance Capacity - 18xlarge" }
+      - { Type: string, Name: "Instance Capacity - 24xlarge" }
+      - { Type: string, Name: "Instance Capacity - 2xlarge" }
+      - { Type: string, Name: "Instance Capacity - 32xlarge" }
+      - { Type: string, Name: "Instance Capacity - 4xlarge" }
+      - { Type: string, Name: "Instance Capacity - 8xlarge" }
+      - { Type: string, Name: "Instance Capacity - 9xlarge" }
+      - { Type: string, Name: "Instance Capacity - large" }
+      - { Type: string, Name: "Instance Capacity - medium" }
+      - { Type: string, Name: "Instance Capacity - metal" }
+      - { Type: string, Name: "Instance Capacity - xlarge" }
+      - { Type: string, Name: "instanceSKU" }
+      - { Type: string, Name: "Intel AVX2 Available" }
+      - { Type: string, Name: "Intel AVX Available" }
+      - { Type: string, Name: "Intel Turbo Available" }
+      - { Type: string, Name: "MarketOption" }
+      - { Type: string, Name: "Normalization Size Factor" }
+      - { Type: string, Name: "Physical Cores" }
+      - { Type: string, Name: "Pre Installed S/W" }
+      - { Type: string, Name: "Processor Features" }
+      - { Type: string, Name: "Product Type" }
+      - { Type: string, Name: "Region Code" }
+      - { Type: string, Name: "Resource Type" }
+      - { Type: string, Name: "serviceName" }
+      - { Type: string, Name: "SnapshotArchiveFeeType" }
+      - { Type: string, Name: "To Region Code" }
+      - { Type: string, Name: "Volume API Name" }
+      - { Type: string, Name: "VPCNetworkingSupport" }
+      jsonPaths: ["SKU","OfferTermCode","RateCode","TermType","PriceDescription","EffectiveDate","StartingRange","EndingRange","Unit","PricePerUnit","Currency","RelatedTo","LeaseContractLength","PurchaseOption","OfferingClass","Product Family","serviceCode","Location","Location Type","Instance Type","Current Generation","Instance Family","vCPU","Physical Processor","Clock Speed","Memory","Storage","Network Performance","Processor Architecture","Storage Media","Volume Type","Max Volume Size","Max IOPS/volume","Max IOPS Burst Performance","Max throughput/volume","Provisioned","Tenancy","EBS Optimized","Operating System","License Model","Group","Group Description","Transfer Type","From Location","From Location Type","To Location","To Location Type","usageType","operation","AvailabilityZone","CapacityStatus","ClassicNetworkingSupport","Dedicated EBS Throughput","ECU","Elastic Graphics Type","Enhanced Networking Supported","From Region Code","GPU","GPU Memory","Instance","Instance Capacity - 10xlarge","Instance Capacity - 12xlarge","Instance Capacity - 16xlarge","Instance Capacity - 18xlarge","Instance Capacity - 24xlarge","Instance Capacity - 2xlarge","Instance Capacity - 32xlarge","Instance Capacity - 4xlarge","Instance Capacity - 8xlarge","Instance Capacity - 9xlarge","Instance Capacity - large","Instance Capacity - medium","Instance Capacity - metal","Instance Capacity - xlarge","instanceSKU","Intel AVX2 Available","Intel AVX Available","Intel Turbo Available","MarketOption","Normalization Size Factor","Physical Cores","Pre Installed S/W","Processor Features","Product Type","Region Code","Resource Type","serviceName","SnapshotArchiveFeeType","To Region Code","Volume API Name","VPCNetworkingSupport"]
+
     AmazonElastiCache:
       path: elasticache
       partition:
-          - { Name: region, Type: string }
+      - { Name: region, Type: string }
       fields:
-          - { Type: string, Name: sku }
-          - { Type: string, Name: offertermcode }
-          - { Type: string, Name: ratecode }
-          - { Type: string, Name: termtype }
-          - { Type: string, Name: pricedescription }
-          - { Type: string, Name: effectivedate }
-          - { Type: string, Name: startingrange }
-          - { Type: string, Name: endingrange }
-          - { Type: string, Name: unit }
-          - { Type: double, Name: priceperunit }
-          - { Type: string, Name: currency }
-          - { Type: string, Name: leasecontractlength }
-          - { Type: string, Name: purchaseoption }
-          - { Type: string, Name: offeringclass }
-          - { Type: string, Name: product family }
-          - { Type: string, Name: servicecode }
-          - { Type: string, Name: location }
-          - { Type: string, Name: location type }
-          - { Type: string, Name: instance type }
-          - { Type: string, Name: current generation }
-          - { Type: string, Name: instance family }
-          - { Type: string, Name: vcpu }
-          - { Type: string, Name: memory }
-          - { Type: string, Name: network performance }
-          - { Type: string, Name: cache engine }
-          - { Type: string, Name: storage media }
-          - { Type: string, Name: transfer type }
-          - { Type: string, Name: usagetype }
-          - { Type: string, Name: operation }
-          - { Type: string, Name: region code }
-          - { Type: string, Name: servicename }
-          - { Type: string, Name: ssd }
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "OfferTermCode" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "TermType" }
+      - { Type: string, Name: "PriceDescription" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "StartingRange" }
+      - { Type: string, Name: "EndingRange" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "PricePerUnit" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "LeaseContractLength" }
+      - { Type: string, Name: "PurchaseOption" }
+      - { Type: string, Name: "OfferingClass" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "serviceCode" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "Instance Type" }
+      - { Type: string, Name: "Current Generation" }
+      - { Type: string, Name: "Instance Family" }
+      - { Type: string, Name: "vCPU" }
+      - { Type: string, Name: "Memory" }
+      - { Type: string, Name: "Network Performance" }
+      - { Type: string, Name: "Cache Engine" }
+      - { Type: string, Name: "Storage Media" }
+      - { Type: string, Name: "Transfer Type" }
+      - { Type: string, Name: "usageType" }
+      - { Type: string, Name: "operation" }
+      - { Type: string, Name: "Region Code" }
+      - { Type: string, Name: "serviceName" }
+      - { Type: string, Name: "SSD" }
+      jsonPaths: ["SKU","OfferTermCode","RateCode","TermType","PriceDescription","EffectiveDate","StartingRange","EndingRange","Unit","PricePerUnit","Currency","LeaseContractLength","PurchaseOption","OfferingClass","Product Family","serviceCode","Location","Location Type","Instance Type","Current Generation","Instance Family","vCPU","Memory","Network Performance","Cache Engine","Storage Media","Transfer Type","usageType","operation","Region Code","serviceName","SSD"]
+
     AmazonES:
       path: opensearch
       partition:
-          - { Name: region, Type: string }
+      - { Name: region, Type: string }
       fields:
-          - { Type: string, Name: sku }
-          - { Type: string, Name: offertermcode }
-          - { Type: string, Name: ratecode }
-          - { Type: string, Name: termtype }
-          - { Type: string, Name: pricedescription }
-          - { Type: string, Name: effectivedate }
-          - { Type: string, Name: startingrange }
-          - { Type: string, Name: endingrange }
-          - { Type: string, Name: unit }
-          - { Type: double, Name: priceperunit }
-          - { Type: string, Name: currency }
-          - { Type: string, Name: leasecontractlength }
-          - { Type: string, Name: purchaseoption }
-          - { Type: string, Name: offeringclass }
-          - { Type: string, Name: product family }
-          - { Type: string, Name: servicecode }
-          - { Type: string, Name: location }
-          - { Type: string, Name: location type }
-          - { Type: string, Name: instance type }
-          - { Type: string, Name: current generation }
-          - { Type: string, Name: instance family }
-          - { Type: string, Name: vcpu }
-          - { Type: string, Name: storage }
-          - { Type: string, Name: storage media }
-          - { Type: string, Name: usagetype }
-          - { Type: string, Name: operation }
-          - { Type: string, Name: ecu }
-          - { Type: string, Name: memory (gib) }
-          - { Type: string, Name: region code }
-          - { Type: string, Name: servicename }
-          - { Type: string, Name: compute type }
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "OfferTermCode" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "TermType" }
+      - { Type: string, Name: "PriceDescription" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "StartingRange" }
+      - { Type: string, Name: "EndingRange" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "PricePerUnit" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "LeaseContractLength" }
+      - { Type: string, Name: "PurchaseOption" }
+      - { Type: string, Name: "OfferingClass" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "serviceCode" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "Instance Type" }
+      - { Type: string, Name: "Current Generation" }
+      - { Type: string, Name: "Instance Family" }
+      - { Type: string, Name: "vCPU" }
+      - { Type: string, Name: "Storage" }
+      - { Type: string, Name: "Storage Media" }
+      - { Type: string, Name: "usageType" }
+      - { Type: string, Name: "operation" }
+      - { Type: string, Name: "Compute type" }
+      - { Type: string, Name: "ECU" }
+      - { Type: string, Name: "Memory (GiB)" }
+      - { Type: string, Name: "Region Code" }
+      - { Type: string, Name: "serviceName" }
+      jsonPaths: ["SKU","OfferTermCode","RateCode","TermType","PriceDescription","EffectiveDate","StartingRange","EndingRange","Unit","PricePerUnit","Currency","LeaseContractLength","PurchaseOption","OfferingClass","Product Family","serviceCode","Location","Location Type","Instance Type","Current Generation","Instance Family","vCPU","Storage","Storage Media","usageType","operation","Compute type","ECU","Memory (GiB)","Region Code","serviceName"]
+
     AWSComputeSavingsPlan:
       path: computesavingsplan
       partition:
-          - { Name: region, Type: string }
+      - { Name: region, Type: string }
       fields:
-          - { Type: string, Name: sku }
-          - { Type: string, Name: ratecode }
-          - { Type: string, Name: unit }
-          - { Type: string, Name: effectivedate }
-          - { Type: double, Name: discountedrate }
-          - { Type: string, Name: currency }
-          - { Type: string, Name: discountedsku }
-          - { Type: string, Name: discountedservicecode }
-          - { Type: string, Name: discountedusagetype }
-          - { Type: string, Name: discountedoperation }
-          - { Type: string, Name: purchaseoption }
-          - { Type: string, Name: leasecontractlength }
-          - { Type: string, Name: leasecontractlengthunit }
-          - { Type: string, Name: servicecode }
-          - { Type: string, Name: usagetype }
-          - { Type: string, Name: operation }
-          - { Type: string, Name: description }
-          - { Type: string, Name: instance family }
-          - { Type: string, Name: location }
-          - { Type: string, Name: location type }
-          - { Type: string, Name: granularity }
-          - { Type: string, Name: product family }
-    RegionNames:
-      path: regionnames
-      partition:
-          - { Name: partition, Type: string }
-      fields:
-          - { Type: string, Name: region }
-          - { Type: string, Name: regionname }
-          - { Type: string, Name: endpoint }
-          - { Type: string, Name: protocol }
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "DiscountedRate" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "DiscountedSKU" }
+      - { Type: string, Name: "DiscountedServiceCode" }
+      - { Type: string, Name: "DiscountedUsageType" }
+      - { Type: string, Name: "DiscountedOperation" }
+      - { Type: string, Name: "PurchaseOption" }
+      - { Type: string, Name: "LeaseContractLength" }
+      - { Type: string, Name: "LeaseContractLengthUnit" }
+      - { Type: string, Name: "ServiceCode" }
+      - { Type: string, Name: "UsageType" }
+      - { Type: string, Name: "Operation" }
+      - { Type: string, Name: "Description" }
+      - { Type: string, Name: "Instance Family" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "Granularity" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "DiscountedRegionCode" }
+      jsonPaths: ["SKU","RateCode","Unit","EffectiveDate","DiscountedRate","Currency","DiscountedSKU","DiscountedServiceCode","DiscountedUsageType","DiscountedOperation","PurchaseOption","LeaseContractLength","LeaseContractLengthUnit","ServiceCode","UsageType","Operation","Description","Instance Family","Location","Location Type","Granularity","Product Family","DiscountedRegionCode"]
+
     AWSLambda:
       path: lambda
       partition:
-          - { Name: region, Type: string }
+      - { Name: region, Type: string }
       fields:
-          - { Type: string, Name: sku }
-          - { Type: string, Name: offertermcode }
-          - { Type: string, Name: ratecode }
-          - { Type: string, Name: termtype }
-          - { Type: string, Name: pricedescription }
-          - { Type: string, Name: effectivedate }
-          - { Type: string, Name: endingrange }
-          - { Type: string, Name: startingrange }
-          - { Type: string, Name: endingrange }
-          - { Type: string, Name: unit }
-          - { Type: double, Name: priceperunit }
-          - { Type: string, Name: currency }
-          - { Type: string, Name: relatedto }
-          - { Type: string, Name: product family }
-          - { Type: string, Name: servicecode }
-          - { Type: string, Name: location }
-          - { Type: string, Name: location type }
-          - { Type: string, Name: group }
-          - { Type: string, Name: group description }
-          - { Type: string, Name: usagetype }
-          - { Type: string, Name: operation }
-          - { Type: string, Name: region code }
-          - { Type: string, Name: servicename }
-    RDSGraviton:
-      path: rdsgraviton
+      - { Type: string, Name: "SKU" }
+      - { Type: string, Name: "OfferTermCode" }
+      - { Type: string, Name: "RateCode" }
+      - { Type: string, Name: "TermType" }
+      - { Type: string, Name: "PriceDescription" }
+      - { Type: string, Name: "EffectiveDate" }
+      - { Type: string, Name: "StartingRange" }
+      - { Type: string, Name: "EndingRange" }
+      - { Type: string, Name: "Unit" }
+      - { Type: string, Name: "PricePerUnit" }
+      - { Type: string, Name: "Currency" }
+      - { Type: string, Name: "RelatedTo" }
+      - { Type: string, Name: "Product Family" }
+      - { Type: string, Name: "serviceCode" }
+      - { Type: string, Name: "Location" }
+      - { Type: string, Name: "Location Type" }
+      - { Type: string, Name: "Group" }
+      - { Type: string, Name: "Group Description" }
+      - { Type: string, Name: "usageType" }
+      - { Type: string, Name: "operation" }
+      - { Type: string, Name: "Region Code" }
+      - { Type: string, Name: "serviceName" }
+      jsonPaths: ["SKU","OfferTermCode","RateCode","TermType","PriceDescription","EffectiveDate","StartingRange","EndingRange","Unit","PricePerUnit","Currency","RelatedTo","Product Family","serviceCode","Location","Location Type","Group","Group Description","usageType","operation","Region Code","serviceName"]
+
+    RegionalServices:
+      path: regionalservices
       partition:
-          - { Name: partition, Type: string }
+      - { Name: date, Type: string }
       fields:
-          - { Type: string, Name: dbtype }
-          - { Type: string, Name: databaseengine }
-          - { Type: string, Name: instancetype }
-          - { Type: string, Name: graviton_instancetype }
+      - { Type: string, Name: "service" }
+      - { Type: string, Name: "region" }
+      jsonPaths: ["service","region"]
+
+    RegionNames:
+      path: regionnames
+      partition:
+      - { Name: date, Type: string }
+      fields:
+      - { Type: string, Name: 'domain' }
+      - { Type: string, Name: 'geolocationCountry' }
+      - { Type: string, Name: 'geolocationRegion' }
+      - { Type: string, Name: 'longName' }
+      - { Type: string, Name: 'partition' }
+      - { Type: string, Name: 'region' }
+      - { Type: string, Name: 'regionname' }
+      jsonPaths: ['domain','geolocationCountry','geolocationRegion','longName','partition','region','regionname',"service"]
 
 Resources:
   LambdaRole:
@@ -386,15 +402,18 @@ Resources:
                 Action:
                   - "s3:GetObject"
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:s3:::${CodeBucket}/*'
-        - PolicyName: "SSM"
+                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+        - PolicyName: "AllowReadRegionsSSM"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
                   - "ssm:GetParameter"
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*/longName"
+                  - "ssm:GetParametersByPath"
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions"
 
     Metadata:
       cfn_nag:
@@ -407,14 +426,16 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "LambdaFunction to retrieve ${CFDataName}"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
         ZipFile: |
           import os
+          import csv
+          #import time
           import json
-          import urllib3
           import logging
+          import urllib3
 
           import boto3
 
@@ -428,18 +449,65 @@ Resources:
           PREFIX = os.environ["DEST_PREFIX"]
           REGIONS = [r.strip() for r in os.environ["REGIONS"].split(',') if r]
           TMP_FILE = "/tmp/data.json"
-          RDS_GRAVITON_PATH = os.environ["RDS_GRAVITON_PATH"]
 
           def get_json(url):
               return json.loads(urllib3.PoolManager().request('GET', url).data)
 
+          def download_file(url, save_path, chunk_size=100*1024*1024):
+              ''' download file to disk '''
+              response = urllib3.PoolManager().request('GET', url, preload_content=False)
+              file_size = response.length_remaining
+              print(f'Downloading {url}')
+              for _ in range(5): # Skip first 5 lines
+                  response.readline()
+              with open(save_path, 'wb') as out_file:
+                  for data in response.stream(chunk_size):
+                      out_file.write(data)
+                      print(f'downloaded {int(100 - 100 * response.length_remaining / file_size )} %')
+              response.release_conn()
+              print("Download completed!")
+
+          def csv_to_json_and_multi_upload(csv_file_path, s3_bucket, s3_key, chunk_size=100*1024*1024):
+              ''' take csv file and upload data as json '''
+              s3_client = boto3.client('s3')
+              mpu = s3_client.create_multipart_upload(Bucket=s3_bucket, Key=s3_key)
+              parts = []
+              part_number = 1
+              with open(csv_file_path, 'r', encoding='utf-8') as csv_file:
+                  csv_reader = csv.DictReader(csv_file)
+                  chunk = ''
+                  while True:
+                      for row in csv_reader:
+                          chunk += (json.dumps(row) + '\n')
+                          if len(chunk) >= chunk_size:
+                              break
+                      if not chunk:
+                          break
+                      print(f'Uploading part {part_number}')
+                      part = s3_client.upload_part(
+                          Body=chunk,
+                          Bucket=s3_bucket,
+                          Key=s3_key,
+                          PartNumber=part_number,
+                          UploadId=mpu['UploadId']
+                      )
+                      parts.append({"PartNumber": part_number, "ETag": part['ETag']})
+                      part_number += 1
+                      chunk = ''
+
+              print('Completing')
+              s3_client.complete_multipart_upload(
+                  Bucket=s3_bucket,
+                  Key=s3_key,
+                  UploadId=mpu['UploadId'],
+                  MultipartUpload={"Parts": parts}
+              )
+              print(f"Upload Successful: s3://{s3_bucket}/{s3_key}")
+              return True
+
           def upload_pricing(service, path):
-              s3 = boto3.client('s3')
-              http = urllib3.PoolManager()
               offers = get_json(OFFERS_URL)['offers']
-
               errors = ''
-
               logger.info(f'Getting regional pricing for {service}')
               try:
                   if service == 'AWSComputeSavingsPlan':
@@ -447,7 +515,7 @@ Resources:
                   else:
                       url = offers[service]['currentRegionIndexUrl']
                   regions = get_json(BASE_URL + url)["regions"]
-              except Exception as exc:
+              except Exception as exc: #pylint: disable=W0718
                   err = f'{service}: {exc}'
                   logger.warning(err)
                   return {
@@ -467,20 +535,11 @@ Resources:
                   try:
                       version_url =  region.get("versionUrl") or region.get("currentVersionUrl")
                       assert version_url
-                      region_url = BASE_URL + version_url.replace(".json", ".csv")
-
-                      # Starting Download
-                      file_obj = http.request('GET', region_url, preload_content=False)
-
-                      # Skip 5 lines
-                      for _ in range(5):
-                          file_obj.readline()
-
-                      # Upload
-                      key = f"pricing/pricing-{path}-data/region={region_code}/index.csv"
-                      res = s3.upload_fileobj(Fileobj=file_obj, Bucket=BUCKET_NAME, Key=key)
-                      logger.debug(f'{res} Uploaded to s3://{BUCKET_NAME}/{key}')
-                  except Exception as exc:
+                      region_url = BASE_URL + version_url.replace(".json", ".csv") # we use CSV as json provided by api is not athena friendly
+                      key = f"pricing/latest/pricing-{path}-data/region={region_code}/index.json"
+                      download_file(region_url, '/tmp/tmp.csv')
+                      csv_to_json_and_multi_upload('/tmp/tmp.csv', BUCKET_NAME, key)
+                  except Exception as exc: #pylint: disable=W0718
                       err = f'{service}/{region_code}: {exc}'
                       logger.warning(err)
                       logger.exception(exc)
@@ -491,69 +550,61 @@ Resources:
                   'errors': errors,
               }
 
-          def s3copy(src_bucket, src_key, dest_bucket, dest_key):
-              boto3.resource('s3').Bucket(dest_bucket).copy({
-                    'Bucket': src_bucket,
-                    'Key': src_key
-                  },
-                  dest_key
-              )
-              print(f'added file {dest_key}')
+          def get_region_availability():
+              offers = get_json(OFFERS_URL)['offers']
+              data = []
+              for ser, val in offers.items():
+                  for region in get_json(BASE_URL + val['currentRegionIndexUrl'])['regions']:
+                      data.append({'service': ser, 'region': region})
+              return data
 
-          def process_region_list(regions):
-              logger.info(f"Processing region list {regions}")
+          def get_region_names():
+              data = []
               ssm_client = boto3.client('ssm')
-              lines = []
-              for region in regions:
-                  long_name = ssm_client.get_parameter(Name=f"/aws/service/global-infrastructure/regions/{region}/longName")["Parameter"]["Value"]
-                  lines.append(",".join([region,long_name,f"rds.{region}.amazonaws.com","HTTPS"]))
+              active_regions = ssm_client.get_paginator('get_parameters_by_path').paginate(Path='/aws/service/global-infrastructure/regions').search('Parameters[].Value')
+              for region in active_regions:
+                  region_params = ssm_client.get_paginator('get_parameters_by_path').paginate(Path=f'/aws/service/global-infrastructure/regions/{region}/').search('Parameters[]')
+                  region_data = {rp['Name'].split('/')[-1]:rp['Value'] for rp in region_params}
+                  region_data['region'] = region
+                  region_data['regionName'] = region_data['longName'] # for backward compatibility
+                  data.append(region_data)
+              return data
 
-              with open(TMP_FILE, "w") as f:
-                  f.write("Region,Long Name,Endpoint,Protocol\n")
-                  f.write("\n".join(lines))
-
-              # Upload
-              key = f"pricing/pricing-regionnames-data/pricing_region_names/pricing_region_names.csv"
-              res = boto3.client('s3').upload_file(TMP_FILE, Bucket=BUCKET_NAME, Key=key)
-              logger.info(f"Uploaded pricing_region_names")
-              return {
-                  'statusCode': 200
-              }
-
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=W0613
               logger.info(f"Incoming event: {event}")
               try:
                   service = event['service']
                   path = event['path']
-              except Exception as exc:
-                  logger.error('please provide service and path')
-                  raise Exception(f'({type(exc).__name__}) raised. Please provide service and path parameters.')
+              except Exception: #pylint: disable=W0718
+                  logger.error('please provide service and path. Will use EC2 and tmp for testing')
+                  service = 'AmazonEC2'
+                  path = 'tmp'
 
+              date = 'current' # time.strftime('%Y-%m-%d')
               if service == "RegionNames":
-                  res = process_region_list(REGIONS)
-                  return {
-                      'statusCode': 200,
-                      'body': {service: res}
-                  }
-              else:
-                  res = upload_pricing(service, path)
-
-              # FIXME: move it to separate lambda?
-              try:
-                  s3copy(
-                      CODE_BUCKET, RDS_GRAVITON_PATH,
-                      BUCKET_NAME, 'pricing/pricing-rdsgraviton-data/rds_graviton_mapping.csv',
+                  data = get_region_names()
+                  boto3.client('s3').put_object(
+                      Bucket=BUCKET_NAME,
+                      Key=f"pricing/latest/pricing-regionnames-data/date={date}/index.json",
+                      Body='\n'.join([json.dumps(line) for line in data]),
+                      ContentType='application/json'
                   )
-              except Exception as exc:
-                  res['errors'] += f'rds_graviton_mapping: {exc}'
+                  return {'statusCode': 200}
+              if service == 'RegionalServices':
+                  data = get_region_availability()
+                  boto3.client('s3').put_object(
+                      Bucket=BUCKET_NAME,
+                      Key=f"pricing/latest/pricing-regionalservices-data/date={date}/index.json",
+                      Body='\n'.join([json.dumps(line) for line in data]),
+                      ContentType='application/json'
+                  )
+                  return {'statusCode': 200}
+              upload_pricing(service, path)
+              return {'statusCode': 200}
 
-              return {
-                  'statusCode': 200,
-                  'body': {service: res}
-              }
       Handler: 'index.lambda_handler'
-      MemorySize: 2880
-      Timeout: 600
+      MemorySize: 4086
+      Timeout: 900
       Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
@@ -561,7 +612,6 @@ Resources:
           CODE_BUCKET: !Ref CodeBucket
           DEST_PREFIX: !Ref CFDataName
           REGIONS: !Ref RegionsInScope
-          RDS_GRAVITON_PATH: !Ref RdsGravitonPath
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -670,7 +720,7 @@ Resources:
             S3Targets:
               - Path:
                   Fn::Sub:
-                    - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
+                    - "s3://${DestinationBucket}/${CFDataName}/latest/pricing-${path}-data/"
                     - path: !FindInMap [ServicesMap, !Ref AwsService, path]
           Configuration: |
             {
@@ -698,10 +748,8 @@ Resources:
             Retention: 0
             TableType: EXTERNAL_TABLE
             Parameters:
-              compressionType: none
-              delimiter: ','
-              classification: csv
-              skip.header.line.count: '1'
+              classification: json
+              compressionType: 'none'
               UPDATED_BY_CRAWLER: !Sub '${ResourcePrefix}${CFDataName}-${AwsService}-Crawler'
             PartitionKeys: !FindInMap [ServicesMap, !Ref AwsService, partition]
             StorageDescriptor:
@@ -709,15 +757,13 @@ Resources:
               InputFormat: org.apache.hadoop.mapred.TextInputFormat
               Location:
                 Fn::Sub:
-                  - "s3://${DestinationBucket}/${CFDataName}/pricing-${path}-data/"
+                  - "s3://${DestinationBucket}/${CFDataName}/latest/pricing-${path}-data/"
                   - path: !FindInMap [ServicesMap, !Ref AwsService, path]
               OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
               SerdeInfo:
                 Parameters:
-                  quoteChar: '"'
-                  separatorChar: ','
-                  serialization.format: '1'
-                SerializationLibrary: org.apache.hadoop.hive.serde2.OpenCSVSerde # Need a specific lib for quotes
+                  paths: !Join [',', !FindInMap [ServicesMap, !Ref AwsService, jsonPaths]]
+                SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
   AnalyticsExecutor:
     Type: Custom::LambdaAnalyticsExecutor
