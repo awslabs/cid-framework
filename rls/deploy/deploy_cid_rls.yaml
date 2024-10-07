@@ -79,7 +79,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AWSLambdaExecute"
       Path: /
       Policies:
         - PolicyName: "Assume-Management-Organization-Data-Role"
@@ -100,12 +100,12 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/CID-RLS*"
+                Resource: !Sub "arn:${AWS::Partition}::logs:${AWS::Region}:${AWS::AccountId}:log-group:/CID-RLS*"
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
                   - "s3:ListBucket"
-                Resource: !Sub "arn:aws:s3:::${DestinationBucket}/*"
+                Resource: !Sub "arn:${AWS::Partition}::s3:::${DestinationBucket}/*"
               - Effect: "Allow"
                 Action:
                   - "quicksight:ListUsers"

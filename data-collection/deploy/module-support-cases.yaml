@@ -68,7 +68,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "AssumeMultiAccountRole"
@@ -77,7 +77,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -94,6 +94,15 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "${DestinationBucketARN}"
+        - PolicyName: "SQS-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "sqs:SendMessage"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:sqs:*:${AWS::AccountId}:*"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -113,14 +122,16 @@ Resources:
           import json
           import logging
           from datetime import date, timedelta, datetime
+          from botocore.exceptions import ClientError
 
           import boto3
 
           BUCKET = os.environ['BUCKET_NAME']
           ROLE_NAME = os.environ['ROLE_NAME']
           MODULE_NAME = os.environ['PREFIX']
-          TMP_FILE = '/tmp/tmp.json'
+          LAST_REFRESH_FILE = "status.json"
           REGION = "us-east-1"
+          RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -141,28 +152,11 @@ Resources:
                   'statusCode': 200
               }
 
-          def calculate_dates(bucket, s3_path):
-              end_date = datetime.now().date()  + timedelta(days=1)
-              start_date = datetime.now().date() - timedelta(days=90) #Support Cases are available for last 90days
-              # Check the create time of objects in the S3 bucket
-              paginator = boto3.client('s3').get_paginator('list_objects_v2')
-              contents = sum( [page.get('Contents', []) for page in paginator.paginate(Bucket=bucket, Prefix=s3_path)], [])
-              last_modified_date = get_last_modified_date(contents)
-              if last_modified_date and last_modified_date >= start_date:
-                  start_date = last_modified_date
-              return start_date, end_date
-
-          def get_last_modified_date(contents):
-              last_modified_dates = [obj['LastModified'].date() for obj in contents]
-              last_modified_dates_within_90_days = [date for date in last_modified_dates if date >= datetime.now().date() - timedelta(days=90)]
-              if last_modified_dates_within_90_days:
-                  return max(last_modified_dates_within_90_days)
-              return None
-
           def get_client_with_role(role_name, account_id, service, region):
               logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
               credentials = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{role_name}",
                   RoleSessionName="data_collection"
               )['Credentials']
               logger.debug("Successfully assumed role, now getting client")
@@ -208,6 +202,7 @@ Resources:
                   'TimeCreated': get_value_by_path(record, 'timeCreated'),
                   'CCEmailAddresses': get_value_by_path(record, 'ccEmailAddresses'),
                   'Language': get_value_by_path(record, 'language'),
+                  'Summary': ''
               }
               logger.debug("Processing record complete")
               return result
@@ -232,6 +227,7 @@ Resources:
               )
 
           def process_support_cases_data(module_name, payer_id, account_id, records, bucket, client):
+              timestamp_snap = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
               for record in records['cases']:
                   data = parse_support_cases_data(record)
                   file_name = f"{data['CaseId']}.json"
@@ -269,31 +265,110 @@ Resources:
                               )
                               boto3.client('s3').upload_file(f"/tmp/{file_name}", bucket, key)
                   logger.info(f"Processed a total of {len(page['communications'])} support case communications associated with case: {data['CaseId']}")
+                  logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
+                  queue_url = f"https://sqs.{REGION}.amazonaws.com/{payer_id}/{RESOURCE_PREFIX}SupportCaseSummarizationQueue"
+                  message = {
+                      'CaseId': data['CaseId'],
+                      'Timestamp': timestamp_snap
+                  }
+                  notify_case_summarization_queue(queue_url, json.dumps(message))
+              logger.info("Updating support cases retrieval timestamp ...")
+              status_key = \
+                  f"{module_name}/" + \
+                  f"{module_name}-status/" + \
+                  f"payer_id={payer_id}/" + \
+                  f"account_id={account_id}/" + \
+                  LAST_REFRESH_FILE
+              timestamp = {
+                  "LastFetch": timestamp_snap
+              }
+              with open(f"/tmp/{LAST_REFRESH_FILE}", "w", encoding='utf-8') as f:
+                  f.write(to_json(timestamp))
+              logger.info(f"Updating support cases last fetch timestamp ...")
+              boto3.client('s3').upload_file(f"/tmp/{LAST_REFRESH_FILE}", bucket, status_key)
+              logger.info(f"Support cases last fetch timestamp updated !")
               logger.info(f"Processed a total of {len(records)} support cases")
               return None
 
-          def main(account, role_name, module_name, bucket):
-              start_date, end_date = calculate_dates(bucket, s3_path=f'{module_name}/support-cases-data/')
-              logger.info(f'Using start_date={start_date}, end_date={end_date}')
+          def is_to_be_refreshed(bucket_name, object_key):
+              s3_client = boto3.client('s3')
+              try:
+                  # Retrieve the status file from the S3 bucket
+                  response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+                  # Read the timestamp from the status file
+                  timestamp_str = json.loads(response['Body'].read().decode('utf-8'))["LastFetch"]
+                  # Parse the timestamp
+                  timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
+                  logger.info(f"LastFetch from {object_key} is {timestamp_str}")
+                  # Get the current time
+                  current_time = datetime.now()
+                  # Calculate the time difference
+                  time_difference = current_time - timestamp
+                  logger.info(f"Time difference between now and LastFetch is {time_difference}")
+                          
+                  return time_difference > timedelta(hours=1)
+              
+              except s3_client.exceptions.NoSuchKey:
+                  return True
+              except ValueError:
+                  print(f"Error: Unable to parse timestamp from object content")
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+              
+              return None, None
 
+          def notify_case_summarization_queue(queue_url, message_body):
+              # Create an SQS client
+              sqs_client = boto3.client('sqs')
+              try:
+                  message = json.loads(message_body)
+                  case_id = message['CaseId']
+                  # Send message to Case Summarization SQS queue
+                  response = sqs_client.send_message(
+                      QueueUrl=queue_url,
+                      MessageBody=message_body
+                  )
+                  logger.info(f"Support case id ({case_id}) successfully sent in queue to {queue_url} for summarization and has MessageId {response['MessageId']}.")
+                  return None
+              
+              except ClientError as e:
+                  error_code = e.response['Error']['Code']
+                  
+                  if error_code == 'AWS.SimpleQueueService.NonExistentQueue': 
+                      logger.info(f"Support case id ({case_id}) couldn't be sent in queue {queue_url} for summarization, as queue doesn't exist. This can be the case if you do not want to summarize the support cases data. Gracefully quitting...")
+                      pass
+                      return None
+
+          def main(account, role_name, module_name, bucket):
+              end_date = datetime.now().date()
+              start_date = datetime.now().date() - timedelta(days=90)
               account_id = account["account_id"]
               payer_id = account["payer_id"]
-              client = get_client_with_role(role_name, account_id, region=REGION, service="support")
-              case_pages = client.get_paginator('describe_cases').paginate(
-                  afterTime = str(start_date),
-                  beforeTime = str(end_date),
-                  includeCommunications = False,
-                  includeResolvedCases = True,
-                  PaginationConfig = {
-                      'PageSize': 100
-                  }
-              )
-              record_count = 0
-              for page in case_pages:
-                  if len(page["cases"]) > 0:
-                      process_support_cases_data(module_name, payer_id, account_id, page, bucket, client)
-                      record_count += len(page["cases"])
-              logger.info(f"API results total {record_count}")
+              file_name = f"{module_name}/" + \
+                  f"{module_name}-status/" + \
+                  f"payer_id={payer_id}/" + \
+                  f"account_id={account_id}/" + \
+                  LAST_REFRESH_FILE
+              if is_to_be_refreshed(bucket, file_name):
+                  logger.info(f"Support cases last fetch timestamp is greater than 1h from now, refreshing data ...")
+                  client = get_client_with_role(role_name, account_id, region=REGION, service="support")
+                  case_pages = client.get_paginator('describe_cases').paginate(
+                      afterTime = str(start_date),
+                      beforeTime = str(end_date),
+                      includeCommunications = False,
+                      includeResolvedCases = True,
+                      PaginationConfig = {
+                          'PageSize': 100
+                      }
+                  )
+                  record_count = 0
+                  for page in case_pages:
+                      if len(page["cases"]) > 0:
+                          process_support_cases_data(module_name, payer_id, account_id, page, bucket, client)
+                          record_count += len(page["cases"])
+                  logger.info(f"API results total {record_count}")
+              else:
+                  logger.info(f"Support cases data were fetched less than 1h from now, skipping data refresh.")
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -303,6 +378,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
           ROLE_NAME: !Ref MultiAccountRoleName
+          RESOURCE_PREFIX: !Ref ResourcePrefix
     Metadata:
       cfn_nag:
         rules_to_suppress:

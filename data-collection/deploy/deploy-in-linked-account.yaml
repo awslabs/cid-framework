@@ -127,17 +127,17 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                - !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
+                - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}budgets-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}ecs-chargeback-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}inventory-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}support-cases-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}budgets-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}ecs-chargeback-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}inventory-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}support-cases-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -197,7 +197,7 @@ Resources:
               - "budgets:ViewBudget"
               - "budgets:DescribeBudgets"
               - "budgets:ListTagsForResource"
-            Resource: "arn:aws:budgets::*:budget/*"
+            Resource: !Sub "arn:${AWS::Partition}:budgets::*:budget/*"
       Roles:
         - Ref: LambdaRole
   InventoryCollectorPolicy:

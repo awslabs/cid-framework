@@ -230,7 +230,6 @@ Parameters:
     AllowedValues: ['yes', 'no']
     Default: 'no'
 
-
 Conditions:
   DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
   DeployRightsizingModule: !Equals [ !Ref IncludeRightsizingModule, "yes"]
@@ -722,7 +721,6 @@ Resources:
               except glue_client.exceptions.EntityNotFoundException:
                   return  'SUCCESS', 'not found'
 
-
   InitExecutor:
     Type: Custom::LambdaAnalyticsExecutor
     Properties:
@@ -761,7 +759,7 @@ Resources:
                 Action:
                   - glue:StartCrawler
                   - glue:GetCrawler
-                Resource: !Sub 'arn:aws:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler*'
+                Resource: !Sub 'arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:crawler/${ResourcePrefix}*Crawler*'
         - PolicyName: InvokeCollectionLambda
           PolicyDocument:
             Version: 2012-10-17
@@ -770,7 +768,7 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*Lambda*'
+                  - !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*Lambda*'
         - PolicyName: PolicyForSyncronousExecution
           PolicyDocument:
             Version: 2012-10-17
@@ -781,19 +779,19 @@ Resources:
                   - events:DescribeRule
                   - events:PutRule
                 Resource:
-                  - !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule'
+                  - !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/StepFunctionsGetEventsForStepFunctionsExecutionRule'
               - Effect: Allow
                 Action:
                   - states:StartExecution
                 Resource:
-                  - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}*-StateMachine'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}*-StateMachine'
               - Effect: Allow
                 Action:
                   - states:DescribeExecution
                   - states:StopExecution
                 Resource:
-                  - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:execution:*:*'
-                  - !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:express:*:*:*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:*:*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:express:*:*:*'
         - PolicyName: "S3-ReadOnlyAccess" #Used for getting summary record list for map iterations to retrieve detail API calls
           PolicyDocument:
             Version: "2012-10-17"
@@ -842,7 +840,7 @@ Resources:
                 Action:
                   - states:StartExecution
                 Resource:
-                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}*StateMachine"
+                  - !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}*StateMachine"
         - PolicyName: "ExecuteLambda"
           PolicyDocument:
             Version: 2012-10-17
@@ -851,7 +849,7 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource:
-                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*"
+                  - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*"
 
   TrustedAdvisorModule:
     Type: AWS::CloudFormation::Stack

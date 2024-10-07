@@ -370,7 +370,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "S3-Access"
@@ -386,7 +386,7 @@ Resources:
                 Action:
                   - "s3:GetObject"
                 Resource:
-                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${CodeBucket}/*'
         - PolicyName: "SSM"
           PolicyDocument:
             Version: "2012-10-17"
@@ -394,7 +394,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "ssm:GetParameter"
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*/longName"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*/longName"
 
     Metadata:
       cfn_nag:
@@ -590,7 +590,7 @@ Resources:
             MaximumWindowInMinutes: 30
             Mode: 'FLEXIBLE'
           Target:
-            Arn: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
+            Arn: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
             RoleArn: !Ref SchedulerExecutionRoleARN
 
       'ModuleStepFunction${AwsService}':
