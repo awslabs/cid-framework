@@ -208,6 +208,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'Schedule',                        'ParameterValue': 'rate(1 day)'},
             {'ParameterKey': 'ScheduleFrequent',                'ParameterValue': 'rate(1 day)'},
+            {'ParameterKey': 'CasesHistoryInDays',              'ParameterValue': "90"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},

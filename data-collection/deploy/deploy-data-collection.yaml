@@ -16,6 +16,7 @@ Metadata:
           - Schedule
           - ScheduleFrequent
           - CFNSourceBucket
+          - CasesHistoryInDays
       - Label:
           default: 'Available modules'
         Parameters:
@@ -55,6 +56,8 @@ Metadata:
         default: "Role Prefix"
       CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
+      CasesHistoryInDays:
+        default: "AWS Support Cases History in Days to pull in. Defaults to 90"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -154,6 +157,10 @@ Parameters:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
+  CasesHistoryInDays:
+    Type: String
+    Description: AWS Support Cases History in Days to pull in. Defaults to 90
+    Default: 90
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -947,6 +954,7 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        CasesHistoryInDays: !Ref CasesHistoryInDays
 
   BackupModule:
     Type: AWS::CloudFormation::Stack
