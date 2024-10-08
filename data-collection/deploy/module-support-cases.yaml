@@ -47,6 +47,10 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  CasesHistoryInDays:
+    Type: String
+    Description: AWS Support Cases History in Days to pull in. Defaults to 90
+    Default: 90
 
 Outputs:
   StepFunctionARN:
@@ -127,6 +131,7 @@ Resources:
           import boto3
 
           BUCKET = os.environ['BUCKET_NAME']
+          CASES_HISTORY_IN_DAYS = os.environ.get('CASES_HISTORY_IN_DAYS', '90')
           ROLE_NAME = os.environ['ROLE_NAME']
           MODULE_NAME = os.environ['PREFIX']
           LAST_REFRESH_FILE = "status.json"
@@ -343,7 +348,7 @@ Resources:
 
           def main(account, role_name, module_name, bucket):
               end_date = datetime.now().date()
-              start_date = datetime.now().date() - timedelta(days=365)
+              start_date = datetime.now().date() - timedelta(days=int(CASES_HISTORY_IN_DAYS))
               account_id = account["account_id"]
               payer_id = account["payer_id"]
               file_name = f"{module_name}/" + \
@@ -381,6 +386,7 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLE_NAME: !Ref MultiAccountRoleName
           RESOURCE_PREFIX: !Ref ResourcePrefix
+          CASES_HISTORY_IN_DAYS: !Ref CasesHistoryInDays
     Metadata:
       cfn_nag:
         rules_to_suppress:
