@@ -243,28 +243,30 @@ Resources:
                   boto3.client('s3').upload_file(f"/tmp/{file_name}", bucket, key)
                   logger.info(f"Data stored to s3://{bucket}/{key}")
                   logger.info(f"Retrieving communications for {data['CaseId']}...")
-                  communications_pages = client.get_paginator('describe_communications').paginate(
-                      caseId = data['CaseId'],
-                      PaginationConfig = {
-                          'PageSize': 100
-                      }
+                  communication_iterator = (
+                      client
+                      .get_paginator('describe_communications')
+                      .paginate(caseId=data['CaseId'])
+                      .search("""communications[].{
+                          CaseId: caseId,
+                          Body: body,
+                          SubmittedBy: submittedBy,
+                          TimeCreated: timeCreated,
+                          AttachmentSet: attachmentSet[0]
+                          }""")
                   )
-                  for page in communications_pages:
-                      if len(page["communications"]) > 0:
-                          for comm in page["communications"]:
-                              communications = parse_support_cases_communications(comm)
-                              logger.info(f"parsed_comms: {communications}")
-                              with open(f"/tmp/{file_name}", "w", encoding='utf-8') as f:
-                                  f.write(to_json(communications))
-                              key = datetime.strptime(communications["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ').strftime(
-                                  f"{module_name}/" +
-                                  f"{module_name}-communications/" +
-                                  f"payer_id={payer_id}/" +
-                                  f"account_id={account_id}/" +
-                                  f"year=%Y/month=%m/day=%d/hour=%H/min=%M/{communications['CaseId']}.json"
-                              )
-                              boto3.client('s3').upload_file(f"/tmp/{file_name}", bucket, key)
-                  logger.info(f"Processed a total of {len(page['communications'])} support case communications associated with case: {data['CaseId']}")
+                  for communication in communication_iterator:
+                      with open(f"/tmp/{file_name}", "w", encoding='utf-8') as f:
+                          f.write(to_json(communication) + '\n') 
+                      key = datetime.strptime(communication["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ').strftime(
+                          f"{module_name}/" +
+                          f"{module_name}-communications/" +
+                          f"payer_id={payer_id}/" +
+                          f"account_id={account_id}/" +
+                          f"year=%Y/month=%m/day=%d/hour=%H/min=%M/{communication['CaseId']}.json"
+                      )
+                      boto3.client('s3').upload_file(f"/tmp/{file_name}", bucket, key)
+                  logger.info(f"finished processing the support case communications associated with {communication['CaseId']}.")
                   logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
                   queue_url = f"https://sqs.{REGION}.amazonaws.com/{payer_id}/{RESOURCE_PREFIX}SupportCaseSummarizationQueue"
                   message = {
@@ -341,7 +343,7 @@ Resources:
 
           def main(account, role_name, module_name, bucket):
               end_date = datetime.now().date()
-              start_date = datetime.now().date() - timedelta(days=90)
+              start_date = datetime.now().date() - timedelta(days=365)
               account_id = account["account_id"]
               payer_id = account["payer_id"]
               file_name = f"{module_name}/" + \
