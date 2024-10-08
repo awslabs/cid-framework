@@ -32,7 +32,7 @@ List of modules and objects collected:
 | `transit-gateway`            |  AWS Transit Gateway  | Linked Account      | Collects CloudWatch metrics for chargeback |
 | `ecs-chargeback`             |  Amazon ECS           | Linked Account      |  |
 | `backup`                     |  AWS Backup           | Management Account  | Collects Backup Restore and Copy Jobs. Requires [activation of cross-account](https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account) |
-| `health-evetns`      |  AWS Health | Management Accounts  | Collect AWS Health notificaitons via AWS Organizational view  |
+| `health-events`      |  AWS Health | Management Accounts  | Collect AWS Health notificaitons via AWS Organizational view  |
 | `licence-manager`      |  AWS License Manager | Management Accounts  | Collect Licences and Grants |
 
 
