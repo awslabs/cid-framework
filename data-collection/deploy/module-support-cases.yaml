@@ -258,7 +258,7 @@ Resources:
                   logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
                   message = {
                       'Bucket': bucket,
-                      'Key': key
+                      'CommunicationsKey': key
                   }
                   eventbridge = boto3.client('events')
                   response = eventbridge.put_events(
