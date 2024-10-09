@@ -112,7 +112,6 @@ Conditions:
     - !Ref IncludeTransitGatewayModule
     - "yes"
 
-
 Outputs:
   LambdaRole:
     Description: For lambda to assume in cost account
