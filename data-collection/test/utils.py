@@ -208,6 +208,10 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'Schedule',                        'ParameterValue': 'rate(1 day)'},
             {'ParameterKey': 'ScheduleFrequent',                'ParameterValue': 'rate(1 day)'},
+            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},            
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
@@ -222,11 +226,8 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
-            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
-            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeQuickSightModule',         'ParameterValue': "yes"},
         ]
     )
 
@@ -372,6 +373,7 @@ def trigger_update(account_id):
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
         f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}license-manager-StateMachine",
+        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}quicksight-StateMachine',
     ]
     lambda_arns = []
     lambda_norun_arns = []
@@ -419,5 +421,5 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
 
 def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
-    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
+    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=True)
     trigger_update(account_id=account_id)
