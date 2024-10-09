@@ -103,9 +103,8 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
-
-          """ 
-          Lambda to collect Quicksight User, Groups, and Membership in the local data collection account 
+          """
+          Lambda to collect QuickSight User, Groups, and Membership in the local data collection account
           Author: Soham Majumder
           """
           import os
@@ -330,24 +329,33 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: !Sub "Provides a summary view of the ${CFDataName}"
-      Name: !Sub "${CFDataName}_view"
-      QueryString: !Sub |
+      Description: !Sub "Provides a view of QS Users and their Groups"
+      Name: !Sub "quicksight_users_view"
+      QueryString: |
+        CREATE OF REPLACE VIEW quicksight_users_view AS
         SELECT
           quser.account_id,
-          quser.arn userarn,
+          quser.arn AS userarn,
           quser.username,
           quser.email,
           quser.role,
           quser.active,
           quser.principalid,
-          grp.groupname,
-        FROM "${DatabaseName}"."quicksight_groupmembership_data" grpmem
-          JOIN "${DatabaseName}"."quicksight_user_data" quser ON
-                    quser.arn=grpmem.arn
-                AND quser.account_id=grpmem.account_id
-                AND quser.namespace=grpmem.namespace
-          JOIN "${DatabaseName}"."quicksight_group_data" grp ON
+          ARRAY_AGG(grp.groupname) AS groupnames
+        FROM quicksight_groupmembership_data grpmem
+          JOIN "quicksight_user_data" quser ON
+                    quser.arn = grpmem.arn
+                AND quser.account_id = grpmem.account_id
+                AND quser.namespace = grpmem.namespace
+          JOIN quicksight_group_data grp ON
                     grp.arn = grpmem.grouparn
-                AND grp.account_id=grpmem.account_id
-                AND grp.namespace=grpmem.namespace
+                AND grp.account_id = grpmem.account_id
+                AND grp.namespace = grpmem.namespace
+        GROUP BY
+          quser.account_id,
+          quser.arn,
+          quser.username,
+          quser.email,
+          quser.role,
+          quser.active,
+          quser.principalid
