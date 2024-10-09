@@ -387,6 +387,10 @@ Resources:
                           flatten_events = jmespath.search("[].{"+', '.join([f'{k}: {v}' for k, v in mapping.items()]) + "}", all_detailed_events)
                           for flatten_event in flatten_events:
                               flatten_event = event_item_to_date(flatten_event, time_fields_to_convert)
+                              # metadata structure can vary and cause schema change issues, force to string
+                              metadata = flatten_event.get('event_metadata')
+                              metadata = json.dumps(metadata) if (not isinstance(metadata, str)) and (metadata != None) else metadata
+                              flatten_event['event_metadata'] = metadata
                               f.write(to_json(flatten_event) + '\n')
                               count += 1
                   if count > 0:

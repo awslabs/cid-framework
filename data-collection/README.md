@@ -25,14 +25,13 @@ List of modules and objects collected:
 | `compute-optimizer`          | AWS Compute Optimizer | Management Account  | Requires [Enablement of Compute Optimizer](https://aws.amazon.com/compute-optimizer/getting-started/#:~:text=Opt%20in%20for%20Compute%20Optimizer,created%20automatically%20in%20your%20account.) |
 | `trusted-advisor`            | AWS Trusted Advisor   | Linked Account      | Requires Enterpriso or OnRamp Support Level |
 | `cost-explorer-cost-anomaly` | AWS Anomalies         | Management Account  |          |
-| `cost-explorer-rightsizing`  | AWS Cost Explorer     | Management Account  | DEPRECATED. Please use `cost-optimization-hub` |
+| `cost-explorer-rightsizing`  | AWS Cost Explorer     | Management Account  | DEPRECATED. Please use `Data Exports` for `Cost Optimization Hub` |
 | `inventory`                  | Various services      | Linked Account      | Collects `Amazon OpenSearch Domains`, `Amazon ElastiCache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EC2 Instances`, `EBS Snapshot`, `RDS Snapshot`, `Lambda`, `RDS DB Clusters`, `EKS Clusters` |
 | `pricing`                    | Various services      | N/A                 | Collects pricing for `Amazon RDS`, `Amazon EC2`, `Amazon ElastiCache`, `AWS Lambda`, `Amazon OpenSearch`, `AWS Compute Savings Plan` |
 | `rds-usage`                  |  Amazon RDS           | Linked Account      | Collects CloudWatch metrics for chargeback |
 | `transit-gateway`            |  AWS Transit Gateway  | Linked Account      | Collects CloudWatch metrics for chargeback |
 | `ecs-chargeback`             |  Amazon ECS           | Linked Account      |  |
 | `backup`                     |  AWS Backup           | Management Account  | Collects Backup Restore and Copy Jobs. Requires [activation of cross-account](https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account) |
-| `cost-optimization-hub`      |  AWS Cost Optimization Hub | Management Account  | Collects Detailed Reccomendations. Requires [activation](https://aws.amazon.com/aws-cost-management/cost-optimization-hub/faqs/#:~:text=You%20can%20enable%20Cost%20Optimization%20Hub%20by%20going%20to%20the,navigation%20bar%2C%20and%20click%20Enable.)  |
 | `health-evetns`      |  AWS Health | Management Accounts  | Collect AWS Health notificaitons via AWS Organizational view  |
 | `licence-manager`      |  AWS License Manager | Management Accounts  | Collect Licences and Grants |
 | `quicksight`                | Quicksight          | Linked Account      |Collects Quicksight User and Group information for all Quicksight Namespaces|

@@ -47,6 +47,9 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
+  LambdaManageGlueTableARN:
+    Type: String
+    Description: ARN of a Lambda for Managing GlueTable
 
 Outputs:
   StepFunctionARN:
@@ -103,7 +106,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      FunctionName: !Sub "${ResourcePrefix}${CFDataName}-Lambda"
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.10
       Architectures: [x86_64]
@@ -117,55 +120,25 @@ Resources:
           import boto3
 
           BUCKET = os.environ['BUCKET_NAME']
-          ROLE_NAME = os.environ['ROLENAME']
+          ROLE_NAME = os.environ['ROLE_NAME']
           MODULE_NAME = os.environ['PREFIX']
           TMP_FILE = '/tmp/tmp.json'
-          REGIONS = ["us-east-1"]
+          REGION = "us-east-1"
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
-          # Helper Exception classes
-          class CidError(Exception):
-              def __init__(self, message="", exc=None):
-                  message = f"({type(exc).__name__}) exception. {message}" if exc else message
-                  if type(self) == CidNonCriticalError.__class__:
-                      logger.warning(message)
-                  else:
-                      logger.error(message)
-                  super().__init__(message)
-          class CidNonCriticalError(CidError):
-              def __init__(self, message="", exc=None):
-                  super().__init__(message, exc)
-          class CidCriticalError(CidError):
-              def __init__(self, message="", exc=None):
-                  super().__init__(message, exc)
-          class ClientAccessError(Exception):
-              def __init__(self, exc, role_name, account_id, service, region):
-                  message = f"({type(exc).__name__}) exception: '{exc}' when getting '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'"
-                  logger.warning(message)
-                  super().__init__(message)
-
-
-          def lambda_handler(event, context):
+          def lambda_handler(event, context): #pylint: disable=unused-argument
               logger.info(f"Incoming event: {json.dumps(event)}")
               key = "account"
-              try:
-                  account = json.loads(event[key])
-                  main(account, ROLE_NAME, MODULE_NAME, BUCKET)
-
-              except KeyError as e:
+              if key not in event:
                   logger.error(f"Lambda event parameter '{key}' not defined (fatal) in {MODULE_NAME} module. Please do not trigger this Lambda manually. "
                       f"Find the corresponding {MODULE_NAME} state machine in Step Functions and trigger from there."
                   )
                   raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter")
 
-              except CidNonCriticalError as exc:
-                  pass
-              except CidCriticalError as exc:
-                  raise exc
-              except Exception as exc:
-                  raise CidCriticalError(f"(UnhandledExceptionError) in {MODULE_NAME} module", exc)
+              account = json.loads(event[key])
+              main(account, ROLE_NAME, MODULE_NAME, BUCKET)
 
               return {
                   'statusCode': 200
@@ -188,16 +161,16 @@ Resources:
 
           def get_api_data(role_name, account_id, start_date, end_date):
               results = []
-              client = get_client_with_role(role_name, account_id, region=REGIONS[0], service="ce")
+              client = get_client_with_role(role_name, account_id, region=REGION, service="ce")
               next_token = None
-              while True:
-                  params = dict(
-                      DateInterval={
+              while True: # operation get_anomalies cannot be paginated
+                  params = {
+                      "DateInterval": {
                         'StartDate': str(start_date),
                         'EndDate': str(end_date)
                       },
-                      MaxResults=100,
-                  )
+                      "MaxResults": 100,
+                  }
                   if next_token:
                       params['NextPageToken'] = next_token
                   response = client.get_anomalies(**params)
@@ -212,16 +185,11 @@ Resources:
 
           def process_records(records, tmp_file):
               count = 0
-              try:
-                  with open(tmp_file, "w", encoding='utf-8') as f:
-                      for record in records:
-                          data = parse_record(record)
-                          f.write(to_json(data))
-                          f.write("\n")
-                          count += 1
-              except Exception as exc:
-                  raise CidCriticalError(f"Unhandled exception in process_records", exc)
-
+              with open(tmp_file, "w", encoding='utf-8') as f:
+                  for record in records:
+                      data = parse_record(record)
+                      f.write(to_json(data) + "\n")
+                      count += 1
               logger.info(f"Processed a total of {count} new records for account")
               return count
 
@@ -244,18 +212,14 @@ Resources:
                   'Service': get_value_by_path(record, 'RootCauses/0/Service'),
                   'UsageType': get_value_by_path(record, 'RootCauses/0/UsageType')
               }
-              logger.debug(f"Processing record complete")
+              logger.debug("Processing record complete")
               return result
 
 
-          def upload_to_s3(payer_id, bucket, module_name, tmp_file, sub_name="-"):
-              try:
-                  key = datetime.now().strftime(f"{module_name}/{module_name}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
-                  res = boto3.client('s3').upload_file(tmp_file, bucket, key)
-                  logger.info(f"Data stored to s3://{bucket}/{key}")
-
-              except Exception as exc:
-                  raise CidFatalError(exc)
+          def upload_to_s3(payer_id, bucket, module_name, tmp_file):
+              key = datetime.now().strftime(f"{module_name}/{module_name}-data/payer_id={payer_id}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
+              boto3.client('s3').upload_file(tmp_file, bucket, key)
+              logger.info(f"Data stored to s3://{bucket}/{key}")
 
 
           def get_value_by_path(data, path, default=None):
@@ -264,13 +228,11 @@ Resources:
               current = data
               for key in keys:
                   if isinstance(current, dict) and key in current:
-                      logger.debug(f"Found key {key}")
                       current = current.get(key, default)
                   elif isinstance(current, list) and key.isdigit():
                       try:
                           current = current[int(key)]
-                          logger.debug(f"Found index {key}")
-                      except (IndexError):
+                      except IndexError:
                           logger.debug(f"Index value {key} within path {path} is not valid in get_value_by_path for data {data}, returning default of {default}")
                           return default
                   else:
@@ -281,24 +243,20 @@ Resources:
 
           def get_client_with_role(role_name, account_id, service, region):
               logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-              try:
-                  credentials = boto3.client('sts').assume_role(
-                      RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
-                      RoleSessionName="data_collection"
-                  )['Credentials']
-                  logger.debug("Successfully assumed role, now getting client")
-                  client = boto3.client(
-                      service,
-                      region_name = region,
-                      aws_access_key_id=credentials['AccessKeyId'],
-                      aws_secret_access_key=credentials['SecretAccessKey'],
-                      aws_session_token=credentials['SessionToken'],
-                  )
-                  logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-                  return client
-
-              except Exception as exc:
-                  raise ClientAccessError(exc, role_name, account_id, service, region)
+              credentials = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              logger.debug("Successfully assumed role, now getting client")
+              client = boto3.client(
+                  service,
+                  region_name = region,
+                  aws_access_key_id=credentials['AccessKeyId'],
+                  aws_secret_access_key=credentials['SecretAccessKey'],
+                  aws_session_token=credentials['SessionToken'],
+              )
+              logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              return client
 
           def to_json(obj):
               return json.dumps(
@@ -306,7 +264,6 @@ Resources:
                   default=lambda x:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
-
 
           def calculate_dates(bucket, s3_path):
               end_date = datetime.now().date()
@@ -333,7 +290,7 @@ Resources:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
+          ROLE_NAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -351,17 +308,88 @@ Resources:
   Crawler:
     Type: AWS::Glue::Crawler
     Properties:
-      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Name: !Sub "${ResourcePrefix}${CFDataName}-Crawler"
       Role: !Ref GlueRoleARN
       DatabaseName: !Ref DatabaseName
       Targets:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+      Configuration: |
+        {
+          "Version": 1.0,
+          "Grouping": {
+            "TableGroupingPolicy": "CombineCompatibleSchemas"
+          },
+          "CrawlerOutput": {
+            "Tables": {
+              "TableThreshold": 1
+            }
+          }
+        }
+
+  ModuleGlueTable:
+    Type: Custom::ManageGlueTable
+    Properties:
+      ServiceToken: !Ref LambdaManageGlueTableARN
+      TableInput:
+        Name: cost_anomaly_data
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          compressionType: none
+        PartitionKeys:
+          - Name: payer_id
+            Type: string
+          - Name: year
+            Type: string
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+        StorageDescriptor:
+          Columns:
+            - Name: anomalyid
+              Type: string
+            - Name: anomalystartdate
+              Type: string
+            - Name: anomalyenddate
+              Type: string
+            - Name: dimensionvalue
+              Type: string
+            - Name: maximpact
+              Type: double
+            - Name: totalactualspend
+              Type: double
+            - Name: totalexpectedspend
+              Type: double
+            - Name: totalimpact
+              Type: double
+            - Name: totalimpactpercentage
+              Type: double
+            - Name: monitorarn
+              Type: string
+            - Name: linkedaccount
+              Type: string
+            - Name: linkedaccountname
+              Type: string
+            - Name: region
+              Type: string
+            - Name: service
+              Type: string
+            - Name: usagetype
+              Type: string
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            Parameters:
+              paths: anomalyid,anomalystartdate,anomalyenddate,dimensionvalue,maximpact,totalactualspend,totalexpectedspend,totalimpact,totalimpactpercentage,monitorarn,linkedaccount,linkedaccountname,region,service,usagetype
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-StateMachine"
       StateMachineType: STANDARD
       RoleArn: !Ref StepFunctionExecutionRoleARN
       DefinitionS3Location:
@@ -372,22 +400,22 @@ Resources:
         ModuleLambdaARN: !GetAtt LambdaFunction.Arn
         Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
         CollectionType: "Payers"
-        Params: ''
+        Params: ""
         Module: !Ref CFDataName
         DeployRegion: !Ref AWS::Region
         Account: !Ref AWS::AccountId
         Prefix: !Ref ResourcePrefix
 
   ModuleRefreshSchedule:
-    Type: 'AWS::Scheduler::Schedule'
+    Type: "AWS::Scheduler::Schedule"
     Properties:
-      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
-      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      Description: !Sub "Scheduler for the ODC ${CFDataName} module"
+      Name: !Sub "${ResourcePrefix}${CFDataName}-RefreshSchedule"
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       FlexibleTimeWindow:
         MaximumWindowInMinutes: 30
-        Mode: 'FLEXIBLE'
+        Mode: "FLEXIBLE"
       Target:
         Arn: !GetAtt ModuleStepFunction.Arn
         RoleArn: !Ref SchedulerExecutionRoleARN
