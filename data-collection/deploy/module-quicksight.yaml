@@ -329,8 +329,8 @@ Resources:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
-      Description: !Sub "Provides a view of QS Users and their Groups"
-      Name: !Sub "quicksight_users_view"
+      Description: "Provides a view of QS Users and their Groups"
+      Name: !Sub "${CFDataName} quicksight_users_view"
       QueryString: |
         CREATE OF REPLACE VIEW quicksight_users_view AS
         SELECT
