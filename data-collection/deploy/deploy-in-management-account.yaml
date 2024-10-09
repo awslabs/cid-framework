@@ -87,11 +87,6 @@ Parameters:
     Description: Collects Marketplace Licensing Information from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeQuickSightModule:
-    Type: String
-    Description: Collects QuickSight user, groups, access from your accounts
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
 
 Conditions:
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
@@ -100,7 +95,6 @@ Conditions:
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
-  EnableQuickSightModulePolicy: !Equals [!Ref IncludeQuickSightModule, "yes"]
   EnableLicenseManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
 
 Outputs:
@@ -352,28 +346,6 @@ Resources:
               - "license-manager:ListReceivedLicenses"
               - "license-manager:ListReceivedGrantsForOrganization"
             Resource: "*"
-      Roles:
-        - Ref: LambdaRole
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W12
-            reason: "Policy is used for scanning of a wide range of resources"
-  QuickSightReadOnlyPolicy:
-    Type: 'AWS::IAM::Policy'
-    Condition: EnableQuickSightModulePolicy
-    Properties:
-      PolicyName: QuickSightReadOnlyPolicy
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: "Allow"
-            Action:
-              - "quicksight:ListNamespaces"
-              - "quicksight:ListUsers"
-              - "quicksight:ListUserGroups"
-              - "quicksight:ListGroupMemberships"
-            Resource: "*" ## Policy is used for scanning of a wide range of resources
       Roles:
         - Ref: LambdaRole
     Metadata:
