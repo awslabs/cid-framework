@@ -133,11 +133,8 @@ Resources:
               """Starting Point for Lambda"""
               account_id = context.invoked_function_arn.split(":")[4]
               logger.debug("Collecting data for account: %s", account_id)
-              logger.info("Current Region=%s", os.environ['AWS_REGION'])
-              #Assume Quicksight Client Role Starting with the current region
               quicksight_client = boto3.client("quicksight")
-              namespaces = list(list_namespaces(account_id=account_id, quicksight=quicksight_client))
-              logger.info("processing namespaces=%s", namespaces)
+              namespaces = list_namespaces(account_id=account_id, quicksight=quicksight_client)
 
               users = []
               groups = []
