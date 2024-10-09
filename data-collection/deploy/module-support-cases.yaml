@@ -256,28 +256,17 @@ Resources:
                   boto3.client('s3').upload_file("/tmp/tmp.json", bucket, key)
                   logger.info(f"Processed a total of {index+1} support cases")
                   logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
-                  region = boto3.session.Session().region_name
                   message = {
-                      'CaseId': data['CaseId'],
-                      'DisplayId' : data['DisplayId'],
-                      'Subject' : data['Subject'],
-                      'Status' : data['Status'],
-                      'ServiceCode' : data['ServiceCode'],
-                      'CategoryCode' : data['CategoryCode'],
-                      'SeverityCode' : data['SeverityCode'],
-                      'SubmittedBy' : data['SubmittedBy'],
-                      'TimeCreated' : data['TimeCreated'],
-                      'CCEmailAddresses' : data['CCEmailAddresses'],
-                      'Language' : data['Language']
+                      'Bucket': bucket,
+                      'Key': key
                   }
                   eventbridge = boto3.client('events')
-                  case_id = message['CaseId']
                   response = eventbridge.put_events(
                       Entries=[
                           {
-                              'Source': 'supportcasesradar.cloudintelligence.aws',
+                              'Source': 'supportcases.datacollection.cid.aws',
                               'DetailType': 'Event',
-                              'Detail': json.dumps(data)
+                              'Detail': json.dumps(message)
                           }
                       ]
                   )
