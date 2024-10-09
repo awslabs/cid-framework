@@ -111,7 +111,7 @@ Mappings:
   StepFunctionCode:
     main-v2:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v2.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
-    awsfeeds-v1:    {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
+    standalone-v1:  {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
 
 Parameters:
   DestinationBucket:
@@ -1179,7 +1179,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, awsfeeds-v1, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v1, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
@@ -1232,14 +1232,12 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v2, TemplatePath]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, standalone-v1, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 

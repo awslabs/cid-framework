@@ -1,5 +1,5 @@
 {
-  "Comment": "A description of my state machine",
+  "Comment": "Execute Lambda and Crawler in standalone mode",
   "StartAt": "Lambda Invoke",
   "States": {
     "Lambda Invoke": {

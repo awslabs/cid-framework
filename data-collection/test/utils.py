@@ -195,7 +195,6 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeQuickSightModule',         'ParameterValue': "yes"},
        ]
     )
 
@@ -422,5 +421,5 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
 
 def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
-    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
+    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=True)
     trigger_update(account_id=account_id)
