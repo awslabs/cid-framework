@@ -47,10 +47,6 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-  CasesHistoryInDays:
-    Type: String
-    Description: AWS Support Cases History in Days to pull in. Defaults to 90
-    Default: 90
 
 Outputs:
   StepFunctionARN:
@@ -131,11 +127,8 @@ Resources:
           import boto3
 
           BUCKET = os.environ['BUCKET_NAME']
-          CASES_HISTORY_IN_DAYS = os.environ.get('CASES_HISTORY_IN_DAYS', '90')
           ROLE_NAME = os.environ['ROLE_NAME']
-          MODULE_NAME = os.environ['PREFIX']
-          LAST_REFRESH_FILE = "status.json"
-          REGION = "us-east-1"
+          MODULE_NAME = os.environ['MODULE_NAME']
           RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
 
           logger = logging.getLogger(__name__)
@@ -152,16 +145,14 @@ Resources:
 
               account = json.loads(event[key])
               main(account, ROLE_NAME, MODULE_NAME, BUCKET)
-
               return {
                   'statusCode': 200
               }
 
           def get_client_with_role(role_name, account_id, service, region):
               logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-              partition = boto3.session.Session().get_partition_for_region(region_name=region)
               credentials = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{role_name}",
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
                   RoleSessionName="data_collection"
               )['Credentials']
               logger.debug("Successfully assumed role, now getting client")
@@ -175,154 +166,12 @@ Resources:
               logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
               return client
 
-          def get_value_by_path(data, path, default=None):
-              logger.debug(f"Traversing for path {path}")
-              keys = path.split("/")
-              current = data
-              for key in keys:
-                  if isinstance(current, dict) and key in current:
-                      current = current.get(key, default)
-                  elif isinstance(current, list) and key.isdigit():
-                      try:
-                          current = current[int(key)]
-                      except IndexError:
-                          logger.debug(f"Index value {key} within path {path} is not valid in get_value_by_path for data {data}, returning default of {default}")
-                          return default
-                  else:
-                      logger.debug(f"Key value {key} within path {path} is not valid in get_value_by_path for data {data}, returning default of {default}")
-                      return default
-              return current
-
-          def parse_support_cases_data(record):
-              logger.debug(f"Processing record {record}")
-              result = {
-                  'CaseId': get_value_by_path(record, 'caseId'),
-                  'DisplayId': get_value_by_path(record, 'displayId'),
-                  'Subject': get_value_by_path(record, 'subject'),
-                  'Status': get_value_by_path(record, 'status'),
-                  'ServiceCode': get_value_by_path(record, 'serviceCode'),
-                  'CategoryCode': get_value_by_path(record, 'categoryCode'),
-                  'SeverityCode': get_value_by_path(record, 'severityCode'),
-                  'SubmittedBy': get_value_by_path(record, 'submittedBy'),
-                  'TimeCreated': get_value_by_path(record, 'timeCreated'),
-                  'CCEmailAddresses': get_value_by_path(record, 'ccEmailAddresses'),
-                  'Language': get_value_by_path(record, 'language'),
-                  'Summary': ''
-              }
-              logger.debug("Processing record complete")
-              return result
-
-          def parse_support_cases_communications(record):
-              logger.debug(f"Processing record {record}")
-              result = {
-                  'CaseId': get_value_by_path(record, 'caseId'),
-                  'Body': get_value_by_path(record, 'body'),
-                  'SubmittedBy': get_value_by_path(record, 'submittedBy'),
-                  'TimeCreated': get_value_by_path(record, 'timeCreated'),
-                  'AttachmentSet': get_value_by_path(record, 'attachmentSet/0'),
-              }
-              logger.debug("Processing record complete")
-              return result
-
           def to_json(obj):
               return json.dumps(
                   obj,
                   default=lambda x:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
-
-          def process_support_cases_data(module_name, payer_id, account_id, records, bucket, client):
-              timestamp_snap = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-              for record in records['cases']:
-                  data = parse_support_cases_data(record)
-                  file_name = f"{data['CaseId']}.json"
-                  with open(f"/tmp/{file_name}", "w", encoding='utf-8') as f:
-                      f.write(to_json(data))
-                  key = datetime.strptime(data["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ').strftime(
-                      f"{module_name}/" +
-                      f"{module_name}-data/" +
-                      f"payer_id={payer_id}/" +
-                      f"account_id={account_id}/" +
-                      f"year=%Y/month=%m/day=%d/{data['CaseId']}.json"
-                  )
-                  boto3.client('s3').upload_file(f"/tmp/{file_name}", bucket, key)
-                  logger.info(f"Data stored to s3://{bucket}/{key}")
-                  logger.info(f"Retrieving communications for {data['CaseId']}...")
-                  communication_iterator = (
-                      client
-                      .get_paginator('describe_communications')
-                      .paginate(caseId=data['CaseId'])
-                      .search("""communications[].{
-                          CaseId: caseId,
-                          Body: body,
-                          SubmittedBy: submittedBy,
-                          TimeCreated: timeCreated,
-                          AttachmentSet: attachmentSet[0]
-                          }""")
-                  )
-                  for communication in communication_iterator:
-                      with open(f"/tmp/{file_name}", "w", encoding='utf-8') as f:
-                          f.write(to_json(communication) + '\n') 
-                      key = datetime.strptime(communication["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ').strftime(
-                          f"{module_name}/" +
-                          f"{module_name}-communications/" +
-                          f"payer_id={payer_id}/" +
-                          f"account_id={account_id}/" +
-                          f"year=%Y/month=%m/day=%d/hour=%H/min=%M/{communication['CaseId']}.json"
-                      )
-                      boto3.client('s3').upload_file(f"/tmp/{file_name}", bucket, key)
-                  logger.info(f"finished processing the support case communications associated with {communication['CaseId']}.")
-                  logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
-                  queue_url = f"https://sqs.{REGION}.amazonaws.com/{payer_id}/{RESOURCE_PREFIX}SupportCaseSummarizationQueue"
-                  message = {
-                      'CaseId': data['CaseId'],
-                      'Timestamp': timestamp_snap
-                  }
-                  notify_case_summarization_queue(queue_url, json.dumps(message))
-              logger.info("Updating support cases retrieval timestamp ...")
-              status_key = \
-                  f"{module_name}/" + \
-                  f"{module_name}-status/" + \
-                  f"payer_id={payer_id}/" + \
-                  f"account_id={account_id}/" + \
-                  LAST_REFRESH_FILE
-              timestamp = {
-                  "LastFetch": timestamp_snap
-              }
-              with open(f"/tmp/{LAST_REFRESH_FILE}", "w", encoding='utf-8') as f:
-                  f.write(to_json(timestamp))
-              logger.info(f"Updating support cases last fetch timestamp ...")
-              boto3.client('s3').upload_file(f"/tmp/{LAST_REFRESH_FILE}", bucket, status_key)
-              logger.info(f"Support cases last fetch timestamp updated !")
-              logger.info(f"Processed a total of {len(records)} support cases")
-              return None
-
-          def is_to_be_refreshed(bucket_name, object_key):
-              s3_client = boto3.client('s3')
-              try:
-                  # Retrieve the status file from the S3 bucket
-                  response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
-                  # Read the timestamp from the status file
-                  timestamp_str = json.loads(response['Body'].read().decode('utf-8'))["LastFetch"]
-                  # Parse the timestamp
-                  timestamp = datetime.strptime(timestamp_str, '%Y-%m-%d %H:%M:%S.%f')
-                  logger.info(f"LastFetch from {object_key} is {timestamp_str}")
-                  # Get the current time
-                  current_time = datetime.now()
-                  # Calculate the time difference
-                  time_difference = current_time - timestamp
-                  logger.info(f"Time difference between now and LastFetch is {time_difference}")
-                          
-                  return time_difference > timedelta(hours=1)
-              
-              except s3_client.exceptions.NoSuchKey:
-                  return True
-              except ValueError:
-                  print(f"Error: Unable to parse timestamp from object content")
-              except Exception as e:
-                  print(f"Error: {str(e)}")
-              
-              return None, None
 
           def notify_case_summarization_queue(queue_url, message_body):
               # Create an SQS client
@@ -347,35 +196,103 @@ Resources:
                       return None
 
           def main(account, role_name, module_name, bucket):
-              end_date = datetime.now().date()
-              start_date = datetime.now().date() - timedelta(days=int(CASES_HISTORY_IN_DAYS))
               account_id = account["account_id"]
               payer_id = account["payer_id"]
-              file_name = f"{module_name}/" + \
-                  f"{module_name}-status/" + \
-                  f"payer_id={payer_id}/" + \
-                  f"account_id={account_id}/" + \
-                  LAST_REFRESH_FILE
-              if is_to_be_refreshed(bucket, file_name):
-                  logger.info(f"Support cases last fetch timestamp is greater than 1h from now, refreshing data ...")
-                  client = get_client_with_role(role_name, account_id, region=REGION, service="support")
-                  case_pages = client.get_paginator('describe_cases').paginate(
-                      afterTime = str(start_date),
-                      beforeTime = str(end_date),
-                      includeCommunications = False,
-                      includeResolvedCases = True,
-                      PaginationConfig = {
-                          'PageSize': 100
-                      }
+              support = get_client_with_role(role_name, account_id, region="us-east-1", service="support")
+              s3 = boto3.client('s3')
+
+              default_start_date = (datetime.now().date() - timedelta(days=365)).strftime('%Y-%m-%d') # Case communications are available for 12 months after creation.
+
+              status = {"last_read": default_start_date, "account_id": account_id, "last_summary": None}
+              status_key = f"{module_name}/{module_name}-status/payer_id={payer_id}/{account_id}.json"
+              try:
+                  status = json.loads(
+                      s3.get_object(
+                          Bucket=bucket,
+                          Key=status_key,
+                      )['Body'].read().decode('utf-8')
                   )
-                  record_count = 0
-                  for page in case_pages:
-                      if len(page["cases"]) > 0:
-                          process_support_cases_data(module_name, payer_id, account_id, page, bucket, client)
-                          record_count += len(page["cases"])
-                  logger.info(f"API results total {record_count}")
-              else:
-                  logger.info(f"Support cases data were fetched less than 1h from now, skipping data refresh.")
+              except s3.exceptions.NoSuchKey as exc:
+                  if exc.response['Error']['Code'] != 'NoSuchKey': # this is fine if there no status file
+                      raise
+
+              case_iterator = (
+                  support
+                  .get_paginator('describe_cases')
+                  .paginate(
+                      afterTime=status["last_read"],
+                      includeCommunications=False,
+                      includeResolvedCases=True,
+                  )
+                  .search("""cases[].{
+                      CaseId: caseId,
+                      DisplayId: displayId,
+                      Subject: subject,
+                      Status: status,
+                      ServiceCode: serviceCode,
+                      CategoryCode: categoryCode,
+                      SeverityCode: severityCode,
+                      SubmittedBy: submittedBy,
+                      TimeCreated: timeCreated,
+                      CCEmailAddresses: ccEmailAddresses,
+                      Language: language
+                  }""")
+              )
+
+              for index, data in enumerate(case_iterator):
+                  case_id = data['CaseId']
+                  case_date = datetime.strptime(data["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ')
+                  with open("/tmp/tmp.json", "w", encoding='utf-8') as f:
+                      f.write(to_json(data)) # single line per file
+                  key = case_date.strftime(
+                      f"{module_name}/" +
+                      f"{module_name}-data/" +
+                      f"payer_id={payer_id}/" +
+                      f"account_id={account_id}/" +
+                      f"year=%Y/month=%m/day=%d/{case_id}.json"
+                  )
+                  s3.upload_file("/tmp/tmp.json", bucket, key)
+                  logger.debug(f"Data stored to s3://{bucket}/{key}")
+
+                  communication_iterator = (
+                      support
+                      .get_paginator('describe_communications')
+                      .paginate(caseId=case_id)
+                      .search("""communications[].{
+                          CaseId: caseId,
+                          Body: body,
+                          SubmittedBy: submittedBy,
+                          TimeCreated: timeCreated,
+                          AttachmentSet: attachmentSet[0]
+                      }""")
+                  )
+                  with open("/tmp/tmp.json", "w", encoding='utf-8') as f:
+                      for communication in communication_iterator:
+                          f.write(to_json(communication) + '\n')
+                  key = case_date.strftime(
+                      f"{module_name}/" +
+                      f"{module_name}-communications/" +
+                      f"payer_id={payer_id}/" +
+                      f"account_id={account_id}/" +
+                      f"year=%Y/month=%m/day=%d/{case_id}.json"
+                  )
+                  boto3.client('s3').upload_file("/tmp/tmp.json", bucket, key)
+                  logger.info(f"Processed a total of {index+1} support cases")
+                  logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
+                  region = boto3.session.Session().region_name
+                  queue_url = f"https://sqs.{region}.amazonaws.com/{payer_id}/{RESOURCE_PREFIX}SupportCaseSummarizationQueue"
+                  message = {
+                      'CaseId': data['CaseId']
+                  }
+                  notify_case_summarization_queue(queue_url, json.dumps(message))
+
+              status["last_read"] = datetime.now().strftime('%Y-%m-%d')
+              s3.put_object(
+                  Bucket=bucket,
+                  Key=status_key,
+                  Body=json.dumps(status),
+                  ContentType='application/json',
+              )
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
@@ -383,10 +300,9 @@ Resources:
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
-          PREFIX: !Ref CFDataName
           ROLE_NAME: !Ref MultiAccountRoleName
+          MODULE_NAME: !Ref CFDataName
           RESOURCE_PREFIX: !Ref ResourcePrefix
-          CASES_HISTORY_IN_DAYS: !Ref CasesHistoryInDays
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -411,6 +327,7 @@ Resources:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-communications/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-status/"
       Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
 
   ModuleStepFunction:

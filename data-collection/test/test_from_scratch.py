@@ -64,6 +64,10 @@ def test_support_cases_communications(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_communications" LIMIT 10;')
     assert len(data) > 0, 'support_cases_communications is empty'
 
+def test_support_cases_status(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_status" LIMIT 10;')
+    assert len(data) > 0, 'test_support_cases_status is empty'
+
 def test_ecs_chargeback_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."ecs_chargeback_data" LIMIT 10;')
     assert len(data) > 0, 'ecs_chargeback_data is empty'
