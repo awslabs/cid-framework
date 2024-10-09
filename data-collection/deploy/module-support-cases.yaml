@@ -103,6 +103,7 @@ Resources:
                   - "events:PutEvents"
                 Resource:
                   - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
+
     Metadata:
       cfn_nag:
         rules_to_suppress:
