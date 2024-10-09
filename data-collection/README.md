@@ -24,6 +24,7 @@ List of modules and objects collected:
 | `budgets`                    | AWS Budgest           | Linked Account      |          |
 | `compute-optimizer`          | AWS Compute Optimizer | Management Account  | Requires [Enablement of Compute Optimizer](https://aws.amazon.com/compute-optimizer/getting-started/#:~:text=Opt%20in%20for%20Compute%20Optimizer,created%20automatically%20in%20your%20account.) |
 | `trusted-advisor`            | AWS Trusted Advisor   | Linked Account      | Requires Enterpriso or OnRamp Support Level |
+| `support-cases`              | AWS Support           | Linked Account      | Requires Business, Enterprise On-Ramp, or Enterprise Support plan |
 | `cost-explorer-cost-anomaly` | AWS Anomalies         | Management Account  |          |
 | `cost-explorer-rightsizing`  | AWS Cost Explorer     | Management Account  | DEPRECATED. Please use `Data Exports` for `Cost Optimization Hub` |
 | `inventory`                  | Various services      | Linked Account      | Collects `Amazon OpenSearch Domains`, `Amazon ElastiCache Clusters`, `RDS DB Instances`, `EBS Volumes`, `AMI`, `EC2 Instances`, `EBS Snapshot`, `RDS Snapshot`, `Lambda`, `RDS DB Clusters`, `EKS Clusters` |
