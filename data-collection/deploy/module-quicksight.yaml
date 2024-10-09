@@ -182,9 +182,12 @@ Resources:
           def list_namespaces(account_id, quicksight):
               """Listing of Namespaces"""
               try:
-                  return list(quicksight.get_paginator('list_namespaces')
-                              .paginate(AwsAccountId=account_id)
-                              .search('Namespaces'))
+                  return (
+                      quicksight
+                          .get_paginator('list_namespaces')
+                          .paginate(AwsAccountId=account_id)
+                          .search('Namespaces')
+                  )
               except quicksight.exceptions.ResourceNotFoundException as e:
                   logger.debug("No Namespace data found. Error: %s", e)
               except Exception as e:
@@ -194,7 +197,7 @@ Resources:
           def list_users(account_id, namespace, quicksight):
               """Listing of Users under Namespace in the Account"""
               try:
-                  return list(
+                  return (
                       quicksight
                           .get_paginator('list_users')
                           .paginate(AwsAccountId=account_id, Namespace=namespace)
@@ -209,7 +212,7 @@ Resources:
           def list_groups(account_id, namespace, quicksight):
               """Listing of Groups under Namespace in the Account"""
               try:
-                  return list(
+                  return (
                       quicksight
                           .get_paginator('list_groups')
                           .paginate(AwsAccountId=account_id, Namespace=namespace)
@@ -224,7 +227,7 @@ Resources:
           def list_group_memberships(account_id, namespace, group_name, quicksight):
               """Listing User & Group mapping"""
               try:
-                  return list(
+                  return (
                       quicksight
                         .get_paginator('list_group_memberships')
                         .paginate(AwsAccountId=account_id, Namespace=namespace, GroupName=group_name)
