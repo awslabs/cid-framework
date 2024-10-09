@@ -192,7 +192,6 @@ Resources:
                   
                   if error_code == 'AWS.SimpleQueueService.NonExistentQueue': 
                       logger.info(f"Support case id ({case_id}) couldn't be sent in queue {queue_url} for summarization, as queue doesn't exist. This can be the case if you do not want to summarize the support cases data. Gracefully quitting...")
-                      pass
                       return None
 
           def main(account, role_name, module_name, bucket):
