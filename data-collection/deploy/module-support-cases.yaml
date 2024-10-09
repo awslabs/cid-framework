@@ -282,9 +282,9 @@ Resources:
                   )
                   failed_entry_count = response['FailedEntryCount']
                   if failed_entry_count > 0:
-                      logger.info(f"Failed to send support case event for {case_id} to Eventbridge Default Bus.")
+                      logger.info(f"Failed to send support case event for {case_id} to Eventbridge default bus.")
                   else:
-                      logger.info(f"Support case event for {case_id} successfully sent Eventbridge Default Bus and has Event ID: {response['Entries'][0]['EventId']}")
+                      logger.info(f"Support case event for {case_id} successfully sent to Eventbridge default bus and has Event ID: {response['Entries'][0]['EventId']}")
 
               status["last_read"] = datetime.now().strftime('%Y-%m-%d')
               s3.put_object(
