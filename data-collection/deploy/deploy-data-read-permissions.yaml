@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.3.2
+Description: CID Data Collection - All-in-One for Management Account v3.3.3
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -20,6 +20,7 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
+          - IncludeSupportCasesModule
           - IncludeECSChargebackModule
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
@@ -50,6 +51,8 @@ Metadata:
         default: "Include AWS Compute Optimizer Data Collection Module"
       IncludeCostAnomalyModule:
         default: "Include Cost Anomalies Data Collection Module"
+      IncludeSupportCasesModule:
+        default: "Include Support Cases Data Collection Module"
       IncludeECSChargebackModule:
         default: "Include ECS Chargeback Data Collection Module"
       IncludeInventoryCollectorModule:
@@ -113,6 +116,11 @@ Parameters:
   IncludeCostAnomalyModule:
     Type: String
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
+  IncludeSupportCasesModule:
+    Type: String
+    Description: "Collects AWS Support Cases data"
     AllowedValues: ['yes', 'no']
     Default: 'no'
   IncludeECSChargebackModule:
@@ -180,6 +188,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
+        IncludeSupportCasesModule: !Ref IncludeSupportCasesModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
@@ -194,6 +203,7 @@ Resources:
         MultiAccountRoleName: !Ref MultiAccountRoleName
         ResourcePrefix: !Ref ResourcePrefix
         IncludeTAModule: !Ref IncludeTAModule
+        IncludeSupportCasesModule: !Ref IncludeSupportCasesModule
         IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
@@ -203,7 +213,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts v3.3.2"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.3.3"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
@@ -223,6 +233,8 @@ Resources:
           ParameterValue: !Ref ResourcePrefix
         - ParameterKey: IncludeTAModule
           ParameterValue: !Ref IncludeTAModule
+        - ParameterKey: IncludeSupportCasesModule
+          ParameterValue: !Ref IncludeSupportCasesModule
         - ParameterKey: IncludeInventoryCollectorModule
           ParameterValue: !Ref IncludeInventoryCollectorModule
         - ParameterKey: IncludeECSChargebackModule

@@ -8,11 +8,11 @@ Parameters:
     Default: optimization_data
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: Name of the S3 Bucket that exists or needs to be created to hold Pricing information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
   DestinationBucketARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold Pricing information
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
@@ -386,7 +386,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "S3-Access"
@@ -402,7 +402,7 @@ Resources:
                 Action:
                   - "s3:GetObject"
                 Resource:
-                  - !Sub 'arn:aws:s3:::${CodeBucket}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${CodeBucket}/*'
         - PolicyName: "AllowReadRegionsSSM"
           PolicyDocument:
             Version: "2012-10-17"
@@ -412,8 +412,8 @@ Resources:
                   - "ssm:GetParameter"
                   - "ssm:GetParametersByPath"
                 Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*"
-                  - !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions/*"
+                  - !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/global-infrastructure/regions"
 
     Metadata:
       cfn_nag:
@@ -640,7 +640,7 @@ Resources:
             MaximumWindowInMinutes: 30
             Mode: 'FLEXIBLE'
           Target:
-            Arn: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
+            Arn: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-${AwsService}-StateMachine'
             RoleArn: !Ref SchedulerExecutionRoleARN
 
       'ModuleStepFunction${AwsService}':
@@ -656,13 +656,13 @@ Resources:
               "States": {
                 "PricingCollectorInvoke": {
                   "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
+                  "Resource": "arn:${Partition}:states:::lambda:invoke",
                   "Parameters": {
                     "Payload": {
                       "service": "${Service}",
                       "path": "${Path}"
                     },
-                    "FunctionName": "arn:aws:lambda:${DeployRegion}:${Account}:function:${Prefix}pricing-Lambda"
+                    "FunctionName": "arn:${Partition}:lambda:${DeployRegion}:${Account}:function:${Prefix}pricing-Lambda"
                   },
                   "Retry": [
                     {
@@ -681,9 +681,9 @@ Resources:
                 },
                 "CrawlerStepFunctionStartExecution": {
                   "Type": "Task",
-                  "Resource": "arn:aws:states:::states:startExecution.sync:2",
+                  "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
                   "Parameters": {
-                    "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                    "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
                     "Input": {
                       "crawlers": ${Crawlers}
                     }
@@ -701,6 +701,7 @@ Resources:
             Module: !Ref CFDataName
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
+            Partition: !Ref AWS::Partition
         Metadata:
           cfn-lint:
             config:

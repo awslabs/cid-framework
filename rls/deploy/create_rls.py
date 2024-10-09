@@ -22,7 +22,8 @@ CID_FULL_ACCESS_GROUP = os_environ['CID_FULL_ACCESS_GROUP'].strip() if 'CID_FULL
 
 def assume_management_role(payer_id, region):
     role_name = os_environ["MANAGEMENTROLENAME"]
-    management_role_arn = f"arn:aws:iam::{payer_id}:role/{role_name}"
+    partition = boto3.session.Session().get_partition_for_region(region_name=region)
+    management_role_arn = f"arn:{partition}:iam::{payer_id}:role/{role_name}"
     sts_connection = boto3.client('sts')
     acct_b = sts_connection.assume_role(
         RoleArn=management_role_arn,
