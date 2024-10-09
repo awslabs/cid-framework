@@ -94,15 +94,15 @@ Resources:
                   - "s3:ListBucket"
                 Resource:
                   - !Sub "${DestinationBucketARN}"
-        - PolicyName: "SQS-Access"
+        - PolicyName: "Eventbridge-Access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
                 Action:
-                  - "sqs:SendMessage"
+                  - "events:PutEvents"
                 Resource:
-                  - !Sub "arn:${AWS::Partition}:sqs:*:${AWS::AccountId}:*"
+                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -122,14 +122,12 @@ Resources:
           import json
           import logging
           from datetime import date, timedelta, datetime
-          from botocore.exceptions import ClientError
 
           import boto3
 
           BUCKET = os.environ['BUCKET_NAME']
           ROLE_NAME = os.environ['ROLE_NAME']
           MODULE_NAME = os.environ['MODULE_NAME']
-          RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -172,27 +170,6 @@ Resources:
                   default=lambda x:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
-
-          def notify_case_summarization_queue(queue_url, message_body):
-              # Create an SQS client
-              sqs_client = boto3.client('sqs')
-              try:
-                  message = json.loads(message_body)
-                  case_id = message['CaseId']
-                  # Send message to Case Summarization SQS queue
-                  response = sqs_client.send_message(
-                      QueueUrl=queue_url,
-                      MessageBody=message_body
-                  )
-                  logger.info(f"Support case id ({case_id}) successfully sent in queue to {queue_url} for summarization and has MessageId {response['MessageId']}.")
-                  return None
-              
-              except ClientError as e:
-                  error_code = e.response['Error']['Code']
-                  
-                  if error_code == 'AWS.SimpleQueueService.NonExistentQueue': 
-                      logger.info(f"Support case id ({case_id}) couldn't be sent in queue {queue_url} for summarization, as queue doesn't exist. This can be the case if you do not want to summarize the support cases data. Gracefully quitting...")
-                      return None
 
           def main(account, role_name, module_name, bucket):
               account_id = account["account_id"]
@@ -279,11 +256,35 @@ Resources:
                   logger.info(f"Processed a total of {index+1} support cases")
                   logger.info(f"Sending Support case {data['CaseId']} for summarization ...")
                   region = boto3.session.Session().region_name
-                  queue_url = f"https://sqs.{region}.amazonaws.com/{payer_id}/{RESOURCE_PREFIX}SupportCaseSummarizationQueue"
                   message = {
-                      'CaseId': data['CaseId']
+                      'CaseId': data['CaseId'],
+                      'DisplayId' : data['DisplayId'],
+                      'Subject' : data['Subject'],
+                      'Status' : data['Status'],
+                      'ServiceCode' : data['ServiceCode'],
+                      'CategoryCode' : data['CategoryCode'],
+                      'SeverityCode' : data['SeverityCode'],
+                      'SubmittedBy' : data['SubmittedBy'],
+                      'TimeCreated' : data['TimeCreated'],
+                      'CCEmailAddresses' : data['CCEmailAddresses'],
+                      'Language' : data['Language']
                   }
-                  notify_case_summarization_queue(queue_url, json.dumps(message))
+                  eventbridge = boto3.client('events')
+                  case_id = message['CaseId']
+                  response = eventbridge.put_events(
+                      Entries=[
+                          {
+                              'Source': 'supportcasesradar.cloudintelligence.aws',
+                              'DetailType': 'Event',
+                              'Detail': json.dumps(data)
+                          }
+                      ]
+                  )
+                  failed_entry_count = response['FailedEntryCount']
+                  if failed_entry_count > 0:
+                      logger.info(f"Failed to send support case event for {case_id} to Eventbridge Default Bus.")
+                  else:
+                      logger.info(f"Support case event for {case_id} successfully sent Eventbridge Default Bus and has Event ID: {response['Entries'][0]['EventId']}")
 
               status["last_read"] = datetime.now().strftime('%Y-%m-%d')
               s3.put_object(
@@ -301,7 +302,6 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           ROLE_NAME: !Ref MultiAccountRoleName
           MODULE_NAME: !Ref CFDataName
-          RESOURCE_PREFIX: !Ref ResourcePrefix
     Metadata:
       cfn_nag:
         rules_to_suppress:
