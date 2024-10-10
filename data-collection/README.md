@@ -35,6 +35,7 @@ List of modules and objects collected:
 | `backup`                     |  AWS Backup           | Management Account  | Collects Backup Restore and Copy Jobs. Requires [activation of cross-account](https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account) |
 | `health-events`      |  AWS Health | Management Accounts  | Collect AWS Health notificaitons via AWS Organizational view  |
 | `licence-manager`      |  AWS License Manager | Management Accounts  | Collect Licences and Grants |
+| `SecurityHub-events`      |  AWS Security Hub | Management Account  | Collect AWS Security Hub Events via Event Bus from a single AWS organization |
 
 
 
