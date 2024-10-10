@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Retrieve AWS Security Hub details across AWS organizations v0.0.2
+Description: Retrieve AWS Security Hub details across AWS organizations v0.0.3
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -445,10 +445,7 @@ Resources:
                       decoded_data = base64.b64decode(data).decode('utf-8')
                       logger.debug(f"Input record: {json.dumps(decoded_data)}")
                       renamed_payload = rename_keys(json.loads(decoded_data))
-                      if isinstance(renamed_payload, list):
-                          flattened_data = '\n'.join([json.dumps(item, separators=separators) for item in renamed_payload])
-                      else: # not expecting single records, but just in case
-                          flattened_data = json.dumps(renamed_payload, separators=separators)
+                      flattened_data = json.dumps(renamed_payload, separators=separators) + '\n'
                       transformed_record = {
                           'recordId': record['recordId'],
                           'result': 'Ok',
