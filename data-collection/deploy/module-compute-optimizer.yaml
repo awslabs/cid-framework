@@ -345,7 +345,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Environment:
         Variables:
@@ -361,14 +361,7 @@ Resources:
           import logging
           from datetime import date
           from functools import partial
-
-          # update boto3 version
-          import sys
-          from pip._internal import main
-          main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
-          sys.path.insert(0,'/tmp/')
-
-          import boto3 #pylint: disable=wrong-import-position
+          import boto3
 
           BUCKET_PREFIX = os.environ["BUCKET_PREFIX"]
           INCLUDE_MEMBER_ACCOUNTS = os.environ.get("INCLUDE_MEMBER_ACCOUNTS", 'yes').lower() == 'yes'
