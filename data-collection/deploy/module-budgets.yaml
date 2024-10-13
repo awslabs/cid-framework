@@ -111,13 +111,8 @@ Resources:
           import datetime
           from json import JSONEncoder
           import sys
-
-          # update boto3 for list_tags_for_resource api
-          from pip._internal import main
-          main(['install', '-I', '-q', 'boto3', '--target', '/tmp/', '--no-cache-dir', '--disable-pip-version-check'])
-          sys.path.insert(0,'/tmp/')
-
-          import boto3 #pylint: disable=C0413
+          
+          import boto3
 
           BUCKET = os.environ["BUCKET_NAME"]
           PREFIX = os.environ["PREFIX"]
