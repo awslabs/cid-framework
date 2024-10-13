@@ -142,7 +142,7 @@ Resources:
 
               for namespace in namespaces:
                   logger.debug(f"processing namespace={namespace}")
-                  capacity_region = namespaces[0]['CapacityRegion']
+                  capacity_region = namespace['CapacityRegion']
                   if quicksight_client.meta.region_name != capacity_region:
                       logger.debug("Switching to %s", capacity_region)
                       quicksight_client = boto3.client("quicksight", region_name=capacity_region)
