@@ -162,12 +162,12 @@ Resources:
                   groups.extend(namespace_groups)
 
                   for group in namespace_groups:
-                      group_members = list_group_memberships(
+                      group_members = list(list_group_memberships(
                           account_id=account_id,
                           namespace=namespace['Name'],
                           group_name=group['GroupName'],
                           quicksight=quicksight_client,
-                      )
+                      ))
                       for group_member in group_members:
                           group_member["GroupName"] = group['GroupName']
                           group_member["GroupArn"] = group['Arn']
