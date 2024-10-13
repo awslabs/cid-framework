@@ -345,7 +345,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: "LambdaFunction to start ComputeOptimizer export jobs"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Environment:
         Variables:
