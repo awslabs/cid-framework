@@ -89,5 +89,5 @@
         "End": true
       }
     },
-    "TimeoutSeconds": 1200
+    "TimeoutSeconds": 10800
   }
