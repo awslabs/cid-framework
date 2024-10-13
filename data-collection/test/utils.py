@@ -354,6 +354,7 @@ def trigger_update(account_id):
         f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
         f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}cost-anomaly-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}support-cases-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}cost-explorer-rightsizing-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}organizations-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}compute-optimizer-StateMachine",
@@ -374,6 +375,7 @@ def trigger_update(account_id):
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}license-manager-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}quicksight-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []
