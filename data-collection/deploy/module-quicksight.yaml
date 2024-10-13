@@ -154,11 +154,11 @@ Resources:
                   )
                   users.extend(namespace_users)
 
-                  namespace_groups = list_groups(
+                  namespace_groups = list(list_groups(
                       account_id=account_id,
                       namespace=namespace['Name'],
                       quicksight=quicksight_client
-                  )
+                  ))
                   groups.extend(namespace_groups)
 
                   for group in namespace_groups:
