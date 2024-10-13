@@ -75,7 +75,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "AssumeMultiAccountRole"
@@ -84,7 +84,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
         - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -236,7 +236,8 @@ Resources:
                   store_data_to_s3(rds, region, service, path, rds['DBInstanceIdentifier'], filename, accountID, payer_id)
 
           def assume_role(account_id, service, region):
-              role_arn = f"arn:aws:iam::{account_id}:role/{ROLE_NAME}"
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
+              role_arn = f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}"
               cred = boto3.client('sts', region_name = region).assume_role(
                   RoleArn=role_arn,
                   RoleSessionName="data_collection"

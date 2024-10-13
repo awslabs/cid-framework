@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.2.0
+Description: CID Data Collection - All-in-One for Management Account v3.3.3
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -20,7 +20,7 @@ Metadata:
           - IncludeBudgetsModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
-          - IncludeCostOptimizationHubModule
+          - IncludeSupportCasesModule
           - IncludeECSChargebackModule
           - IncludeHealthEventsModule
           - IncludeInventoryCollectorModule
@@ -50,6 +50,8 @@ Metadata:
         default: "Include AWS Compute Optimizer Data Collection Module"
       IncludeCostAnomalyModule:
         default: "Include Cost Anomalies Data Collection Module"
+      IncludeSupportCasesModule:
+        default: "Include Support Cases Data Collection Module"
       IncludeECSChargebackModule:
         default: "Include ECS Chargeback Data Collection Module"
       IncludeInventoryCollectorModule:
@@ -64,8 +66,6 @@ Metadata:
         default: "Include AWS TransitGateway Collection Module"
       IncludeBackupModule:
         default: "Include AWS Backup Collection Module"
-      IncludeCostOptimizationHubModule:
-        default: "Include Cost Optimization Hub Module"
       IncludeHealthEventsModule:
         default: "Include AWS Health Events Module"
       IncludeLicenseManagerModule:
@@ -115,6 +115,11 @@ Parameters:
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeSupportCasesModule:
+    Type: String
+    Description: "Collects AWS Support Cases data"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeECSChargebackModule:
     Type: String
     Description: Collects data which shows costs associated with ECS Tasks leveraging EC2 instances within a Cluster
@@ -150,11 +155,6 @@ Parameters:
     Description: Collects AWS Backup events from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeCostOptimizationHubModule:
-    Type: String
-    Description: Collects CostOptimizationHub Recommendations from your accounts
-    AllowedValues: ['yes', 'no']
-    Default: 'no'
   IncludeHealthEventsModule:
     Type: String
     Description: Collects AWS Health Events from your accounts
@@ -180,9 +180,9 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         IncludeComputeOptimizerModule: !Ref IncludeComputeOptimizerModule
         IncludeCostAnomalyModule: !Ref IncludeCostAnomalyModule
+        IncludeSupportCasesModule: !Ref IncludeSupportCasesModule
         IncludeRightsizingModule: !Ref IncludeRightsizingModule
         IncludeBackupModule: !Ref IncludeBackupModule
-        IncludeCostOptimizationHubModule: !Ref IncludeCostOptimizationHubModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
         IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
   DataCollectorMgmtAccountModulesReadStack:
@@ -195,6 +195,7 @@ Resources:
         MultiAccountRoleName: !Ref MultiAccountRoleName
         ResourcePrefix: !Ref ResourcePrefix
         IncludeTAModule: !Ref IncludeTAModule
+        IncludeSupportCasesModule: !Ref IncludeSupportCasesModule
         IncludeInventoryCollectorModule: !Ref IncludeInventoryCollectorModule
         IncludeECSChargebackModule: !Ref IncludeECSChargebackModule
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
@@ -203,7 +204,7 @@ Resources:
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts v3.2.0"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.3.3"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
@@ -223,6 +224,8 @@ Resources:
           ParameterValue: !Ref ResourcePrefix
         - ParameterKey: IncludeTAModule
           ParameterValue: !Ref IncludeTAModule
+        - ParameterKey: IncludeSupportCasesModule
+          ParameterValue: !Ref IncludeSupportCasesModule
         - ParameterKey: IncludeInventoryCollectorModule
           ParameterValue: !Ref IncludeInventoryCollectorModule
         - ParameterKey: IncludeECSChargebackModule

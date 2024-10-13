@@ -58,7 +58,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "S3Access"
@@ -143,9 +143,9 @@ Resources:
                       try:
                           link = item.find('link').text
                           title = item.find('title').text
-                          description = str(item.find('description').text or '')
+                          description = item.find('description').text or ''
                           pubDate = item.find('pubDate').text
-                          category = str(item.find('category').text or '')
+                          category = item.find('category').text or ''
 
                           # Parsing and formatting pubDate to ISO 8601 format
                           pubDate_datetime = parse(pubDate)

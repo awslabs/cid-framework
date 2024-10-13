@@ -56,6 +56,17 @@ def test_cost_anomaly_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_anomaly_data" LIMIT 10;')
     assert len(data) > 0, 'cost_anomaly_data is empty'
 
+def test_support_cases_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_data" LIMIT 10;')
+    assert len(data) > 0, 'support_cases_data is empty'
+
+def test_support_cases_communications(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_communications" LIMIT 10;')
+    assert len(data) > 0, 'support_cases_communications is empty'
+
+def test_support_cases_status(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_status" LIMIT 10;')
+    assert len(data) > 0, 'test_support_cases_status is empty'
 
 def test_ecs_chargeback_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."ecs_chargeback_data" LIMIT 10;')
@@ -159,14 +170,6 @@ def test_compute_optimizer_export_triggered(compute_optimizer, start_time):
     assert len(jobs_failed) == 0, f'Some jobs failed {jobs_failed}'
     # TODO: check how we can add better test, taking into account 15-30 mins delay of export in CO
 
-def test_cost_optimization_hub_summary_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_summary_data" LIMIT 10;')
-    assert len(data) > 0, 'cost_optimization_hub_data is empty'
-
-def test_cost_optimization_hub_detail_data(athena):
-    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_optimization_hub_detail_data" LIMIT 10;')
-    assert len(data) > 0, 'cost_optimization_hub_detail_data is empty'
-
 def test_health_events_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."health_events_detail_data" LIMIT 10;')
     assert len(data) > 0, 'health_events_detail_data is empty'
@@ -179,6 +182,17 @@ def test_license_manager_licenses(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."license_manager_licenses" LIMIT 10;')
     assert len(data) > 0, 'license_manager_licenses is empty'
 
+def test_quicksight_users(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_user_data" LIMIT 10;')
+    assert len(data) > 0, 'quicksight_user_data is empty'
+
+def test_quicksight_groups(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_group_data" LIMIT 10;')
+    assert len(data) > 0, 'quicksight_group_data is empty'
+
+def test_quicksight_groupmembership(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_groupmembership_data" LIMIT 10;')
+    assert len(data) > 0, 'quicksight_groupmembership_data is empty'
 
 if __name__ == '__main__':
     pytest.params = {}

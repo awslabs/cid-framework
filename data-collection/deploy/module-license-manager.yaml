@@ -76,7 +76,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
@@ -85,7 +85,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -104,7 +104,7 @@ Resources:
   LambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: !Sub '${ResourcePrefix}-${CFDataName}-Lambda'
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
       Runtime: python3.12
       Architectures: [x86_64]
@@ -161,10 +161,11 @@ Resources:
               return licenses
 
           def process_one_management_acc(management_account_id):
-              print(f"arn:aws:iam::{management_account_id}:role/{ROLE}")
+              region = boto3.session.Session().region_name
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
               logger.debug('assuming role')
               cred = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
+                  RoleArn=f"arn:{partition}:iam::{management_account_id}:role/{ROLE}",
                   RoleSessionName="data_collection"
               )['Credentials']
               license_manager = boto3.client(

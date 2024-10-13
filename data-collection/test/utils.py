@@ -185,6 +185,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeSupportCasesModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
@@ -192,7 +193,6 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
        ]
@@ -208,6 +208,10 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'Schedule',                        'ParameterValue': 'rate(1 day)'},
             {'ParameterKey': 'ScheduleFrequent',                'ParameterValue': 'rate(1 day)'},
+            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},            
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
@@ -217,16 +221,13 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeSupportCasesModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
-            {'ParameterKey': 'IncludeCostOptimizationHubModule','ParameterValue': "yes"},
             {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
-            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
-            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeQuickSightModule',         'ParameterValue': "yes"},
         ]
     )
 
@@ -420,5 +421,5 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
 
 def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
-    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
+    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=True)
     trigger_update(account_id=account_id)

@@ -72,7 +72,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
@@ -81,7 +81,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in management accounts
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -143,8 +143,9 @@ Resources:
           def process_management_acc(management_account_id):
               """Get info from management account and write to s3"""
               logger.info(f'Assuming role {ROLE} in {management_account_id}')
+              partition = boto3.session.Session().get_partition_for_region(region_name=REGIONS[0])
               cred = boto3.client('sts', region_name=REGIONS[0]).assume_role(
-                  RoleArn=f"arn:aws:iam::{management_account_id}:role/{ROLE}",
+                  RoleArn=f"arn:{partition}:iam::{management_account_id}:role/{ROLE}",
                   RoleSessionName="data_collection"
               )['Credentials']
               client = boto3.client(
