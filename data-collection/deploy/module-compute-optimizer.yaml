@@ -488,7 +488,7 @@ Resources:
       Role: !GetAtt 'FinalizeLambdaExecutionRole.Arn'
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda-FinalizeSetup-DoNotRun'
       Description: "Lambda to Finalize Setup (call trigger lambda) or Start teardown (Cleanup buckets)"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [ arm64 ]
       Code:
         ZipFile: |
