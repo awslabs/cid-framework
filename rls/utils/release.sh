@@ -9,7 +9,7 @@ export CENTRAL_BUCKET=aws-managed-cost-intelligence-dashboards
 code_path=$(git rev-parse --show-toplevel)/rls/deploy
 
 echo 'building lambda zip'
-$(git rev-parse --show-toplevel)/rls/utils/build.sh
+"$(git rev-parse --show-toplevel)/rls/utils/build.sh"
 
 echo "sync to central bucket"
 aws s3 sync $code_path/       s3://$CENTRAL_BUCKET/cfn/rls/
