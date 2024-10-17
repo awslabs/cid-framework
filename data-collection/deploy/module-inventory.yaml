@@ -308,8 +308,6 @@ Mappings:
               Type: string
             - Name: kmskeyid
               Type: string
-            - Name: accountid
-              Type: string
             - Name: collection_date
               Type: string
             - Name: region
@@ -321,7 +319,7 @@ Mappings:
               UPDATED_BY_CRAWLER: !Sub ${ResourcePrefix}inventory-RdsDbClusters-Crawler
             SerdeInfo:
               Parameters:
-                paths: readreplicaidentifiers,capacity,charactersetname,preferredbackupwindow,copytagstosnapshot,activitystreamkinesisstreamname,multiaz,backtrackwindow,earliestrestorabletime,engine,earliestbacktracktime,httpendpointenabled,payer_id,percentprogress,day,dbclusterparametergroup,hostedzoneid,status,associatedroles,dbclusteridentifier,backtrackconsumedchangerecords,iamdatabaseauthenticationenabled,serverlessv2scalingconfiguration,customendpoints,port,activitystreamkmskeyid,masterusername,dbclusterresourceid,clustercreatetime,vpcsecuritygroups,dbsubnetgroup,latestrestorabletime,availabilityzones,dbclusteroptiongroupmemberships,replicationsourceidentifier,year,deletionprotection,endpoint,preferredmaintenancewindow,readerendpoint,accountid,enabledcloudwatchlogsexports,scalingconfigurationinfo,storageencrypted,enginemode,databasename,activitystreammode,month,crossaccountclone,dbclusterarn,activitystreamstatus,allocatedstorage,engineversion,backupretentionperiod,clonegroupid,dbclustermembers,kmskeyid,accountid,collection_date,region
+                paths: readreplicaidentifiers,capacity,charactersetname,preferredbackupwindow,copytagstosnapshot,activitystreamkinesisstreamname,multiaz,backtrackwindow,earliestrestorabletime,engine,earliestbacktracktime,httpendpointenabled,payer_id,percentprogress,day,dbclusterparametergroup,hostedzoneid,status,associatedroles,dbclusteridentifier,backtrackconsumedchangerecords,iamdatabaseauthenticationenabled,serverlessv2scalingconfiguration,customendpoints,port,activitystreamkmskeyid,masterusername,dbclusterresourceid,clustercreatetime,vpcsecuritygroups,dbsubnetgroup,latestrestorabletime,availabilityzones,dbclusteroptiongroupmemberships,replicationsourceidentifier,year,deletionprotection,endpoint,preferredmaintenancewindow,readerendpoint,accountid,enabledcloudwatchlogsexports,scalingconfigurationinfo,storageencrypted,enginemode,databasename,activitystreammode,month,crossaccountclone,dbclusterarn,activitystreamstatus,allocatedstorage,engineversion,backupretentionperiod,clonegroupid,dbclustermembers,kmskeyid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
     RdsDbInstances:
