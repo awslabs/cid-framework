@@ -228,7 +228,7 @@ Resources:
               try:
                   count = store_to_s3(flatten_data_iterator, s3_prefix)
               except backup.exceptions.ClientError as exc:
-                  if 'Insufficient privileges to perform this action.' in exc["errorMessage"]:
+                  if 'Insufficient privileges to perform this action.' in str(exc):
                       raise Exception(
                         'You need to activate cross account jobs monitoring '
                         'https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account'
