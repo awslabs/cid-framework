@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Linked Account v3.3.3
+Description: CID Data Collection - Role for Linked Account v3.4.1
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -40,6 +40,7 @@ Metadata:
         default: 'Include Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include Transit Gateway Module'
+
 Parameters:
   DataCollectionAccountID:
     Type: String

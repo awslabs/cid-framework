@@ -308,8 +308,6 @@ Mappings:
               Type: string
             - Name: kmskeyid
               Type: string
-            - Name: accountid
-              Type: string
             - Name: collection_date
               Type: string
             - Name: region
@@ -321,7 +319,7 @@ Mappings:
               UPDATED_BY_CRAWLER: !Sub ${ResourcePrefix}inventory-RdsDbClusters-Crawler
             SerdeInfo:
               Parameters:
-                paths: readreplicaidentifiers,capacity,charactersetname,preferredbackupwindow,copytagstosnapshot,activitystreamkinesisstreamname,multiaz,backtrackwindow,earliestrestorabletime,engine,earliestbacktracktime,httpendpointenabled,payer_id,percentprogress,day,dbclusterparametergroup,hostedzoneid,status,associatedroles,dbclusteridentifier,backtrackconsumedchangerecords,iamdatabaseauthenticationenabled,serverlessv2scalingconfiguration,customendpoints,port,activitystreamkmskeyid,masterusername,dbclusterresourceid,clustercreatetime,vpcsecuritygroups,dbsubnetgroup,latestrestorabletime,availabilityzones,dbclusteroptiongroupmemberships,replicationsourceidentifier,year,deletionprotection,endpoint,preferredmaintenancewindow,readerendpoint,accountid,enabledcloudwatchlogsexports,scalingconfigurationinfo,storageencrypted,enginemode,databasename,activitystreammode,month,crossaccountclone,dbclusterarn,activitystreamstatus,allocatedstorage,engineversion,backupretentionperiod,clonegroupid,dbclustermembers,kmskeyid,accountid,collection_date,region
+                paths: readreplicaidentifiers,capacity,charactersetname,preferredbackupwindow,copytagstosnapshot,activitystreamkinesisstreamname,multiaz,backtrackwindow,earliestrestorabletime,engine,earliestbacktracktime,httpendpointenabled,payer_id,percentprogress,day,dbclusterparametergroup,hostedzoneid,status,associatedroles,dbclusteridentifier,backtrackconsumedchangerecords,iamdatabaseauthenticationenabled,serverlessv2scalingconfiguration,customendpoints,port,activitystreamkmskeyid,masterusername,dbclusterresourceid,clustercreatetime,vpcsecuritygroups,dbsubnetgroup,latestrestorabletime,availabilityzones,dbclusteroptiongroupmemberships,replicationsourceidentifier,year,deletionprotection,endpoint,preferredmaintenancewindow,readerendpoint,accountid,enabledcloudwatchlogsexports,scalingconfigurationinfo,storageencrypted,enginemode,databasename,activitystreammode,month,crossaccountclone,dbclusterarn,activitystreamstatus,allocatedstorage,engineversion,backupretentionperiod,clonegroupid,dbclustermembers,kmskeyid,collection_date,region
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
 
     RdsDbInstances:
@@ -1051,7 +1049,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda Function to retrieve ${CFDataName}"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
         ZipFile: |
@@ -1245,18 +1243,21 @@ Resources:
                   with open(TMP_FILE, "w", encoding='utf-8') as file_:
                       for region in REGIONS:
                           logger.info(f"Collecting in {region}")
-                          for counter, obj in enumerate(func(account_id=account_id,region=region), start=counter + 1):
-                              obj['accountid'] = account_id
-                              if len(TAG_LIST) > 0 and "Tags" in obj:
-                                  logger.debug(f"Tags enabled and found tags {obj['Tags']}")
-                                  for tag in obj["Tags"]:
-                                      if tag["Key"] in TAG_LIST:
-                                          obj[f"tag_{tag['Key']}"] = tag["Value"]
-                              obj['collection_date'] = collection_date
-                              obj['region'] = region
-                              if 'Environment' in obj and name == 'lambda-functions':
-                                  obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
-                              file_.write(to_json(obj) + "\n")
+                          try:
+                              for counter, obj in enumerate(func(account_id=account_id,region=region), start=counter + 1):
+                                  obj['accountid'] = account_id
+                                  if len(TAG_LIST) > 0 and "Tags" in obj:
+                                      logger.debug(f"Tags enabled and found tags {obj['Tags']}")
+                                      for tag in obj["Tags"]:
+                                          if tag["Key"] in TAG_LIST:
+                                              obj[f"tag_{tag['Key']}"] = tag["Value"]
+                                  obj['collection_date'] = collection_date
+                                  obj['region'] = region
+                                  if 'Environment' in obj and name == 'lambda-functions':
+                                      obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
+                                  file_.write(to_json(obj) + "\n")
+                          except Exception as exc:  #pylint: disable=broad-exception-caught
+                              logger.info(f"{name} in {region}: {type(exc)} - {exc}")
                   logger.info(f"Collected {counter} total {name} instances")
                   upload_to_s3(name, account_id, payer_id)
               except Exception as exc:   #pylint: disable=broad-exception-caught
