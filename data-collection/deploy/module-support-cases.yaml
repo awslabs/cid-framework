@@ -175,6 +175,7 @@ Resources:
           def main(account, role_name, module_name, bucket):
               account_id = account["account_id"]
               payer_id = account["payer_id"]
+              account_name = account.get("account_name", None)
               support = get_client_with_role(role_name, account_id, region="us-east-1", service="support")
               s3 = boto3.client('s3')
 
@@ -220,6 +221,7 @@ Resources:
                   case_id = data['CaseId']
                   case_date = datetime.strptime(data["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ')
                   with open("/tmp/tmp.json", "w", encoding='utf-8') as f:
+                      data['account_alias'] = account_name
                       f.write(to_json(data)) # single line per file
                   key = case_date.strftime(
                       f"{module_name}/" +
@@ -245,6 +247,7 @@ Resources:
                   )
                   with open("/tmp/tmp.json", "w", encoding='utf-8') as f:
                       for communication in communication_iterator:
+                          communication['account_alias'] = account_name
                           f.write(to_json(communication) + '\n')
                   key = case_date.strftime(
                       f"{module_name}/" +
