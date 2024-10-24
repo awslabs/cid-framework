@@ -181,7 +181,13 @@ Resources:
 
               default_start_date = (datetime.now().date() - timedelta(days=365)).strftime('%Y-%m-%d') # Case communications are available for 12 months after creation.
 
-              status = {"last_read": default_start_date, "account_alias": account_name, "account_id": account_id, "last_summary": None}
+              status = {
+                  "last_read": default_start_date,
+                  "account_alias": account_name,
+                  "account_id": account_id,
+                  "payer_id": payer_id,
+                  "last_summary": None
+              }
               status_key = f"{module_name}/{module_name}-status/payer_id={payer_id}/{account_id}.json"
               try:
                   status = json.loads(
