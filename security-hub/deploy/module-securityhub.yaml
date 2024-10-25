@@ -531,7 +531,7 @@ Resources:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
       Handler: index.lambda_handler
-      MemorySize: 1024
+      MemorySize: 4096
       ReservedConcurrentExecutions: 100
       Timeout: 900
       Code:
@@ -655,7 +655,14 @@ Resources:
               else:
                   next_token = ''
                   logger.info("NextToken not detected for Security Hub findings.")
-              finding_filter = {}
+              finding_filter = {
+                  'ProductName': [ 
+                      {
+                          'Value': 'Security Hub',
+                          'Comparison': 'NOT_EQUALS', 
+                      }
+                  ]
+              }
               runs = 25
               for a in range(0, runs, 1):
                   if (next_token is not None):
