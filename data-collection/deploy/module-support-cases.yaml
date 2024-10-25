@@ -183,9 +183,7 @@ Resources:
 
               status = {
                   "last_read": default_start_date,
-                  "account_alias": account_name,
                   "account_id": account_id,
-                  "last_summary": None
               }
               status_key = f"{module_name}/{module_name}-status/payer_id={payer_id}/{account_id}.json"
               try:
@@ -227,6 +225,7 @@ Resources:
                   case_date = datetime.strptime(data["TimeCreated"], '%Y-%m-%dT%H:%M:%S.%fZ')
                   with open("/tmp/tmp.json", "w", encoding='utf-8') as f:
                       data['AccountAlias'] = account_name
+                      data['Summary'] = ''
                       f.write(to_json(data)) # single line per file
                   key = case_date.strftime(
                       f"{module_name}/" +
