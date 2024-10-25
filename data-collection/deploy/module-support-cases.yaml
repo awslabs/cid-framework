@@ -185,7 +185,6 @@ Resources:
                   "last_read": default_start_date,
                   "account_alias": account_name,
                   "account_id": account_id,
-                  "payer_id": payer_id,
                   "last_summary": None
               }
               status_key = f"{module_name}/{module_name}-status/payer_id={payer_id}/{account_id}.json"
