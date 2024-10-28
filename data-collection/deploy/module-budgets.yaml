@@ -174,7 +174,7 @@ Resources:
                       })
 
                       # Fetch CostFilters if available
-                      if 'CostFilters' not in budget or len(budget['CostFilters']) == 0 or 'PlannedBudgetLimits' not in budget:
+                      if not budget.get('CostFilters'):
                           budget.update({'CostFilters': {'Filter': ['None']}})
 
                       f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
