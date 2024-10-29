@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Management Account v3.4.3
+Description: CID Data Collection - Role for Management Account v3.4.1
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -19,6 +19,7 @@ Metadata:
           - IncludeHealthEventsModule
           - IncludeRightsizingModule
           - IncludeLicenseManagerModule
+          - IncludeServiceQuotasModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -40,6 +41,8 @@ Metadata:
         default: "Include Health Events Module"
       IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
+      IncludeServiceQuotasModule:
+        default: "Include Service Quotas Module"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -87,6 +90,11 @@ Parameters:
     Description: Collects Marketplace Licensing Information from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeServiceQuotasModule:
+    Type: String
+    Description: Collects Service Quotas Information from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
@@ -96,6 +104,7 @@ Conditions:
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
   EnableLicenseManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
+  EnableServiceQuotasModule: !Equals [!Ref IncludeServiceQuotasModule, "yes"]
 
 Outputs:
   LambdaRole:
@@ -129,6 +138,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
                   - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}RLS-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}service-quotas-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -346,6 +356,28 @@ Resources:
               - "license-manager:ListReceivedLicenses"
               - "license-manager:ListReceivedGrantsForOrganization"
             Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  ServiceQuotasPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableServiceQuotasModule
+    Properties:
+      PolicyName: ServiceQuotasPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "servicequotas:ListServices"
+              - "servicequotas:ListRequestedServiceQuotaChangeHistory"
+              - "servicequotas:ListServiceQuotas"
+              - "servicequotas:ListAWSDefaultServiceQuotas"
+            Resource: "*" ## Policy is used for scanning a wide range of resources. All service quotas in this case. All of them.
       Roles:
         - Ref: LambdaRole
     Metadata:

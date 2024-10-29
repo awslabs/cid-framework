@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.4.3
+Description: CID Data Collection - All-in-One for Management Account v3.4.1
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -29,6 +29,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeLicenseManagerModule
+          - IncludeServiceQuotasModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -70,6 +71,8 @@ Metadata:
         default: "Include AWS Health Events Module"
       IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
+      IncludeServiceQuotasModule:
+        default: "Include Service Quotas Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -165,6 +168,11 @@ Parameters:
     Description: Collects Marketplace Licensing information
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeServiceQuotasModule:
+    Type: String
+    Description: Collects Service Quotas information
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -185,6 +193,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
         IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
+        IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -201,10 +210,11 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
-      Description: "StackSet in charge of deploying read roles across organization accounts v3.4.3"
+      Description: "StackSet in charge of deploying read roles across organization accounts v3.4.1"
       PermissionModel: SERVICE_MANAGED
       AutoDeployment:
         Enabled: true
@@ -236,6 +246,8 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
+        - ParameterKey: IncludeServiceQuotasModule
+          ParameterValue: !Ref IncludeServiceQuotasModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]

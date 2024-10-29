@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.4.3
+Description: CID Data Collection Stack v3.4.1
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -35,6 +35,7 @@ Metadata:
           - IncludeAWSFeedsModule
           - IncludeLicenseManagerModule
           - IncludeQuickSightModule
+          - IncludeServiceQuotasModule
     ParameterLabels:
       DestinationBucket:
         default: 'Destination S3 bucket prefix'
@@ -86,6 +87,8 @@ Metadata:
         default: 'Include AWS Health Events Module'
       IncludeLicenseManagerModule:
         default: 'Include Marketplace Licensing Collection'
+      IncludeServiceQuotasModule:
+        default: 'Include Service Quota Data Collection'
       IncludeQuickSightModule:
         default: 'Include QuickSight User Collection Module'
 
@@ -237,6 +240,11 @@ Parameters:
     Description: Collects Marketplace Licenses and Grants
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeServiceQuotaModule:
+   Type: String
+   Description: Collects AWS Service Quotas data
+   AllowedValues: ['yes', 'no']
+   Default: 'no'
 
 Conditions:
   DeployTAModule: !Equals [ !Ref IncludeTAModule, "yes"]
@@ -255,6 +263,7 @@ Conditions:
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
   DeployQuickSightModule: !Equals [ !Ref IncludeQuickSightModule, "yes"]
+  DeployServiceQuotaModule: !Equals [ !Ref IncludeServiceQuotaModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -270,6 +279,7 @@ Conditions:
       - !Condition DeployRDSUtilizationModule
       - !Condition DeployOrgDataModule
       - !Condition DeployBudgetsModule
+      - !Condition DeployServiceQuotaModule
     - Fn::Or:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
@@ -1222,6 +1232,31 @@ Resources:
         StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
         StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
         SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+
+  ServiceQuotasModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployServiceQuotasModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-service-quotas.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref ScheduleFrequent
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+        RegionsInScope:
+          Fn::If:
+            - RegionsInScopeIsEmpty
+            - !Sub "${AWS::Region}"
+            - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
 
   QuickSightModule:
     Type: AWS::CloudFormation::Stack

@@ -1,0 +1,414 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Retrieves Inventory data for the chosen service
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold AWS Support Cases information
+    Default: optimization_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold AWS Support Cases information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold AWS Support Cases information
+  MultiAccountRoleName:
+    Type: String
+    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Support Cases Data.
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: service-quotas
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(14 days)"
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  AccountCollectorLambdaARN:
+    Type: String
+    Description: Arn of the Account Collector Lambda
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
+  StepFunctionTemplate:
+    Type: String
+    Description: S3 key to the JSON template for the StepFunction
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+  RegionsInScope:
+    Type: String
+    Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
+
+Outputs:
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Path: /
+      Policies:
+        - PolicyName: "AssumeMultiAccountRole"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action: "sts:AssumeRole"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:PutObjectAcl"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "${DestinationBucketARN}"
+        - PolicyName: "Eventbridge-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "events:PutEvents"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
+
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import logging
+          from datetime import date, timedelta, datetime
+
+          import boto3
+          from botocore.config import Config
+
+          BUCKET = os.environ['BUCKET_NAME']
+          ROLE_NAME = os.environ['ROLE_NAME']
+          MODULE_NAME = os.environ['MODULE_NAME']
+          REGIONS = REGIONS = [r.strip() for r in os.environ['REGIONS'].split(',') if r]
+
+          config = Config(
+            retries = {
+              'max_attempts': 15,
+              'mode': 'standard'
+            }
+          )
+
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+            logger.info(f"Incoming event: {json.dumps(event)}")
+            key = "account"
+            if key not in event:
+                logger.error(f"Lambda event parameter '{key}' not defined (fatal) in {MODULE_NAME} module. Please do not trigger this Lambda manually. "
+                    f"Find the corresponding {MODULE_NAME} state machine in Step Functions and trigger from there."
+                )
+                raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter")
+
+            account = json.loads(event[key])
+
+            main(account, ROLE_NAME, MODULE_NAME, BUCKET, REGIONS)
+            return {
+                'statusCode': 200
+            }
+
+          def get_client_with_role(role_name, account_id, service, region):
+            logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+            credentials = boto3.client('sts').assume_role(
+                RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                RoleSessionName="data_collection"
+            )['Credentials']
+            logger.debug("Successfully assumed role, now getting client")
+            client = boto3.client(
+                service,
+                region_name = region,
+                aws_access_key_id=credentials['AccessKeyId'],
+                aws_secret_access_key=credentials['SecretAccessKey'],
+                aws_session_token=credentials['SessionToken'],
+                config=config
+            )
+            logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+            return client
+
+          def to_json(obj):
+            return json.dumps(
+                obj,
+                default=lambda x:
+                    x.isoformat() if isinstance(x, (date, datetime)) else None
+            )
+              
+          def main(account, role_name, module_name, bucket, regions):
+            account_id = account["account_id"]
+            payer_id = account["payer_id"]
+              
+            for region in regions:
+              quotas_client = get_client_with_role(role_name, account_id, region=region, service="service-quotas")
+              s3_client = get_client_with_role(role_name, account_id, region=region, service="s3")
+                                
+              #Get the list of services, using a paginator. Fancy.
+              logger.debug(f"Set up paginator for services in {region}")
+
+              service_iterator = (
+                quotas_client.get_paginator('list_services').paginate().search("""Services[].{
+                                Code: ServiceCode,
+                                Name: ServiceName
+                            }""")
+                )
+
+              logger.debug(f"Start looping through services in {region}")
+
+              for service in service_iterator:
+                service_code = service['Code']
+                service_name = service['Name']
+                
+                logger.debug(f"Set up paginator for service quotas for {service_name}({service_code} in region {region})")
+
+                service_quotas = (
+                  quotas_client.get_paginator('list_service_quotas')
+                  )
+                service_parameters = {'ServiceCode': service_code}
+                
+                quota_iterator = service_quotas.paginate(**service_parameters, PaginationConfig={'PageSize': 100}).search("""Quotas[]""")
+
+                logger.debug(f"Set up paginator for default quotas for {service_name}({service_code} in region {region})")
+
+                service_defaults = (
+                  quotas_client.get_paginator('list_aws_default_service_quotas')
+                )
+                
+                service_defaults_iterator = (
+                  service_defaults.paginate(**service_parameters, PaginationConfig={'PageSize': 100}).search("""Quotas[].{
+                    QuotaCode: QuotaCode,
+                    Value: Value
+                    }""")
+                )
+                
+                logger.debug(f"Set up paginator for quota change history for {service_name}({service_code} in region {region})")
+
+                service_quota_history = (
+                  quotas_client.get_paginator('list_requested_service_quota_change_history')
+                  )
+                  
+                service_quota_history_iterator = (
+                  service_quota_history.paginate(**service_parameters).search("""RequestedQuotas[]""")
+                  )
+
+                logger.debug(f"Open data file to write quotas for {service_name}({service_code})")
+                with open("/tmp/tmp-data.json", "w", encoding='utf-8') as f:
+                  for quota_count, quota_item in enumerate(quota_iterator, start=1):
+                    quota_code = quota_item['QuotaCode']
+                    quota_name = quota_item['QuotaName']
+                    
+                    logger.debug(f"Processing {quota_code} for {service_code} in region {region}")
+                    result = {
+                      'ServiceCode': quota_item['ServiceCode'],
+                      'ServiceName': quota_item['ServiceName'],
+                      'QuotaArn': quota_item['QuotaArn'],
+                      'QuotaCode': quota_code,
+                      'QuotaName': quota_name,
+                      'Unit': quota_item['Unit'],
+                      'Adjustable': quota_item['Adjustable'],
+                      'GlobalQuota': quota_item['GlobalQuota'],
+                      'QuotaAppliedatLevel': quota_item['QuotaAppliedAtLevel']
+                    }
+
+                    # Some keys are present only for some quotas, so check if they exist
+                    if 'Period' in quota_item:
+                      result['PeriodValue'] = quota_item['Period']['PeriodValue']
+                      result['PeriodUnit'] = quota_item['Period']['PeriodUnit']
+
+                    if 'UsageMetric' in quota_item:
+                      result['UsageMetricNamespace'] = quota_item['UsageMetric']['MetricNamespace']
+                      result['UsageMetricName'] = quota_item['UsageMetric']['MetricName']
+                      result['MetricStatisticRecommendation'] = quota_item['UsageMetric']['MetricStatisticRecommendation']
+
+                    if 'ErrorReason' in quota_item:
+                      error_code = quota_item['ErrorReason']['ErrorCode']
+                      error_msg = quota_item['ErrorReason']['ErrorMessage']
+
+                      logger.info(f"Error evaluating quota {quota_name} for {service_name}({service_code})" + "\n" + f"ErrorCode: {error_code}" + "\n" + f"ErrorMessage: {error_msg}")
+
+                      result['ErrorCode'] = error_code
+                      result['ErrorMessage'] = error_msg
+                    else:
+                      result['Value'] = quota_item['Value']
+
+                    #Process defaults for the quota
+                    for default_count, default_item in enumerate(service_defaults_iterator, start=1):
+                      if default_item['QuotaCode'] == quota_code:
+                        default_value = default_item['Value']
+                        result['DefaultValue'] = default_value
+
+                        logger.debug(f"Processed {default_count} records before getting the default quota value for {quota_name} for {service_name}")
+                        break
+
+                    f.write(to_json(result) + "\n")
+
+                logger.debug(f"Processed {quota_count} service quotas for {service_name}({service_code}) in region {region}")
+
+                key = module_name + "/" + module_name + "-data" + "/payer_id=" + payer_id + "/accountid=" + account_id + "/region=" + region + "/" + service_code + ".json"
+                s3_client.upload_file("/tmp/tmp-data.json", bucket, key)
+
+                #Process quota history
+                logger.debug(f"Processing quota request history for {service_code} in region {region}")
+                history_count = 0
+                with open("/tmp/tmp-history.json", "w", encoding='utf-8') as f:
+                  logger.debug(f"File opened")
+                  for quota_history_item in service_quota_history_iterator:
+                    history_count += 1
+
+                    quota_code = quota_item['QuotaCode']
+                    
+                    result = {
+                      'Id': quota_history_item['Id'],
+                      'ServiceCode': quota_history_item['ServiceCode'],
+                      'ServiceName': quota_history_item['ServiceName'],
+                      'QuotaArn': quota_history_item['QuotaArn'],
+                      'QuotaCode': quota_code,
+                      'QuotaName': quota_history_item['QuotaName'],
+                      'DesiredValue': quota_history_item['DesiredValue'],
+                      'Status': quota_history_item['Status'],
+                      'Created': quota_history_item['Created'],
+                      'LastUpdated': quota_history_item['LastUpdated'],
+                      'Requester': quota_history_item['Requester'],
+                      'QuotaRequestedAtlevel': quota_history_item['QuotaRequestedAtLevel']
+                    }
+                    #There isn't always a CaseId
+                    if 'CaseId' in quota_history_item:
+                      result['CaseId'] = quota_history_item['CaseId']
+
+                    f.write(to_json(result) + "\n")
+                  
+                  logger.debug(f"Finished evaluating quota request history for {service_code} in region {region}")
+
+                if history_count > 0:
+                  key = module_name + "/" + module_name + "-history" + "/payer_id=" + payer_id + "/accountid=" + account_id + "/region=" + region + "/" + service_code + ".json"
+                  s3_client.upload_file("/tmp/tmp-history.json", bucket, key)
+                  logger.debug(f"Wrote {history_count} quota request history records to {key} and uploaded to {bucket}")
+                else:
+                  logger.debug(f"No limit increase history for {service_name}({service_code})")
+      Handler: 'index.lambda_handler'
+      MemorySize: 2688
+      Timeout: 300
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          ROLE_NAME: !Ref MultiAccountRoleName
+          MODULE_NAME: !Ref CFDataName
+          REGIONS: !Ref RegionsInScope
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+
+  Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-history/"
+      Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        AccountCollectorLambdaARN: !Ref AccountCollectorLambdaARN
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-Crawler"]'
+        CollectionType: "LINKED"
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+        Input: !Sub '{"module_lambda":"${LambdaFunction.Arn}","crawlers": ["${ResourcePrefix}${CFDataName}-Crawler"]}'
+
+  AnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
