@@ -240,7 +240,7 @@ Parameters:
     Description: Collects Marketplace Licenses and Grants
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeServiceQuotaModule:
+  IncludeServiceQuotasModule:
    Type: String
    Description: Collects AWS Service Quotas data
    AllowedValues: ['yes', 'no']
@@ -263,7 +263,7 @@ Conditions:
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
   DeployQuickSightModule: !Equals [ !Ref IncludeQuickSightModule, "yes"]
-  DeployServiceQuotaModule: !Equals [ !Ref IncludeServiceQuotaModule, "yes"]
+  DeployServiceQuotasModule: !Equals [ !Ref IncludeServiceQuotasModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -279,13 +279,13 @@ Conditions:
       - !Condition DeployRDSUtilizationModule
       - !Condition DeployOrgDataModule
       - !Condition DeployBudgetsModule
-      - !Condition DeployServiceQuotaModule
     - Fn::Or:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
       - !Condition DeployHealthEventsModule
       - !Condition DeployLicenseManagerModule
       - !Condition DeployQuickSightModule
+      - !Condition DeployServiceQuotasModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
@@ -1242,7 +1242,7 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
-        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
