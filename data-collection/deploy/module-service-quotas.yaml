@@ -219,7 +219,7 @@ Resources:
                               .search("""Quotas[]""")
                       )
 
-                      service_defaults_iterator = (
+                      service_defaults_list = list(
                           quotas_client
                               .get_paginator('list_aws_default_service_quotas')
                               .paginate(**service_parameters, PaginationConfig={'PageSize': 100})
@@ -277,7 +277,7 @@ Resources:
                                   result['Value'] = quota_item['Value']
 
                               #Process defaults for the quota
-                              for default_count, default_item in enumerate(service_defaults_iterator, start=1):
+                              for default_count, default_item in enumerate(service_defaults_list, start=1):
                                   if default_item['QuotaCode'] == quota_code:
                                       default_value = default_item['Value']
                                       result['DefaultValue'] = default_value
