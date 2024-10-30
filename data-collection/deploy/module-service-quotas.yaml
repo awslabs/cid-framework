@@ -302,18 +302,18 @@ Resources:
                         quota_code = quota_item['QuotaCode']
 
                         result = {
-                          'Id': quota_history_item['Id'],
-                          'ServiceCode': quota_history_item['ServiceCode'],
-                          'ServiceName': quota_history_item['ServiceName'],
-                          'QuotaArn': quota_history_item['QuotaArn'],
-                          'QuotaCode': quota_code,
-                          'QuotaName': quota_history_item['QuotaName'],
-                          'DesiredValue': quota_history_item['DesiredValue'],
-                          'Status': quota_history_item['Status'],
-                          'Created': quota_history_item['Created'],
-                          'LastUpdated': quota_history_item['LastUpdated'],
-                          'Requester': quota_history_item['Requester'],
-                          'QuotaRequestedAtlevel': quota_history_item['QuotaRequestedAtLevel']
+                            'Id': quota_history_item['Id'],
+                            'ServiceCode': quota_history_item['ServiceCode'],
+                            'ServiceName': quota_history_item['ServiceName'],
+                            'QuotaArn': quota_history_item['QuotaArn'],
+                            'QuotaCode': quota_code,
+                            'QuotaName': quota_history_item['QuotaName'],
+                            'DesiredValue': quota_history_item['DesiredValue'],
+                            'Status': quota_history_item['Status'],
+                            'Created': quota_history_item['Created'],
+                            'LastUpdated': quota_history_item['LastUpdated'],
+                            'Requester': quota_history_item['Requester'],
+                            'QuotaRequestedAtlevel': quota_history_item['QuotaRequestedAtLevel']
                         }
                         #There isn't always a CaseId
                         if 'CaseId' in quota_history_item:
