@@ -321,7 +321,7 @@ Resources:
 
                               f.write(to_json(result) + "\n")
 
-                        logger.debug(f"Finished evaluating quota request history for {service_code} in region {region}")
+                      logger.debug(f"Finished evaluating quota request history for {service_code} in region {region}")
 
                       if history_count > 0:
                           key = module_name + "/" + module_name + "-history" + "/payer_id=" + payer_id + "/accountid=" + account_id + "/region=" + region + "/" + service_code + ".json"
