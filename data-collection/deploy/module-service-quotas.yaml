@@ -189,10 +189,10 @@ Resources:
           def main(account, role_name, module_name, bucket, regions):
               account_id = account["account_id"]
               payer_id = account["payer_id"]
+              s3_client = boto3.client("s3")
 
               for region in regions:
                   quotas_client = get_client_with_role(role_name, account_id, region=region, service="service-quotas")
-                  s3_client = boto3.client("s3")
 
                   #Get the list of services, using a paginator. Fancy.
                   logger.debug(f"Set up paginator for services in {region}")
@@ -215,25 +215,22 @@ Resources:
                       quota_iterator = (
                           quotas_client
                               .get_paginator('list_service_quotas')
-                              .paginate(**service_parameters, PaginationConfig={'PageSize': 100})
-                              .search("""Quotas[]""")
+                              .paginate(**service_parameters)
+                              .search("Quotas")
                       )
 
                       service_defaults_list = list(
                           quotas_client
                               .get_paginator('list_aws_default_service_quotas')
-                              .paginate(**service_parameters, PaginationConfig={'PageSize': 100})
-                              .search("""Quotas[].{
-                                  QuotaCode: QuotaCode,
-                                  Value: Value
-                              }""")
+                              .paginate(**service_parameters)
+                              .search("Quotas")
                       )
 
                       service_quota_history_iterator = (
                           quotas_client
                               .get_paginator('list_requested_service_quota_change_history')
                               .paginate(**service_parameters)
-                              .search("""RequestedQuotas[]""")
+                              .search("RequestedQuotas")
                       )
 
                       logger.debug(f"Open data file to write quotas for {service_name}({service_code})")
@@ -252,7 +249,7 @@ Resources:
                                   'Unit': quota_item['Unit'],
                                   'Adjustable': quota_item['Adjustable'],
                                   'GlobalQuota': quota_item['GlobalQuota'],
-                                  'QuotaAppliedatLevel': quota_item['QuotaAppliedAtLevel']
+                                  'QuotaAppliedAtLevel': quota_item['QuotaAppliedAtLevel']
                               }
 
                               # Some keys are present only for some quotas, so check if they exist
