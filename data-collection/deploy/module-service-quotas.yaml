@@ -185,15 +185,15 @@ Resources:
                 default=lambda x:
                     x.isoformat() if isinstance(x, (date, datetime)) else None
             )
-              
+
           def main(account, role_name, module_name, bucket, regions):
             account_id = account["account_id"]
             payer_id = account["payer_id"]
-              
+
             for region in regions:
               quotas_client = get_client_with_role(role_name, account_id, region=region, service="service-quotas")
-              s3_client = get_client_with_role(role_name, account_id, region=region, service="s3")
-                                
+              s3_client = boto3.client("s3")
+
               #Get the list of services, using a paginator. Fancy.
               logger.debug(f"Set up paginator for services in {region}")
 
@@ -209,7 +209,7 @@ Resources:
               for service in service_iterator:
                 service_code = service['Code']
                 service_name = service['Name']
-                
+
                 logger.debug(f"Set up paginator for service quotas for {service_name}({service_code} in region {region})")
 
                 service_quotas = (
