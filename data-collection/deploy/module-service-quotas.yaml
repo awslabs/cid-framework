@@ -162,22 +162,22 @@ Resources:
               }
 
           def get_client_with_role(role_name, account_id, service, region):
-            logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-            credentials = boto3.client('sts').assume_role(
-                RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
-                RoleSessionName="data_collection"
-            )['Credentials']
-            logger.debug("Successfully assumed role, now getting client")
-            client = boto3.client(
-                service,
-                region_name = region,
-                aws_access_key_id=credentials['AccessKeyId'],
-                aws_secret_access_key=credentials['SecretAccessKey'],
-                aws_session_token=credentials['SessionToken'],
-                config=config
-            )
-            logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-            return client
+              logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              credentials = boto3.client('sts').assume_role(
+                  RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              logger.debug("Successfully assumed role, now getting client")
+              client = boto3.client(
+                  service,
+                  region_name = region,
+                  aws_access_key_id=credentials['AccessKeyId'],
+                  aws_secret_access_key=credentials['SecretAccessKey'],
+                  aws_session_token=credentials['SessionToken'],
+                  config=config
+              )
+              logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+              return client
 
           def to_json(obj):
               return json.dumps(
