@@ -313,7 +313,7 @@ Resources:
                                   'Created': quota_history_item['Created'],
                                   'LastUpdated': quota_history_item['LastUpdated'],
                                   'Requester': quota_history_item['Requester'],
-                                  'QuotaRequestedAtlevel': quota_history_item['QuotaRequestedAtLevel']
+                                  'QuotaRequestedAtLevel': quota_history_item['QuotaRequestedAtLevel']
                               }
                               #There isn't always a CaseId
                               if 'CaseId' in quota_history_item:
