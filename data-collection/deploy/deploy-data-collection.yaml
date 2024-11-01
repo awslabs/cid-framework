@@ -240,7 +240,7 @@ Parameters:
     Description: Collects Marketplace Licenses and Grants
     AllowedValues: ['yes', 'no']
     Default: 'no'
-  IncludeServiceQuotaModule:
+  IncludeServiceQuotasModule:
    Type: String
    Description: Collects AWS Service Quotas data
    AllowedValues: ['yes', 'no']
@@ -263,7 +263,7 @@ Conditions:
   DeployHealthEventsModule: !Equals [ !Ref IncludeHealthEventsModule, "yes"]
   DeployLicenseManagerModule: !Equals [ !Ref IncludeLicenseManagerModule, "yes"]
   DeployQuickSightModule: !Equals [ !Ref IncludeQuickSightModule, "yes"]
-  DeployServiceQuotaModule: !Equals [ !Ref IncludeServiceQuotaModule, "yes"]
+  DeployServiceQuotasModule: !Equals [ !Ref IncludeServiceQuotasModule, "yes"]
   DeployPricingModule: !Or
     - !Condition DeployInventoryCollectorModule
     - !Condition DeployRDSUtilizationModule
@@ -285,7 +285,7 @@ Conditions:
       - !Condition DeployHealthEventsModule
       - !Condition DeployLicenseManagerModule
       - !Condition DeployQuickSightModule
-      - !Condition DeployServiceQuotaModule
+      - !Condition DeployServiceQuotasModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
