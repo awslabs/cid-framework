@@ -330,11 +330,11 @@ Resources:
               - "servicequotas:ListServiceQuotas"
               - "servicequotas:ListAWSDefaultServiceQuotas"
               - "rds:DescribeAccountAttributes"
-				      - "elasticloadbalancing:DescribeAccountLimits"
-				      - "dynamodb:DescribeLimits"
-				      - "cloudformation:DescribeAccountLimits"
-				      - "autoscaling:DescribeAccountLimits"
-				      - "route53:GetAccountLimit"
+              - "elasticloadbalancing:DescribeAccountLimits"
+              - "dynamodb:DescribeLimits"
+              - "cloudformation:DescribeAccountLimits"
+              - "autoscaling:DescribeAccountLimits"
+              - "route53:GetAccountLimit"
             Resource: "*" ## Policy is used for scanning a wide range of resources. All service quotas in this case. All of them.
       Roles:
         - Ref: LambdaRole
