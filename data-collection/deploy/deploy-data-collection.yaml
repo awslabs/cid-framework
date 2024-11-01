@@ -279,13 +279,13 @@ Conditions:
       - !Condition DeployRDSUtilizationModule
       - !Condition DeployOrgDataModule
       - !Condition DeployBudgetsModule
-      - !Condition DeployServiceQuotaModule
     - Fn::Or:
       - !Condition DeployBackupModule
       - !Condition DeployTransitGatewayModule
       - !Condition DeployHealthEventsModule
       - !Condition DeployLicenseManagerModule
       - !Condition DeployQuickSightModule
+      - !Condition DeployServiceQuotaModule
   RegionsInScopeIsEmpty: !Equals
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
