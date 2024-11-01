@@ -7,11 +7,11 @@ Parameters:
     Default: optimization_data
   DestinationBucket:
     Type: String
-    Description: Name of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: Name of the S3 Bucket that exists or needs to be created to hold Health Events information
     AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
   DestinationBucketARN:
     Type: String
-    Description: ARN of the S3 Bucket that exists or needs to be created to hold costanomaly information
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold Health Events information
   ManagementRoleName:
     Type: String
     Description: The name of the IAM role that will be deployed in the management account which can retrieve AWS Organization data. KEEP THE SAME AS WHAT IS DEPLOYED INTO MANAGEMENT ACCOUNT
@@ -68,7 +68,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: !Sub "${CFDataName}-ManagementAccount-LambdaRole"
@@ -77,7 +77,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management accounts
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management accounts
         - PolicyName: "S3-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -100,7 +100,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "states:StartExecution"
-                Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
+                Resource: !Sub "arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine"
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -112,7 +112,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
         ZipFile: |
@@ -315,14 +315,15 @@ Resources:
               logger.info(f"Executing in {'summary' if is_summary_mode else 'detail'} mode flow")
               account = json.loads(account) if is_summary_mode else batch_input.get('account')
               account_id = account["account_id"]
-
+              region = get_active_health_region()
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
               creds = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLENAME}",
+                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLENAME}",
                   RoleSessionName="data_collection"
               )['Credentials']
               health_client = boto3.client(
                   'health',
-                  region_name=get_active_health_region(),
+                  region_name=region,
                   aws_access_key_id=creds['AccessKeyId'],
                   aws_secret_access_key=creds['SecretAccessKey'],
                   aws_session_token=creds['SessionToken'],
@@ -410,7 +411,7 @@ Resources:
           ROLENAME: !Ref ManagementRoleName
           #REGIONS: -- defining regions can miss events within the region list so default to global
           LOOKBACK: 90
-          DETAIL_SM_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
+          DETAIL_SM_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -491,7 +492,7 @@ Resources:
                 "States": {
                   "DetailLambda Invoke": {
                     "Type": "Task",
-                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "Resource": "arn:${Partition}:states:::lambda:invoke",
                     "OutputPath": "$.Payload",
                     "Parameters": {
                       "Payload.$": "$",
@@ -517,7 +518,7 @@ Resources:
               "Label": "DetailProcessorMap",
               "MaxConcurrency": ${MaxConcurrentBatches},
               "ItemReader": {
-                "Resource": "arn:aws:states:::s3:getObject",
+                "Resource": "arn:${Partition}:states:::s3:getObject",
                 "ReaderConfig": {
                   "InputType": "CSV",
                   "CSVHeaderLocation": "FIRST_ROW"
@@ -538,9 +539,9 @@ Resources:
             },
             "CrawlerStepFunctionStartExecution": {
               "Type": "Task",
-              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Resource": "arn:${Partition}:states:::states:startExecution.sync:2",
               "Parameters": {
-                "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+                "StateMachineArn": "arn:${Partition}:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
                 "Input": {
                   "crawlers": ${Crawlers}
                 }
@@ -561,6 +562,7 @@ Resources:
         Prefix: !Ref ResourcePrefix
         ItemsPerBatch: 50
         MaxConcurrentBatches: 1
+        Partition: !Ref AWS::Partition
     Metadata:
       cfn-lint:
         config:

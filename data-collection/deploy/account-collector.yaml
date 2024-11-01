@@ -44,7 +44,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "AssumeManagementRole"
@@ -53,7 +53,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
         - PolicyName: "CloudWatch"
           PolicyDocument:
             Version: "2012-10-17"
@@ -64,7 +64,7 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
         - PolicyName: "SSM"
           PolicyDocument:
             Version: "2012-10-17"
@@ -72,7 +72,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "ssm:GetParameter"
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
         - PolicyName: "Lambda"
           PolicyDocument:
             Version: "2012-10-17"
@@ -102,7 +102,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}account-collector-Lambda'
       Description: "Lambda function to retrieve the account list"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
           ZipFile: |
@@ -233,8 +233,9 @@ Resources:
 
 
             def get_client_with_role(account_id, service, region):
+                partition = boto3.session.Session().get_partition_for_region(region_name=region)
                 credentials = boto3.client('sts').assume_role(
-                    RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
+                    RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}",
                     RoleSessionName="data_collection"
                 )['Credentials']
                 return boto3.client(

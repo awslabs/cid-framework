@@ -185,6 +185,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeSupportCasesModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeECSChargebackModule',      'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeInventoryCollectorModule', 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
@@ -207,6 +208,10 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'DestinationBucket',               'ParameterValue': BUCKET_PREFIX},
             {'ParameterKey': 'Schedule',                        'ParameterValue': 'rate(1 day)'},
             {'ParameterKey': 'ScheduleFrequent',                'ParameterValue': 'rate(1 day)'},
+            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
+            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
+            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},            
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
@@ -216,15 +221,13 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeRDSUtilizationModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeRightsizingModule',        'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeCostAnomalyModule',        'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeSupportCasesModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeTAModule',                 'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeAWSFeedsModule',           'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
-            {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
-            {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
-            {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeQuickSightModule',         'ParameterValue': "yes"},
         ]
     )
 
@@ -271,7 +274,7 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
         # Extract Lambda function ARNs from the state machine definition
         state_machine_definition = json.loads(stepfunctions.describe_state_machine(stateMachineArn=state_machine_arn)['definition'])
         def _extract_lambda_arns(state):
-            if str(state).startswith('arn:aws:lambda:'):
+            if str(state).startswith('arn:aws:lambda:') or str(state).startswith('arn:aws-cn:lambda:'):
                 lambda_arns.add(state)
             elif isinstance(state, dict):
                 for value in state.values():
@@ -331,44 +334,48 @@ def launch_(state_machine_arns, lambda_arns=None, lambda_norun_arns=None, wait=T
 
 
 def trigger_update(account_id):
-    region = boto3.session.Session().region_name
+    session = boto3.session.Session()
+    region = session.region_name
+    partition = session.get_partition_for_region(session.region_name)
     state_machine_arns = [
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}budgets-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}ecs-chargeback-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-OpensearchDomains-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-ElasticacheClusters-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbInstances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-EBS-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-AMI-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Snapshot-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Ec2Instances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-VpcInstances-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbSnapshots-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-LambdaFunctions-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}rds-usage-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
-        f'arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-anomaly-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}cost-explorer-rightsizing-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}organizations-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}compute-optimizer-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonRDS-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonEC2-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonElastiCache-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonES-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSComputeSavingsPlan-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSLambda-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionalServices-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionNames-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-CopyJobs-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Blog-Post-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Whats-New-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
-        f"arn:aws:states:{region}:{account_id}:stateMachine:{PREFIX}license-manager-StateMachine",
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}budgets-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}ecs-chargeback-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-OpensearchDomains-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-ElasticacheClusters-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbInstances-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-EBS-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-AMI-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Snapshot-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-Ec2Instances-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-VpcInstances-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-RdsDbSnapshots-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}inventory-LambdaFunctions-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}rds-usage-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}transit-gateway-StateMachine',
+        f'arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}trusted-advisor-StateMachine',
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}cost-anomaly-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}support-cases-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}cost-explorer-rightsizing-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}organizations-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}compute-optimizer-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonRDS-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonEC2-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonElastiCache-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AmazonES-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSComputeSavingsPlan-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-AWSLambda-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionalServices-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}pricing-RegionNames-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}backup-CopyJobs-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}backup-RestoreJobs-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}backup-BackupJobs-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Blog-Post-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Whats-New-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-Security-Bulletin-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}aws-feeds-YouTube-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}license-manager-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}quicksight-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []
@@ -416,5 +423,5 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
 
 def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket):
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
-    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=False)
+    clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=True)
     trigger_update(account_id=account_id)

@@ -1,6 +1,6 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Lambda to collect Org data and store in S3 
+Description: Lambda to collect AWS Organization and Amazon QuickSight data and store in S3 for RLS implementation v0.2.0
 Parameters:
   DestinationBucket:
     Type: String
@@ -46,7 +46,7 @@ Resources:
     Properties:
       FunctionName: !Sub
         - 'CIDRLS_${Id}'
-        - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+        - Id: !Select [0, !Split ['-', !Ref 'AWS::StackName']]
       Description: LambdaFunction of python3.8.
       Runtime: python3.9
       Code:
@@ -55,10 +55,7 @@ Resources:
       Handler: 'create_rls.lambda_handler'
       MemorySize: 2688
       Timeout: 600
-      Role: 
-        Fn::GetAtt:
-          - LambdaRole
-          - Arn
+      Role: !GetAtt LambdaRole.Arn
       Environment:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
@@ -79,7 +76,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSLambdaExecute
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "Assume-Management-Organization-Data-Role"
@@ -88,8 +85,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource:
-                  "*"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ResourcePrefix}${ManagementAccountRole}" # Need to assume a Read role in management accounts
         - PolicyName: "Logs"
           PolicyDocument:
             Version: "2012-10-17"
@@ -100,30 +96,29 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/CID-RLS*"
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/CID-RLS*"
               - Effect: "Allow"
                 Action:
                   - "s3:PutObject"
                   - "s3:ListBucket"
-                Resource: !Sub "arn:aws:s3:::${DestinationBucket}/*"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
               - Effect: "Allow"
                 Action:
                   - "quicksight:ListUsers"
-                Resource: "*"
+                Resource: "*" # Cannot restrict this
   CloudWatchTrigger:
     Type: AWS::Events::Rule
     Properties:
       Description: Scheduler
       Name: !Sub
         - 'Scheduler_ForCIDRLS_${Id}'
-        - Id: !Select [0, !Split ['-', !Ref AWS::StackName]]
+        - Id: !Select [0, !Split ['-', !Ref 'AWS::StackName']]
       ScheduleExpression: !Ref Schedule
       State: ENABLED
       Targets:
-        - Arn:
-            Fn::GetAtt:
-              - CIDRLS
-              - Arn
+        - Arn: !GetAtt CIDRLS.Arn
           Id: TriggerForCIDRLS
   EventPermission:
     Type: AWS::Lambda::Permission
