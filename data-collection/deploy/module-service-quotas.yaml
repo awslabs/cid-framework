@@ -141,6 +141,7 @@ Resources:
                   'mode': 'standard'
               }
           )
+          s3 = boto3.client("s3") # local client
 
           logger = logging.getLogger(__name__)
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -161,23 +162,17 @@ Resources:
                   'statusCode': 200
               }
 
-          def get_client_with_role(role_name, account_id, service, region):
-              logger.debug(f"Attempting to get '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
+          def get_session_with_role(role_name, account_id):
+              logger.debug(f"Assuming role '{role_name}' in account '{account_id}'")
               credentials = boto3.client('sts').assume_role(
                   RoleArn=f"arn:aws:iam::{account_id}:role/{role_name}",
                   RoleSessionName="data_collection"
               )['Credentials']
-              logger.debug("Successfully assumed role, now getting client")
-              client = boto3.client(
-                  service,
-                  region_name = region,
+              return boto3.session.Session(
                   aws_access_key_id=credentials['AccessKeyId'],
                   aws_secret_access_key=credentials['SecretAccessKey'],
                   aws_session_token=credentials['SessionToken'],
-                  config=config
               )
-              logger.debug(f"Successfully created '{service}' client with role '{role_name}' from account '{account_id}' in region '{region}'")
-              return client
 
           def to_json(obj):
               return json.dumps(
@@ -186,153 +181,25 @@ Resources:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
 
-          def history(service_name, service_code, region, service_quota_history_list, module_name, payer_id, account_id, bucket): # pylint: disable=too-many-arguments, too-many-positional-arguments
-              logger.debug(f"Processing quota request history for {service_code} in region {region}")
-              s3_client = boto3.client("s3")
-
-              history_count = 0
-              with open("/tmp/tmp-history.json", "w", encoding='utf-8') as f:
-                  logger.debug("File opened")
-                  for quota_history_item in service_quota_history_list:
-                      history_count += 1
-
-                      result = {
-                          'Id': quota_history_item['Id'],
-                          'ServiceCode': quota_history_item['ServiceCode'],
-                          'ServiceName': quota_history_item['ServiceName'],
-                          'QuotaArn': quota_history_item['QuotaArn'],
-                          'QuotaCode': quota_history_item['QuotaCode'],
-                          'QuotaName': quota_history_item['QuotaName'],
-                          'DesiredValue': quota_history_item['DesiredValue'],
-                          'Status': quota_history_item['Status'],
-                          'Created': quota_history_item['Created'],
-                          'LastUpdated': quota_history_item['LastUpdated'],
-                          'Requester': quota_history_item['Requester'],
-                          'QuotaRequestedAtlevel': quota_history_item['QuotaRequestedAtLevel']
-                      }
-                      #There isn't always a CaseId
-                      if 'CaseId' in quota_history_item:
-                          result['CaseId'] = quota_history_item['CaseId']
-
-                      f.write(to_json(result) + "\n")
-
-              logger.debug(f"Finished evaluating quota request history for {service_name}({service_code}) in region {region}, uploading to S3 bucket")
-
-              key = module_name + "/" + module_name + "-history" + "/payer_id=" + payer_id + "/accountid=" + account_id + "/region=" + region + "/" + service_code + ".json"
-              s3_client.upload_file("/tmp/tmp-history.json", bucket, key)
-              logger.debug(f"Wrote {history_count} quota request history records to {key} and uploaded to {bucket}")
-
-          def main(account, role_name, module_name, bucket, regions): # pylint: disable=too-many-locals
+          def main(account, role_name, module_name, bucket, regions):
               account_id = account["account_id"]
               payer_id = account["payer_id"]
-
+              session = get_session_with_role(role_name, account_id)
               for region in regions:
-                  quotas_client = get_client_with_role(role_name, account_id, region=region, service="service-quotas")
-                  # quotas_client = boto3.client('service-quotas', region_name=region, config=config)
-                  s3_client = boto3.client("s3")
-
-                  #Get the list of services, using a paginator. Fancy.
-                  logger.debug(f"Set up paginator for services in {region}")
-
-                  service_iterator = (
-                      quotas_client.get_paginator('list_services').paginate().search("""Services[].{
-                          Code: ServiceCode,
-                          Name: ServiceName
-                      }""")
+                  quotas_client = session.client("service-quotas", region_name=region, config=config)
+                  service_quota_history_iterator = (
+                      quotas_client
+                          .get_paginator('list_requested_service_quota_change_history')
+                          .paginate()
+                          .search("RequestedQuotas")
                   )
+                  json_lines = [to_json(item) for item in service_quota_history_iterator]
+                  if not json_lines:
+                      logger.debug(f"No change history in {region}")
+                  key = f'{MODULE_NAME}/{MODULE_NAME}-history/payer_id={payer_id}/account_id={account_id}/region={region}/year=YYYY/month=MM/day=DD/history.json' # FIXME: set dates
+                  s3.put_object(Bucket=BUCKET, Key=key, Body="\n".join(json_lines), ContentType='application/json')
+                  logger.debug(f"Uploaded {len(json_lines)} records for {region} to s3://{BUCKET}/{key}")
 
-                  logger.debug(f"Start looping through services in {region}")
-
-                  for service in service_iterator:
-                      service_code = service['Code']
-                      service_name = service['Name']
-
-                      service_parameters = {'ServiceCode': service_code} #7
-                      quota_iterator = (
-                          quotas_client
-                              .get_paginator('list_service_quotas')
-                              .paginate(**service_parameters, PaginationConfig={'PageSize': 100})
-                              .search("""Quotas[]""")
-                      )
-
-                      service_defaults_list = list(
-                          quotas_client
-                              .get_paginator('list_aws_default_service_quotas')
-                              .paginate(**service_parameters, PaginationConfig={'PageSize': 100})
-                              .search("""Quotas[].{
-                                  QuotaCode: QuotaCode,
-                                  Value: Value
-                              }""")
-                      )
-
-                      service_quota_history_list = list(
-                          quotas_client
-                              .get_paginator('list_requested_service_quota_change_history')
-                              .paginate(**service_parameters)
-                              .search("""RequestedQuotas[]""")
-                      )
-
-                      logger.debug(f"Open data file to write quotas for {service_name}({service_code})")
-
-                      quota_count = 0
-                      with open("/tmp/tmp-data.json", "w", encoding='utf-8') as f:
-                          for quota_item in quota_iterator:
-                              quota_count += 1
-                              quota_code = quota_item['QuotaCode'] #8
-                              quota_name = quota_item['QuotaName'] #9
-
-                              logger.debug(f"Processing {quota_code} for {service_code} in region {region}")
-                              result = {
-                                  'ServiceCode': quota_item['ServiceCode'],
-                                  'ServiceName': quota_item['ServiceName'],
-                                  'QuotaArn': quota_item['QuotaArn'],
-                                  'QuotaCode': quota_code,
-                                  'QuotaName': quota_name,
-                                  'Unit': quota_item['Unit'],
-                                  'Adjustable': quota_item['Adjustable'],
-                                  'GlobalQuota': quota_item['GlobalQuota'],
-                                  'QuotaAppliedatLevel': quota_item['QuotaAppliedAtLevel']
-                              }
-
-                              # Some keys are present only for some quotas, so check if they exist
-                              if 'Period' in quota_item:
-                                  result['PeriodValue'] = quota_item['Period']['PeriodValue']
-                                  result['PeriodUnit'] = quota_item['Period']['PeriodUnit']
-
-                              if 'UsageMetric' in quota_item:
-                                  result['UsageMetricNamespace'] = quota_item['UsageMetric']['MetricNamespace']
-                                  result['UsageMetricName'] = quota_item['UsageMetric']['MetricName']
-                                  result['MetricStatisticRecommendation'] = quota_item['UsageMetric']['MetricStatisticRecommendation']
-
-                              if 'ErrorReason' in quota_item:
-                                  error_code = quota_item['ErrorReason']['ErrorCode'] #10
-                                  error_msg = quota_item['ErrorReason']['ErrorMessage'] #11
-
-                                  logger.info(f"Error evaluating quota {quota_name} for {service_name}({service_code})" + "\n" + f"ErrorCode: {error_code}" + "\n" + f"ErrorMessage: {error_msg}")
-
-                                  result['ErrorCode'] = error_code
-                                  result['ErrorMessage'] = error_msg
-                              else:
-                                  result['Value'] = quota_item['Value']
-
-                              #Process defaults for the quota
-                              for default_count, default_item in enumerate(service_defaults_list, start=1):
-                                  if default_item['QuotaCode'] == quota_code:
-                                      result['DefaultValue'] = default_item['Value']
-                                      logger.debug(f"Processed {default_count} records before getting the default quota value for {quota_name} for {service_name}")
-                                      break
-
-                              f.write(to_json(result) + "\n")
-
-                      logger.debug(f"Processed {quota_count} service quotas for {service_name}({service_code}) in region {region}")
-
-                      key = module_name + "/" + module_name + "-data" + "/payer_id=" + payer_id + "/accountid=" + account_id + "/region=" + region + "/" + service_code + ".json"
-                      s3_client.upload_file("/tmp/tmp-data.json", bucket, key)
-
-                      if not service_quota_history_list:
-                          logger.debug(f"No limit increase history for {service_name}({service_code})")
-                      else:
-                          history(service_name, service_code, region, service_quota_history_list, module_name, payer_id, account_id, bucket)
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
