@@ -196,6 +196,7 @@ Resources:
                   json_lines = [to_json(item) for item in service_quota_history_iterator]
                   if not json_lines:
                       logger.debug(f"No change history in {region}")
+                      continue
                   key = f'{MODULE_NAME}/{MODULE_NAME}-history/payer_id={payer_id}/account_id={account_id}/region={region}/year=YYYY/month=MM/day=DD/history.json' # FIXME: set dates
                   s3.put_object(Bucket=BUCKET, Key=key, Body="\n".join(json_lines), ContentType='application/json')
                   logger.debug(f"Uploaded {len(json_lines)} records for {region} to s3://{BUCKET}/{key}")
