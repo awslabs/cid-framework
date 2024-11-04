@@ -3,7 +3,7 @@
 
 # First build layer
 git_root=$(git rev-parse --show-toplevel)
-cd ${git_root}/case-summarization/layer/
+cd "${git_root}/case-summarization/layer/" || exit
 layer=$(./build-layer.sh)
 
 # Then publish on s3
@@ -13,15 +13,18 @@ aws cloudformation list-stack-instances \
   --stack-set-name $STACK_SET_NAME \
   --query 'Summaries[].[StackId,Region]' \
   --output text |
-  while read stack_id region; do
+  while read -r stack_id region; do
     echo "uploading $layer to $region"
-    bucket=$(aws cloudformation list-stack-resources --stack-name $stack_id \
+    # shellcheck disable=SC2016
+    bucket=$(aws cloudformation list-stack-resources --stack-name "$stack_id" \
       --query 'StackResourceSummaries[?LogicalResourceId == `LayerBucket`].PhysicalResourceId' \
-      --region $region --output text)
+      --region "$region" --output text)
+    # shellcheck disable=SC2181
     output=$(aws s3api put-object \
       --bucket "$bucket" \
-      --key cid-llm-lambda-layer/$layer \
-      --body ./$layer)
+      --key "cid-llm-lambda-layer/$layer" \
+      --body "./$layer")
+    # shellcheck disable=SC2181 disable=SC2002
     if [ $? -ne 0 ]; then
       echo "Error: $output"
     else
@@ -30,6 +33,6 @@ aws cloudformation list-stack-instances \
   done
 
 echo 'Cleanup'
-rm -vf ./$layer
+rm -vf "./$layer"
 
 echo 'Done'
