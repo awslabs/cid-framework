@@ -32,14 +32,21 @@ Python:
 """
 import logging
 import sys
+import json
+import time
 
 import pytest
+import boto3
 
 from utils import athena_query
 
+from utils import create_case, trigger_collection, get_case_data, clean_bucket
 
 logger = logging.getLogger(__name__)
+region = boto3.session.Session().region_name
+account_id = boto3.client('sts').get_caller_identity()['Account']
 
+COLLECTION_BUCKET =  f'cid-data-{account_id}'
 
 
 def test_budgets_data(athena):
@@ -193,6 +200,77 @@ def test_quicksight_groups(athena):
 def test_quicksight_groupmembership(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_groupmembership_data" LIMIT 10;')
     assert len(data) > 0, 'quicksight_groupmembership_data is empty'
+
+def test_content_of_summary_not_empty(s3):
+    s3_client = boto3.client('s3')
+    case_data = {
+        "CaseId": "case-081315907440-muen-2024-1YbOCmcjYqnFivIk",
+        "DisplayId": "123123123123", "Subject": "Test Case 123",  "Status": "pending-customer-action",
+        "ServiceCode": "amazon-finspace", "CategoryCode": "environment-creation",
+        "SeverityCode": "normal",  "SubmittedBy": "john.doe@unicorn-ltd.io",
+        "TimeCreated": "2024-09-15T14:32:18.923Z",
+        "CCEmailAddresses": [
+            "finops@unicorn-ltd.io"
+        ],
+        "Language": "en",
+        "Summary": "",
+        "AccountAlias": "Unicorn Analytics Platform"
+    }
+    case_communications = [
+        {
+            "CaseId": "case-081315907440-muen-2024-1YbOCmcjYqnFivIk",
+            "Body": "Hello, here is the question about AWS Service",
+            "SubmittedBy": "john.doe@unicorn-ltd.io",
+            "TimeCreated": "2024-09-15T15:45:22.000Z",
+            "AttachmentSet": [],
+            "AccountAlias": "Unicorn Ltd - Identity Services"
+        },
+        {
+            "CaseId": "case-081315907440-muen-2024-1YbOCmcjYqnFivIk",
+            "Body": "Hello, here is the answer.",
+            "SubmittedBy": "Amazon Web Services",
+            "TimeCreated": "2024-09-15T15:45:22.000Z",
+            "AttachmentSet": [],
+            "AccountAlias": "Unicorn Ltd - Identity Services"
+        }
+    ]
+    communications_key = "support-cases/support-cases-communications/payer_id=000001234567/account_id=12345004579/year=2024/month=9/day=15/hour=14/minute=32/case-081315907440-muen-2024-1YbOCmcjYqnFivIk.json"
+    data_key = "support-cases/support-cases-data/payer_id=000001234567/account_id=12345004579/year=2024/month=9/day=15/hour=14/minute=32/case-081315907440-muen-2024-1YbOCmcjYqnFivIk.json"
+    s3_client.put_object(
+        Bucket=COLLECTION_BUCKET,
+        Key=data_key,
+        Body=json.dumps(case_data),
+        ContentType='application/json'
+    )
+    s3_client.put_object(
+        Bucket=COLLECTION_BUCKET,
+        Key=communications_key,
+        Body='\n'.join([json.dumps(c) for c in case_communications]),
+        ContentType='application/json'
+    )
+
+    response = boto3.client('events').put_events(
+        Entries=[
+            {
+                'Source': 'supportcases.datacollection.cid.aws',
+                'DetailType': 'Event',
+                'Detail': json.dumps({
+                    'Bucket': COLLECTION_BUCKET,
+                    'CommunicationsKey': communications_key,
+                    'DataKey': data_key,
+                })
+            }
+        ]
+    )
+    # Checking if summary is populated
+    for i in range(300):
+        time.sleep(10)
+        case_data_content = json.loads(s3_client.get_object(Bucket=COLLECTION_BUCKET, Key=data_key)['Body'].read().decode('utf-8'))
+        if case_data_content['Summary']:
+            logger.info(f"Summary = {case_data_content['Summary']}")
+            break
+    else:
+        raise Exception('no Summary produced in 30s')
 
 if __name__ == '__main__':
     pytest.params = {}
