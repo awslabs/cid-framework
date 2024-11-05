@@ -110,7 +110,6 @@ Resources:
           import logging
           import datetime
           from json import JSONEncoder
-          import sys
           
           import boto3
 
@@ -157,31 +156,36 @@ Resources:
               payer_id = account["payer_id"]
 
               logger.info(f"Collecting data for account: {account_id}")
-              budgets_client = assume_role(account_id, "budgets", "us-east-1") # must be us-east-1
-              count = 0
-              with open(TMP_FILE, "w", encoding='utf-8') as f:
-                  for budget in budgets_client.get_paginator("describe_budgets").paginate(AccountId=account_id).search('Budgets'):
-                      if not budget: continue
-                      budget['collection_time'] = collection_time
+              try:
+                  budgets_client = assume_role(account_id, "budgets", "us-east-1") # must be us-east-1
+                  count = 0
+                  with open(TMP_FILE, "w", encoding='utf-8') as f:
+                      for budget in budgets_client.get_paginator("describe_budgets").paginate(AccountId=account_id).search('Budgets'):
+                          if not budget:
+                              continue
+                          budget['collection_time'] = collection_time
+                          # Fetch tags for the budget using List tag for resource API
+                          budget_name = budget['BudgetName']
+                          budget_tags = budgets_client.list_tags_for_resource(ResourceARN=f"arn:{aws_partition}:budgets::{account_id}:budget/{budget_name}")
+                          budget.update({
+                              'Account_ID': account_id,
+                              'Account_Name': account_name,
+                              'Tags': budget_tags.get('ResourceTags') or []
+                          })
+                          # Fetch CostFilters if available
+                          if not budget.get('CostFilters'):
+                              budget.update({'CostFilters': {'Filter': ['None']}})
 
-                      # Fetch tags for the budget using List tag for resource API
-                      budget_name = budget['BudgetName']
-                      budget_tags = budgets_client.list_tags_for_resource(ResourceARN=f"arn:{aws_partition}:budgets::{account_id}:budget/{budget_name}")
-                      budget.update({
-                          'Account_ID': account_id,
-                          'Account_Name': account_name,
-                          'Tags': budget_tags.get('ResourceTags') or []
-                      })
-
-                      # Fetch CostFilters if available
-                      if not budget.get('CostFilters'):
-                          budget.update({'CostFilters': {'Filter': ['None']}})
-
-                      f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
-                      count += 1
-              logger.info(f"Budgets collected: {count}")
-              s3_upload(account_id, payer_id)
-
+                          f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
+                          count += 1
+                  logger.info(f"Budgets collected: {count}")
+                  s3_upload(account_id, payer_id)
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  if "AccessDenied" in str(exc):
+                      print(f'Failed to assume role {ROLE_NAME} in account {account_id}. Please make sure the role exists. {exc}')
+                  else:
+                      print(f'{exc}. Gracefully exiting from Lambda so we do not break all StepFunction Execution')
+                  return
 
           def s3_upload(account_id, payer_id):
               if os.path.getsize(TMP_FILE) == 0:
