@@ -41,6 +41,8 @@ from utils import athena_query
 logger = logging.getLogger(__name__)
 
 
+def test_deployment_works(athena):
+    pass
 
 def test_budgets_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."budgets_data" LIMIT 10;')

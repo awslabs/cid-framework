@@ -146,7 +146,7 @@ Resources:
                     raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
 
                 account_iterator = functions[account_type]
-                with open(TMP_FILE, "w") as f:
+                with open(TMP_FILE, "w", encoding='utf-8') as f:
                     count = 0
                     f.write("[\n")
                     for account in account_iterator():
@@ -194,10 +194,9 @@ Resources:
                                 account = account_data.split(',')
                                 yield format_account(account[0], account[1], account[2])
                     else:
-                        logger.info(f'Using payer organization for the account list')
+                        logger.info('Using payer organization for the account list')
                         excluded_accounts = get_from_bucket(BUCKET, EXCLUDED_ACCOUNT_LIST_KEY)
                         if excluded_accounts:
-                            pass
                             logger.info(f'Found list of accounts to exclude in s3://{BUCKET}/{EXCLUDED_ACCOUNT_LIST_KEY}. Will only collect accounts that are not in the list')
                             excluded_accounts = [a.strip() for a in excluded_accounts[0].split(',') if a]
                         for org_account_data in iterate_admins_accounts('organizations'):
@@ -228,7 +227,7 @@ Resources:
                 try:
                     data = s3.get_object(Bucket=bucket, Key=key)
                     return data['Body'].read().decode('utf-8').strip('\n').split('\n')
-                except Exception as exc: #pylint: disable=broad-exception-caught
+                except Exception: #pylint: disable=broad-exception-caught
                     return None
 
             def format_account(account_id, account_name, payer_id):
