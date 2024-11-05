@@ -878,106 +878,106 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ResourcePrefix}*"
 
-  # TrustedAdvisorModule:
-  #   Type: AWS::CloudFormation::Stack
-  #   Condition: DeployTAModule
-  #   Properties:
-  #     TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-trusted-advisor.yaml"
-  #     Parameters:
-  #       DatabaseName: !Ref DatabaseName
-  #       DestinationBucket: !Ref S3Bucket
-  #       DestinationBucketARN: !GetAtt S3Bucket.Arn
-  #       GlueRoleARN: !GetAtt GlueRole.Arn
-  #       MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
-  #       Schedule: !Ref Schedule
-  #       ResourcePrefix: !Ref ResourcePrefix
-  #       LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  #       AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  #       CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-  #       StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
-  #       StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-  #       SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+  TrustedAdvisorModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployTAModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-trusted-advisor.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
+        Schedule: !Ref Schedule
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
-  # RightsizeModule:
-  #   Type: AWS::CloudFormation::Stack
-  #   Condition: DeployRightsizingModule
-  #   Properties:
-  #     TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
-  #     Parameters:
-  #       DatabaseName: !Ref DatabaseName
-  #       DestinationBucket: !Ref S3Bucket
-  #       DestinationBucketARN: !GetAtt S3Bucket.Arn
-  #       ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
-  #       Schedule: !Ref Schedule
-  #       GlueRoleARN: !GetAtt GlueRole.Arn
-  #       ResourcePrefix: !Ref ResourcePrefix
-  #       LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  #       AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  #       CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-  #       StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
-  #       StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-  #       SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+  RightsizeModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployRightsizingModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref Schedule
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
-  # CostAnomalyModule:
-  #   Type: AWS::CloudFormation::Stack
-  #   Condition: DeployCostAnomalyModule
-  #   Properties:
-  #     TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
-  #     Parameters:
-  #       DatabaseName: !Ref DatabaseName
-  #       DestinationBucket: !Ref S3Bucket
-  #       DestinationBucketARN: !GetAtt S3Bucket.Arn
-  #       ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
-  #       Schedule: !Ref ScheduleFrequent
-  #       GlueRoleARN: !GetAtt GlueRole.Arn
-  #       ResourcePrefix: !Ref ResourcePrefix
-  #       LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  #       AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  #       CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-  #       StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
-  #       StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-  #       LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
-  #       SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+  CostAnomalyModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployCostAnomalyModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-cost-anomaly.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref ScheduleFrequent
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        LambdaManageGlueTableARN: !GetAtt LambdaManageGlueTable.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
   
-  # SupportCasesModule:
-  #   Type: AWS::CloudFormation::Stack
-  #   Condition: DeploySupportCasesModule
-  #   Properties:
-  #     TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-support-cases.yaml"
-  #     Parameters:
-  #       DatabaseName: !Ref DatabaseName
-  #       DestinationBucket: !Ref S3Bucket
-  #       DestinationBucketARN: !GetAtt S3Bucket.Arn
-  #       MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
-  #       Schedule: !Ref ScheduleFrequent
-  #       GlueRoleARN: !GetAtt GlueRole.Arn
-  #       ResourcePrefix: !Ref ResourcePrefix
-  #       LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  #       AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  #       CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-  #       StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
-  #       StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-  #       SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+  SupportCasesModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeploySupportCasesModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-support-cases.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
+        Schedule: !Ref ScheduleFrequent
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
-  # BackupModule:
-  #   Type: AWS::CloudFormation::Stack
-  #   Condition: DeployBackupModule
-  #   Properties:
-  #     TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-backup.yaml"
-  #     Parameters:
-  #       DatabaseName: !Ref DatabaseName
-  #       DestinationBucket: !Ref S3Bucket
-  #       DestinationBucketARN: !GetAtt S3Bucket.Arn
-  #       ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
-  #       Schedule: !Ref Schedule
-  #       GlueRoleARN: !GetAtt GlueRole.Arn
-  #       ResourcePrefix: !Ref ResourcePrefix
-  #       LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
-  #       AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
-  #       CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
-  #       StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
-  #       StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
-  #       SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
+  BackupModule:
+    Type: AWS::CloudFormation::Stack
+    Condition: DeployBackupModule
+    Properties:
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/module-backup.yaml"
+      Parameters:
+        DatabaseName: !Ref DatabaseName
+        DestinationBucket: !Ref S3Bucket
+        DestinationBucketARN: !GetAtt S3Bucket.Arn
+        ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
+        Schedule: !Ref Schedule
+        GlueRoleARN: !GetAtt GlueRole.Arn
+        ResourcePrefix: !Ref ResourcePrefix
+        LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
+        AccountCollectorLambdaARN: !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
+        CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
+        StepFunctionTemplate: !FindInMap [StepFunctionCode, main-v3, TemplatePath]
+        StepFunctionExecutionRoleARN: !GetAtt StepFunctionExecutionRole.Arn
+        SchedulerExecutionRoleARN: !GetAtt SchedulerExecutionRole.Arn
 
   InventoryCollectorModule:
     Type: AWS::CloudFormation::Stack
