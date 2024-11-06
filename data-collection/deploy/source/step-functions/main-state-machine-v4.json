@@ -65,6 +65,7 @@
           }
         },
         "MaxConcurrency": 60,
+        "ToleratedFailurePercentage": 10,
         "ItemReader": {
           "Resource": "arn:aws:states:::s3:getObject",
           "ReaderConfig": {
