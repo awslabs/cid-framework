@@ -411,7 +411,6 @@ Resources:
           ROLENAME: !Ref ManagementRoleName
           #REGIONS: -- defining regions can miss events within the region list so default to global
           LOOKBACK: 730 # 2 years
-          TMP_FILE: /tmp/health_events.csv
           DETAIL_SM_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:
