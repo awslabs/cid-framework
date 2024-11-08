@@ -410,7 +410,7 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref ManagementRoleName
           #REGIONS: -- defining regions can miss events within the region list so default to global
-          LOOKBACK: 90
+          LOOKBACK: 730 # 2 years
           DETAIL_SM_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:
