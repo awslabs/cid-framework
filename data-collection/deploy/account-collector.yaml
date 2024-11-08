@@ -263,7 +263,7 @@ Resources:
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Ref DestinationBucket
-          PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
+          PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list "
           LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
           PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
           EXCLUDED_ACCOUNT_LIST_KEY: "account-list/excluded-linked-account-list.csv"
