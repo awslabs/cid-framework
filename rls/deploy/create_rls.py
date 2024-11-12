@@ -85,9 +85,9 @@ def get_children_ou(ou, org_client):
             NextToken = list_ous_result['NextToken']
         else:
             NextToken = False
-            ous = list_ous_result['OrganizationalUnits']
-            for ou in ous:
-                children_ou.append(ou['Id'])
+        ous = list_ous_result['OrganizationalUnits']
+        for child_ou in ous:
+            children_ou.append(child_ou['Id'])
     return children_ou
 
 
@@ -238,9 +238,9 @@ def process_root_ou(org_client, payer_id, root_ou, ou_tag_data):
 
 
 def process_ou(org_client, ou, ou_tag_data, root_ou):
-    rls_logger.debug("Start processing ou {ou}, for root ou: {root_ou}")
+    rls_logger.debug(f"Start processing ou {ou}, for root ou: {root_ou}")
     tags = org_client.list_tags_for_resource(ResourceId=ou)['Tags']
-    rls_logger.debug("Adding tags to all subacounts of  {ou}, for root ou: {root_ou}")
+    rls_logger.debug(f"Adding tags to all subacounts of  {ou}, for root ou: {root_ou}")
     for tag in tags:
         if tag['Key'] == CID_GROUP_OWNER_TAG:  # ADD GROUP TAGS
             cid_groups_tag_value = tag['Value']
@@ -268,6 +268,8 @@ def process_ou(org_client, ou, ou_tag_data, root_ou):
         for child_ou in children_ou:
             rls_logger.debug(f"Processing child ou: {child_ou}, parent ou: {ou}, root ou: {root_ou}")
             ou_tag_data = process_ou(org_client, child_ou, ou_tag_data, root_ou)
+    else:
+        rls_logger.debug(f"got 0 children OUS for parent ou: {ou}")
 
     ou_accounts = get_ou_accounts(org_client, ou, process_ou_children=False)  # Do not process children, only accounts at OU level.
     ou_accounts_ids = [ou_account['Id'] for ou_account in ou_accounts]
