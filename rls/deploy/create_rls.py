@@ -19,7 +19,7 @@ MANAGEMENTROLENAME = os_environ['MANAGEMENTROLENAME'].strip() if 'MANAGEMENTROLE
     "Missing MANAGEMENT ROLE NAME. Please define bucket as ENV VAR MANAGEMENTROLENAME")
 CID_FULL_ACCESS_USERS = os_environ['CID_FULL_ACCESS_USERS'].strip() if 'CID_FULL_ACCESS_USERS' in os_environ else None
 CID_FULL_ACCESS_GROUP = os_environ['CID_FULL_ACCESS_GROUP'].strip() if 'CID_FULL_ACCESS_GROUP' in os_environ else None
-LOGGING_LEVEL = os_environ['LOGGING_LEVEL'].strip() if 'LOGGING_LEVEL' in os_environ else 'INFO'
+RLS_LOGGING_LEVEL = os_environ['RLS_LOGGING_LEVEL'].strip() if 'RLS_LOGGING_LEVEL' in os_environ else 'INFO'
 
 
 def assume_management_role(payer_id, region):
@@ -330,7 +330,7 @@ def write_csv(qs_rls, rls_s3_filename):
     upload_to_s3(TMP_RLS_FILE, rls_s3_filename)
 
 
-def set_log_level(LOGGING_LEVEL):
+def set_log_level(RLS_LOGGING_LEVEL):
     logging_levels = {
         'DEBUG': logging.DEBUG,
         'INFO': logging.INFO,
@@ -339,17 +339,17 @@ def set_log_level(LOGGING_LEVEL):
         'CRITICAL': logging.CRITICAL
     }
 
-    if LOGGING_LEVEL in logging_levels.keys():
-        LOGGING_LEVEL = logging_levels[LOGGING_LEVEL]
+    if RLS_LOGGING_LEVEL in logging_levels.keys():
+        RLS_LOGGING_LEVEL = logging_levels[RLS_LOGGING_LEVEL]
     else:
-        LOGGING_LEVEL = logging.INFO
+        RLS_LOGGING_LEVEL = logging.INFO
 
     rls_logger = logging.getLogger('rls_logger')
     rls_log_handler = logging.StreamHandler()
     rls_formater = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-    rls_logger.setLevel(level=LOGGING_LEVEL)
-    rls_log_handler.setLevel(level=LOGGING_LEVEL)
+    rls_logger.setLevel(level=RLS_LOGGING_LEVEL)
+    rls_log_handler.setLevel(level=RLS_LOGGING_LEVEL)
 
     rls_log_handler.setFormatter(rls_formater)
     rls_logger.addHandler(rls_log_handler)
@@ -361,5 +361,5 @@ def lambda_handler(event, context):
 
 
 if __name__ == '__main__':
-    rls_logger = set_log_level(LOGGING_LEVEL)
+    rls_logger = set_log_level(RLS_LOGGING_LEVEL)
     main()
