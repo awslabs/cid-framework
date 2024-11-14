@@ -145,7 +145,7 @@ Resources:
                   return
 
               cleaned_filters = {
-                  re.sub(r'[:\\]', '_', key): clean_value(value)
+                  re.sub(r'\W+', '_', key): clean_value(value)
                   for key, value in cost_filters.items()
               }
               budget['CostFilters'] = cleaned_filters
