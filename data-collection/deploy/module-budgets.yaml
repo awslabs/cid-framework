@@ -132,7 +132,7 @@ Resources:
           def clean_value(value):
               """Clean string values by replacing special characters with underscores"""
               if isinstance(value, str):
-                  return re.sub(r'[:\\]', '_', value)
+                  return re.sub(r'\W+', '_', value)
               elif isinstance(value, list):
                   return [clean_value(v) for v in value]
               return value
