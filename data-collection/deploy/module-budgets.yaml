@@ -107,10 +107,11 @@ Resources:
           # Mohideen - Added Budgets tag collection module
           import os
           import json
+          import re
           import logging
           import datetime
           from json import JSONEncoder
-          
+
           import boto3
 
           BUCKET = os.environ["BUCKET_NAME"]
@@ -127,6 +128,27 @@ Resources:
                   if isinstance(o, (datetime.date, datetime.datetime)):
                       return o.isoformat()
                   return None
+
+          def clean_value(value):
+              """Clean string values by replacing special characters with underscores"""
+              if isinstance(value, str):
+                  return re.sub(r'\W+', '_', value)
+              elif isinstance(value, list):
+                  return [clean_value(v) for v in value]
+              return value
+
+          def process_cost_filters(budget):
+              """Process and clean cost filters in budget"""
+              cost_filters = budget.get('CostFilters', {})
+              if not cost_filters:
+                  budget['CostFilters'] = {'Filter': ['None']}
+                  return
+
+              cleaned_filters = {
+                  re.sub(r'\W+', '_', key): clean_value(value)
+                  for key, value in cost_filters.items()
+              }
+              budget['CostFilters'] = cleaned_filters
 
           def assume_role(account_id, service, region):
               partition = boto3.session.Session().get_partition_for_region(region_name=region)
@@ -173,9 +195,13 @@ Resources:
                               'Tags': budget_tags.get('ResourceTags') or []
                           })
                           # Fetch CostFilters if available
-                          if not budget.get('CostFilters'):
-                              budget.update({'CostFilters': {'Filter': ['None']}})
-
+                          process_cost_filters(budget)
+                          # Add column plannedbudgetslimit as type array
+                          budget_limits = budget.pop('PlannedBudgetLimits', {}) 
+                          budget['PlannedBudgetLimits_Flat'] = [
+                              {'date': key, 'Amount': value.get('Amount'), 'Unit': value.get('Unit')}
+                              for key, value in budget_limits.items()
+                          ]
                           f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
                           count += 1
                   logger.info(f"Budgets collected: {count}")
