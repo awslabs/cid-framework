@@ -325,10 +325,9 @@ Resources:
         Statement:
           - Effect: "Allow"
             Action:
-              - "servicequotas:ListServices"
               - "servicequotas:ListRequestedServiceQuotaChangeHistory"
-              - "servicequotas:ListServiceQuotas"
-              - "servicequotas:ListAWSDefaultServiceQuotas"
+              - "servicequotas:GetServiceQuota"
+              - "servicequotas:GetAWSDefaultServiceQuota"
               - "rds:DescribeAccountAttributes"
               - "elasticloadbalancing:DescribeAccountLimits"
               - "dynamodb:DescribeLimits"

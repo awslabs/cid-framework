@@ -14,7 +14,7 @@ Parameters:
     Description: ARN of the S3 Bucket that exists or needs to be created to hold AWS Support Cases information
   MultiAccountRoleName:
     Type: String
-    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Support Cases Data.
+    Description: Name of the IAM role deployed in all accounts which can retrieve AWS Quota Data.
   CFDataName:
     Type: String
     Description: The name of what this cf is doing.
@@ -223,7 +223,8 @@ Resources:
                       # Tracking the needed parameters to pull current quota and defaults
                       if item['QuotaCode'] not in quota_list:
                           quota_list.append({'QuotaCode': item['QuotaCode'], 'ServiceCode': item['ServiceCode']})
-                  print (f"{quota_list}")
+                  
+                  logger.debug(f"Found history and processing quota values for {quota_list}")
 
                   if not json_lines:
                       logger.debug(f"No change history in {region}")
@@ -234,10 +235,10 @@ Resources:
 
                       json_lines_quota = []
                       for quota in quota_list:
-                          quota_result = quotas_client.get_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])
-                          default_result = quotas_client.get_aws_default_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])
+                          quota_result = quotas_client.get_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])['Quota']
+                          default_result = quotas_client.get_aws_default_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])['Quota']
 
-                          quota_result['DefaultValue'] = default_result['Quota']['Value']
+                          quota_result['DefaultValue'] = default_result['Value']
 
                           json_lines_quota.append(to_json(quota_result))
 
@@ -278,7 +279,7 @@ Resources:
         S3Targets:
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-data/"
           - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-history/"
-      Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"}}"
+      Configuration: "{\"Version\":1.0,\"Grouping\":{\"TableGroupingPolicy\":\"CombineCompatibleSchemas\"},\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"}}}"
 
   ModuleStepFunction:
     Type: AWS::StepFunctions::StateMachine
