@@ -188,7 +188,6 @@ Resources:
 
               for region in regions:
                   quotas_client = session.client("service-quotas", region_name=region, config=config)
-                  # quotas_client = boto3.client('service-quotas', region_name=region, config=config)
                   s3_client = boto3.client("s3")
 
                   logger.debug(f"Start looping through services in {region}")
@@ -196,31 +195,15 @@ Resources:
                   service_quota_history_iterator = (
                       quotas_client
                           .get_paginator('list_requested_service_quota_change_history')
-                          # .paginate(**service_parameters)
                           .paginate()
                           .search("""RequestedQuotas[]""")
                   )
-
-                  # A bit of work below to partition the history data, leaving commented, not complete
-                  # result = {}
-                  # for item in service_quota_history_iterator:
-                  #     result[{item['Created']}] = item
-
-                  # for created_date in result:
-                  #     key = f'{MODULE_NAME}/{MODULE_NAME}-history/payer_id={payer_id}/account_id={account_id}/region={region}/year=YYYY/month=MM/day=DD/history.json'
-                  # End partitioning of history - again, not complete
-
-
-                  # Good one-liner examples - had to expand on them below
-                  # json_lines = [to_json(item) for item in service_quota_history_iterator]
-                  # quota_list = [item['QuotaCode'] for item in service_quota_history_iterator]
 
                   json_lines = []
                   quota_list = []
 
                   for item in service_quota_history_iterator:
                       json_lines.append(to_json(item))
-                      # Tracking the needed parameters to pull current quota and defaults
                       if item['QuotaCode'] not in quota_list:
                           quota_list.append({'QuotaCode': item['QuotaCode'], 'ServiceCode': item['ServiceCode']})
                   

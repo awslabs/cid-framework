@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.4.1
+Description: CID Data Collection Stack v3.4.5
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -1242,6 +1242,7 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        # ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn

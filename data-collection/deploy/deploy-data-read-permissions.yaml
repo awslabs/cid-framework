@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CID Data Collection - All-in-One for Management Account v3.4.1
+Description: CID Data Collection - All-in-One for Management Account v3.4.5
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -193,6 +193,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
         IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
+        IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
