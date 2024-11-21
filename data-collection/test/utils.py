@@ -195,6 +195,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeBackupModule',             'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeServiceQuotasModule',      'ParameterValue': "yes"},
        ]
     )
 
@@ -211,7 +212,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'ManagementAccountID',             'ParameterValue': account_id},
             {'ParameterKey': 'ManagementAccountRole',           'ParameterValue': "Lambda-Assume-Role-Management-Account"},
             {'ParameterKey': 'MultiAccountRoleName',            'ParameterValue': "Optimization-Data-Multi-Account-Role"},
-            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},            
+            {'ParameterKey': 'ResourcePrefix',                  'ParameterValue': PREFIX},
             {'ParameterKey': 'IncludeTransitGatewayModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeBudgetsModule',            'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeComputeOptimizerModule',   'ParameterValue': "yes"},
@@ -228,6 +229,7 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
             {'ParameterKey': 'IncludeHealthEventsModule',       'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeLicenseManagerModule',     'ParameterValue': "yes"},
             {'ParameterKey': 'IncludeQuickSightModule',         'ParameterValue': "yes"},
+            {'ParameterKey': 'IncludeServiceQuotasModule',      'ParameterValue': "yes"},
         ]
     )
 
@@ -376,6 +378,7 @@ def trigger_update(account_id):
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}health-events-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}license-manager-StateMachine",
         f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}quicksight-StateMachine",
+        f"arn:{partition}:states:{region}:{account_id}:stateMachine:{PREFIX}service-quotas-StateMachine",
     ]
     lambda_arns = []
     lambda_norun_arns = []

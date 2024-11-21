@@ -29,6 +29,7 @@ Metadata:
           - IncludeTAModule
           - IncludeTransitGatewayModule
           - IncludeLicenseManagerModule
+          - IncludeServiceQuotasModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -70,6 +71,8 @@ Metadata:
         default: "Include AWS Health Events Module"
       IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
+      IncludeServiceQuotasModule:
+        default: "Include Service Quotas Module"
 Parameters:
   ManagementAccountRole:
     Type: String
@@ -165,6 +168,11 @@ Parameters:
     Description: Collects Marketplace Licensing information
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeServiceQuotasModule:
+    Type: String
+    Description: Collects Service Quotas information
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   DeployModuleReadInMgmt: !Equals [!Ref AllowModuleReadInMgmt, "yes"]
@@ -185,6 +193,7 @@ Resources:
         IncludeBackupModule: !Ref IncludeBackupModule
         IncludeHealthEventsModule: !Ref IncludeHealthEventsModule
         IncludeLicenseManagerModule: !Ref IncludeLicenseManagerModule
+        IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
   DataCollectorMgmtAccountModulesReadStack:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
@@ -201,6 +210,7 @@ Resources:
         IncludeRDSUtilizationModule: !Ref IncludeRDSUtilizationModule
         IncludeBudgetsModule: !Ref IncludeBudgetsModule
         IncludeTransitGatewayModule: !Ref IncludeTransitGatewayModule
+        IncludeServiceQuotasModule: !Ref IncludeServiceQuotasModule
   DataCollectorOrgAccountModulesReadStackSet:
     Type: AWS::CloudFormation::StackSet
     Properties:
@@ -236,6 +246,8 @@ Resources:
           ParameterValue: !Ref IncludeBudgetsModule
         - ParameterKey: IncludeTransitGatewayModule
           ParameterValue: !Ref IncludeTransitGatewayModule
+        - ParameterKey: IncludeServiceQuotasModule
+          ParameterValue: !Ref IncludeServiceQuotasModule
       StackInstancesGroup:
         - DeploymentTargets:
             OrganizationalUnitIds: !Split [",", !Ref OrganizationalUnitIds]
