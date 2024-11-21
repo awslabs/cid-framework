@@ -188,6 +188,7 @@ Resources:
 
               for region in regions:
                   quotas_client = session.client("service-quotas", region_name=region, config=config)
+                  # quotas_client = boto3.client('service-quotas', region_name=region, config=config)
                   s3_client = boto3.client("s3")
 
                   logger.debug(f"Start looping through services in {region}")
@@ -202,32 +203,38 @@ Resources:
                   json_lines = []
                   quota_list = []
 
-                  for item in service_quota_history_iterator:
-                      json_lines.append(to_json(item))
-                      if item['QuotaCode'] not in quota_list:
-                          quota_list.append({'QuotaCode': item['QuotaCode'], 'ServiceCode': item['ServiceCode']})
-                  
+                  try:
+                      for item in service_quota_history_iterator:
+                          json_lines.append(to_json(item))
+                          if item['QuotaCode'] not in quota_list:
+                              quota_list.append({'QuotaCode': item['QuotaCode'], 'ServiceCode': item['ServiceCode']})
+                  except Exception as e: # pylint: disable=broad-except
+                      logger.warning(e)
+
                   logger.debug(f"Found history and processing quota values for {quota_list}")
 
                   if not json_lines:
                       logger.debug(f"No change history in {region}")
                   else:
-                      key = f'{module_name}/{module_name}-history/payer_id={payer_id}/account_id={account_id}/region={region}/history.json'
-                      s3_client.put_object(Bucket=bucket, Key=key, Body="\n".join(json_lines), ContentType='application/json')
-                      logger.debug(f"Uploaded {len(json_lines)} records for {region} to s3://{BUCKET}/{key}")
+                      try:
+                          key = f'{module_name}/{module_name}-history/payer_id={payer_id}/account_id={account_id}/region={region}/history.json'
+                          s3_client.put_object(Bucket=bucket, Key=key, Body="\n".join(json_lines), ContentType='application/json')
+                          logger.debug(f"Uploaded {len(json_lines)} records for {region} to s3://{BUCKET}/{key}")
 
-                      json_lines_quota = []
-                      for quota in quota_list:
-                          quota_result = quotas_client.get_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])['Quota']
-                          default_result = quotas_client.get_aws_default_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])['Quota']
+                          json_lines_quota = []
+                          for quota in quota_list:
+                              quota_result = quotas_client.get_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])['Quota']
+                              default_result = quotas_client.get_aws_default_service_quota(ServiceCode=quota['ServiceCode'],QuotaCode=quota['QuotaCode'])['Quota']
 
-                          quota_result['DefaultValue'] = default_result['Value']
+                              quota_result['DefaultValue'] = default_result['Value']
 
-                          json_lines_quota.append(to_json(quota_result))
+                              json_lines_quota.append(to_json(quota_result))
 
-                      key = f'{MODULE_NAME}/{MODULE_NAME}-data/payer_id={payer_id}/account_id={account_id}/region={region}/quotas.json'
-                      s3_client.put_object(Bucket=BUCKET, Key=key, Body="\n".join(json_lines_quota), ContentType='application/json')
-                      logger.debug(f"Uploaded {len(json_lines_quota)} records for {region} to s3://{BUCKET}/{key}")
+                          key = f'{MODULE_NAME}/{MODULE_NAME}-data/payer_id={payer_id}/account_id={account_id}/region={region}/quotas.json'
+                          s3_client.put_object(Bucket=BUCKET, Key=key, Body="\n".join(json_lines_quota), ContentType='application/json')
+                          logger.debug(f"Uploaded {len(json_lines_quota)} records for {region} to s3://{BUCKET}/{key}")
+                      except Exception as e: # pylint: disable=broad-except
+                          logger.warning(f"Exception procesdsing quota data: {e}")
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 300
