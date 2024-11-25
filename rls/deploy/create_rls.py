@@ -41,15 +41,6 @@ def assume_management_role(payer_id, region):
     return client
 
 
-def get_tags(account_list, org_client):
-    for index, account in enumerate(account_list):
-        account_tags = org_client.list_tags_for_resource(ResourceId=account["Id"])['Tags']
-        account_tags = {'AccountTags': account_tags}
-        account.update(account_tags)
-        account_list[index] = account
-    return account_list
-
-
 def update_tag_data(account, users, groups, ou_tag_data, separator=":"):
     users = users.split(separator) if users is not None else []
     groups = groups.split(separator) if groups is not None else []
@@ -362,6 +353,6 @@ def lambda_handler(event, context):
     main()
 
 
+rls_logger = set_log_level(RLS_LOGGING_LEVEL)
 if __name__ == '__main__':
-    rls_logger = set_log_level(RLS_LOGGING_LEVEL)
     main()
