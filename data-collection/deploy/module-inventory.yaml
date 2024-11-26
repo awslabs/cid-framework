@@ -1420,7 +1420,6 @@ Resources:
       Description: Identifies snapshots connected to AMI's with CUR data
       Name: inventory_snapshot_connected_to_ami_with_CUR
       QueryString: |
-          
         with latest_snapshot as (
               select 
                     max(date_parse(collection_date, '%Y-%m-%d %T')) as snapshot_collection_date
@@ -1442,14 +1441,12 @@ Resources:
               FROM optimization_data.inventory_snapshot_data
               INNER JOIN latest_snapshot ON latest_snapshot.snapshot_collection_date = date_parse(collection_date, '%Y-%m-%d %T')
         ),
-
-
         snapshot_costs as(
             SELECT
               SPLIT(line_item_resource_id,'/')[2] as snapshot_cur_id,
               SUM(CAST(line_item_unblended_cost AS DECIMAL(16,8))) AS sum_line_item_unblended_cost
             FROM
-              ${DatabaseName}.cur2
+              cid_data_export.cur2
             WHERE
               product['product_name'] = 'Amazon Elastic Compute Cloud'
               AND line_item_usage_type LIKE '%%EBS%%Snapshot%%'
