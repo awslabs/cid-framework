@@ -1420,82 +1420,73 @@ Resources:
       Description: Identifies snapshots connected to AMI's with CUR data
       Name: inventory_snapshot_connected_to_ami_with_CUR
       QueryString: |
-          SELECT DISTINCT
-            snapshotid
-          , volume
-          , volumesize
-          , starttime
-          , snapdescription
-          , ownerid
-          , snap_ami_id
-          , imageid
-          , name
-          , description
-          , state
-          , rootdevicetype
-          , virtualizationtype
-          , snapshots.year
-          , snapshots.month
-          , (CASE WHEN (snap_ami_id = imageid) THEN 'AMI Available' WHEN (snap_ami_id LIKE 'ami%') THEN 'AMI Removed' ELSE 'Not AMI' END) status
-          ,sum_line_item_usage_amount
-          ,sum_line_item_unblended_cost
-          FROM
-          (SELECT
-              snapshotid
-            , volumeid volume
-            , volumesize
-            , starttime
-            , Description snapdescription
-            , inventory_snapshot_data.year
-            , inventory_snapshot_data.month
-            , ownerid
-            , (CASE WHEN ("substr"(Description, 1, 22) = 'Created by CreateImage') THEN "split_part"(Description, ' ', 5) WHEN ("substr"(Description, 2, 11) = 'Copied snap') THEN "split_part"(Description, ' ', 9) WHEN ("substr"(Description, 1, 22) = 'Copied for Destination') THEN "split_part"(Description, ' ', 4) ELSE '' END) snap_ami_id
-            FROM
-              ${database}.inventory_snapshot_data)
-          as   snapshots
-          LEFT JOIN (
+          
+        with latest_snapshot as (
+              select 
+                    max(date_parse(collection_date, '%Y-%m-%d %T')) as snapshot_collection_date
+              FROM optimization_data.inventory_snapshot_data
+              ),
+        recent_snapshots as (      
+              SELECT
+                    Description,
+                    ownerid,
+                    snapshotid,
+                    latest_snapshot.snapshot_collection_date,
+              
+                    CASE
+                          WHEN substr(Description, 1, 22) = 'Created by CreateImage' THEN split_part(Description,' ', 5)
+                          WHEN substr(Description, 2, 11) = 'Copied snap' THEN split_part(Description,' ', 9)
+                          WHEN substr(Description, 1, 22) = 'Copied for Destination' THEN split_part(Description,' ', 4)
+                          ELSE NULL
+                    END AS snapshot_ami_id
+              FROM optimization_data.inventory_snapshot_data
+              INNER JOIN latest_snapshot ON latest_snapshot.snapshot_collection_date = date_parse(collection_date, '%Y-%m-%d %T')
+        ),
+
+
+        snapshot_costs as(
             SELECT
-              imageid
-            , name
-            , description
-            , state
-            , rootdevicetype
-            , virtualizationtype
+              SPLIT(line_item_resource_id,'/')[2] as snapshot_cur_id,
+              SUM(CAST(line_item_unblended_cost AS DECIMAL(16,8))) AS sum_line_item_unblended_cost
             FROM
-              ${database}.inventory_ami_data
-          )  ami ON (snapshots.snap_ami_id = ami.imageid)
-          left join
-          (SELECT
-                bill_payer_account_id,
-                line_item_usage_account_id,
-                product_region,
-                split("line_item_resource_id", '/')[2]resource_id,
-                ${table_name}.month,
-                ${table_name}.year,
-                SUM(CAST(line_item_usage_amount AS DOUBLE)) AS sum_line_item_usage_amount,
-                SUM(CAST(line_item_unblended_cost AS DECIMAL(16,8))) AS sum_line_item_unblended_cost
-              FROM
-                ${database}.${table_name}
-              WHERE
-                ${date_filter}
-                AND product_product_name = 'Amazon Elastic Compute Cloud'
-                AND line_item_usage_type LIKE '%%EBS%%Snapshot%%'
-                AND product_product_family LIKE 'Storage Snapshot'
-                AND line_item_line_item_type  IN ('DiscountedUsage', 'Usage', 'SavingsPlanCoveredUsage')
-              GROUP BY
-                bill_payer_account_id,
-                line_item_usage_account_id,
-                product_region,
-                "line_item_resource_id",month, year
-              ORDER BY
-                sum_line_item_unblended_cost DESC,
-                sum_line_item_usage_amount DESC
-          ) as cur
-          on snapshots.snapshotid = cur.resource_id
-          and snapshots.ownerid=cur.line_item_usage_account_id
-          and snapshots.month=cur.month
-          and snapshots.year=cur.year
-          where snapshots.month = '11' and snapshots.year= '2022'
+              ${DatabaseName}.cur2
+            WHERE
+              product['product_name'] = 'Amazon Elastic Compute Cloud'
+              AND line_item_usage_type LIKE '%%EBS%%Snapshot%%'
+              AND line_item_line_item_type  =  'Usage'
+            GROUP BY
+              line_item_resource_id),
+
+        latest_ami as (
+              select
+                    max(date_parse(collection_date, '%Y-%m-%d %T')) as ami_last_collection_date
+              FROM optimization_data.inventory_ami_data
+              ),
+        recent_amis as (
+              SELECT
+                    imageid,
+                    description as ami_description,
+                    latest_ami.ami_last_collection_date
+              FROM optimization_data.inventory_ami_data
+              -- only see things that overlap
+              INNER JOIN latest_ami ON latest_ami.ami_last_collection_date = date_parse(collection_date, '%Y-%m-%d %T')
+        )
+
+        SELECT
+              recent_snapshots.*,
+              recent_amis.*,
+              CASE
+                    WHEN snapshot_ami_id = imageid THEN 'AMI Available'
+                    WHEN snapshot_ami_id LIKE 'ami%' THEN 'AMI Removed'
+                    ELSE 'Not AMI'
+              END AS status,
+              snapshot_costs.sum_line_item_unblended_cost
+        FROM recent_snapshots
+        LEFT JOIN recent_amis ON recent_snapshots.snapshot_ami_id = recent_amis.imageid 
+        LEFT JOIN snapshot_costs on recent_snapshots.snapshotid = snapshot_costs.snapshot_cur_id 
+        WHERE snapshot_ami_id is not NULL
+        order by snapshotid
+
 
   AthenaSnaphotAMIPricing:
     Type: AWS::Athena::NamedQuery
