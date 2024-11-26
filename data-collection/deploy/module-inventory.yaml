@@ -1413,7 +1413,7 @@ Resources:
             FROM ${DatabaseName}.inventory_ami_data) AS ami
                 ON snapshots.snap_ami_id = ami.imageid )
 
-  AthenaSnaphotAMICUR:
+  AthenaSnaphotAMICURData:
     Type: AWS::Athena::NamedQuery
     Properties:
       Database: !Ref DatabaseName
