@@ -65,7 +65,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
         Version: 2012-10-17
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -143,17 +143,7 @@ Resources:
                   raise RuntimeError(f"(MissingParameterError) Lambda event missing '{key}' parameter")
 
               account = json.loads(event[key])
-
-              try:
-                  main(account, ROLE_NAME, MODULE_NAME, BUCKET)
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  if "AccessDenied" in str(exc):
-                      print(f'Failed to assume role {ROLE_NAME} in account {account}. Please make sure the role exists. {exc}')
-                  else:
-                      print(f'{exc}. Gracefully exiting from Lambda so we do not break all StepFunction Execution')
-                  return {
-                      'statusCode': 200
-                  }
+              main(account, ROLE_NAME, MODULE_NAME, BUCKET)
               return {
                   'statusCode': 200
               }
@@ -182,7 +172,7 @@ Resources:
                       x.isoformat() if isinstance(x, (date, datetime)) else None
               )
 
-          def main(account, role_name, module_name, bucket): #pylint: disable=too-many-locals
+          def main(account, role_name, module_name, bucket):
               account_id = account["account_id"]
               payer_id = account["payer_id"]
               account_name = account.get("account_name", None)

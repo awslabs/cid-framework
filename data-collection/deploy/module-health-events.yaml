@@ -65,7 +65,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
         Version: 2012-10-17
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -410,7 +410,7 @@ Resources:
           PREFIX: !Ref CFDataName
           ROLENAME: !Ref ManagementRoleName
           #REGIONS: -- defining regions can miss events within the region list so default to global
-          LOOKBACK: 730 # 2 years
+          LOOKBACK: 90
           DETAIL_SM_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ResourcePrefix}${CFDataName}-detail-StateMachine'
     Metadata:
       cfn_nag:

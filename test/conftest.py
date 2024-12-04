@@ -13,9 +13,20 @@ _start_time = None
 
 
 @pytest.fixture(scope='session')
+def session():
+    return boto3.session.Session()
+
+@pytest.fixture(scope='session')
 def athena():
     return boto3.client('athena')
 
+@pytest.fixture(scope='session')
+def lambda_client():
+    return boto3.client('lambda')
+
+@pytest.fixture(scope='session')
+def support():
+    return boto3.client('support')
 
 @pytest.fixture(scope='session')
 def cloudformation():

@@ -3,6 +3,7 @@
 
 This repostory contains following elements:
 * [data-collection](/data-collection) - a set of Cloud Formation Templates for collecting data from Management and Linked Accounts. 
+* [case-summarization](/case-summarization) - a Cloud Formation Template for deploying the AWS Support Case Summarization plugin that offers the capability to summarize cases through Generative AI powered by Amazon Bedrock. 
 
 ## Support and Contribution
 

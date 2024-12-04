@@ -65,7 +65,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
         Version: 2012-10-17
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -107,11 +107,11 @@ Resources:
           # Mohideen - Added Budgets tag collection module
           import os
           import json
-          import re
           import logging
           import datetime
           from json import JSONEncoder
-
+          import sys
+          
           import boto3
 
           BUCKET = os.environ["BUCKET_NAME"]
@@ -128,27 +128,6 @@ Resources:
                   if isinstance(o, (datetime.date, datetime.datetime)):
                       return o.isoformat()
                   return None
-
-          def clean_value(value):
-              """Clean string values by replacing special characters with underscores"""
-              if isinstance(value, str):
-                  return re.sub(r'\W+', '_', value)
-              elif isinstance(value, list):
-                  return [clean_value(v) for v in value]
-              return value
-
-          def process_cost_filters(budget):
-              """Process and clean cost filters in budget"""
-              cost_filters = budget.get('CostFilters', {})
-              if not cost_filters:
-                  budget['CostFilters'] = {'Filter': ['None']}
-                  return
-
-              cleaned_filters = {
-                  re.sub(r'\W+', '_', key): clean_value(value)
-                  for key, value in cost_filters.items()
-              }
-              budget['CostFilters'] = cleaned_filters
 
           def assume_role(account_id, service, region):
               partition = boto3.session.Session().get_partition_for_region(region_name=region)
@@ -178,40 +157,31 @@ Resources:
               payer_id = account["payer_id"]
 
               logger.info(f"Collecting data for account: {account_id}")
-              try:
-                  budgets_client = assume_role(account_id, "budgets", "us-east-1") # must be us-east-1
-                  count = 0
-                  with open(TMP_FILE, "w", encoding='utf-8') as f:
-                      for budget in budgets_client.get_paginator("describe_budgets").paginate(AccountId=account_id).search('Budgets'):
-                          if not budget:
-                              continue
-                          budget['collection_time'] = collection_time
-                          # Fetch tags for the budget using List tag for resource API
-                          budget_name = budget['BudgetName']
-                          budget_tags = budgets_client.list_tags_for_resource(ResourceARN=f"arn:{aws_partition}:budgets::{account_id}:budget/{budget_name}")
-                          budget.update({
-                              'Account_ID': account_id,
-                              'Account_Name': account_name,
-                              'Tags': budget_tags.get('ResourceTags') or []
-                          })
-                          # Fetch CostFilters if available
-                          process_cost_filters(budget)
-                          # Add column plannedbudgetslimit as type array
-                          budget_limits = budget.pop('PlannedBudgetLimits', {}) 
-                          budget['PlannedBudgetLimits_Flat'] = [
-                              {'date': key, 'Amount': value.get('Amount'), 'Unit': value.get('Unit')}
-                              for key, value in budget_limits.items()
-                          ]
-                          f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
-                          count += 1
-                  logger.info(f"Budgets collected: {count}")
-                  s3_upload(account_id, payer_id)
-              except Exception as exc: #pylint: disable=broad-exception-caught
-                  if "AccessDenied" in str(exc):
-                      print(f'Failed to assume role {ROLE_NAME} in account {account_id}. Please make sure the role exists. {exc}')
-                  else:
-                      print(f'{exc}. Gracefully exiting from Lambda so we do not break all StepFunction Execution')
-                  return
+              budgets_client = assume_role(account_id, "budgets", "us-east-1") # must be us-east-1
+              count = 0
+              with open(TMP_FILE, "w", encoding='utf-8') as f:
+                  for budget in budgets_client.get_paginator("describe_budgets").paginate(AccountId=account_id).search('Budgets'):
+                      if not budget: continue
+                      budget['collection_time'] = collection_time
+
+                      # Fetch tags for the budget using List tag for resource API
+                      budget_name = budget['BudgetName']
+                      budget_tags = budgets_client.list_tags_for_resource(ResourceARN=f"arn:{aws_partition}:budgets::{account_id}:budget/{budget_name}")
+                      budget.update({
+                          'Account_ID': account_id,
+                          'Account_Name': account_name,
+                          'Tags': budget_tags.get('ResourceTags') or []
+                      })
+
+                      # Fetch CostFilters if available
+                      if not budget.get('CostFilters'):
+                          budget.update({'CostFilters': {'Filter': ['None']}})
+
+                      f.write(json.dumps(budget, cls=DateTimeEncoder) + "\n")
+                      count += 1
+              logger.info(f"Budgets collected: {count}")
+              s3_upload(account_id, payer_id)
+
 
           def s3_upload(account_id, payer_id):
               if os.path.getsize(TMP_FILE) == 0:
