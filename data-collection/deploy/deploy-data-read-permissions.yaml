@@ -181,7 +181,7 @@ Resources:
   DataCollectorMgmtAccountReadStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-management-account.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/deploy-in-management-account.yaml"
       Parameters:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         ManagementAccountRole: !Ref ManagementAccountRole
@@ -198,7 +198,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: DeployModuleReadInMgmt
     Properties:
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/deploy-in-linked-account.yaml"
       Parameters:
         DataCollectionAccountID: !Ref DataCollectionAccountID
         MultiAccountRoleName: !Ref MultiAccountRoleName
@@ -257,4 +257,4 @@ Resources:
         - CAPABILITY_IAM
         - CAPABILITY_NAMED_IAM
       StackSetName: !Sub "StackSet-${AWS::AccountId}-OptimizationDataRole"
-      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.amazonaws.com/cfn/data-collection/deploy-in-linked-account.yaml"
+      TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/deploy-in-linked-account.yaml"
