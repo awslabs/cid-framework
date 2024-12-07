@@ -1,0 +1,871 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Retrieve AWS Security Hub details across AWS organizations v0.0.3
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: 'Deployment parameters'
+        Parameters:
+          - ResourcePrefix
+          - DatabaseName
+          - DestinationBucketPrefix
+          - CFDataName
+      - Label:
+          default: '(OPTIONAL) Consolidate Security Hub Data Across AWS Organizations'
+        Parameters:
+          - CollectSecurityHubData
+          - AcceptDataFromAccountIDs
+          - SendDataToAccountID
+    ParameterLabels:
+      DatabaseName:
+        default: 'Database Name'
+      DestinationBucketPrefix:
+        default: 'Bucket Prefix'
+      ResourcePrefix:
+        default: 'Resource Prefix'
+      CFDataName:
+        default: 'Data Prefix (Do Not Change)'
+      AcceptDataFromAccountIDs:
+        default: 'Accept Data From'
+      SendDataToAccountID:
+        default: 'Send Data To'
+      CollectSecurityHubData:
+        default: 'Collect Data'
+
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold information
+    Default: cid_security_hub
+  DestinationBucketPrefix:
+    Type: String
+    Description: "A Prefix of S3 Bucket name that will hold information. A Bucket name will be concatenated with account_id automatically (ex: cid-123456123456-security-hub). You can keep this parameter as is."
+    AllowedPattern: (?=^.{3,36}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9\-])$)
+    Default: cid-
+  AcceptDataFromAccountIDs:
+    Type: String
+    AllowedPattern: ^(\d{12}(,\d{12})*)?$
+    Description: "(Ex: 1234567890123,1234567890123) List of Accounts that can send Security Hub Information. If not needed keep empty "
+  SendDataToAccountID:
+    Type: String
+    AllowedPattern: ^(\d{12})?$
+    Description: "(Ex:1234567890123) List of Account IDs to send Security Hub information. If not needed keep empty. Make sure that this account already has the same stack with the same BucketPrefix with parameter AcceptDataFromAccountIDs configured."
+  CollectSecurityHubData:
+    Type: String
+    Description: "Set a collection of AWS Security Hub data from the current account. Set it to 'no' only if Data Collection part is not needed (ex: data are replicated from another account)."
+    Default: 'yes'
+    AllowedValues: ['yes', 'no']
+  CFDataName:
+    Type: String
+    Description: Just additional prefix. Keep it as is.
+    Default: securityhub
+  ResourcePrefix:
+    Type: String
+    Default: cid-
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+
+Conditions:
+  CollectSecurityHubData: !Equals [!Ref CollectSecurityHubData, 'yes']
+  AcceptData: !Not [!Equals [!Ref AcceptDataFromAccountIDs, '']]
+  SendData: !And [!Condition CollectSecurityHubData, !Not [!Equals [!Ref SendDataToAccountID, '']]]
+
+Resources:
+  ReplicationRole:
+    Condition: SendData
+    Type: AWS::IAM::Role
+    Properties:
+      Path: !Sub /${ResourcePrefix}/
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - "s3.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: ReplicationPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetReplicationConfiguration
+                  - s3:ListBucket
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub"
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                Resource:  !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub/*"
+              - Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${SendDataToAccountID}-security-hub/${CFDataName}/*"
+
+  DestinationBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub "${DestinationBucketPrefix}${AWS::AccountId}-security-hub"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+            BlockPublicAcls : true
+            BlockPublicPolicy : true
+            IgnorePublicAcls : true
+            RestrictPublicBuckets : true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: Object&Version Expiration
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 7
+      ReplicationConfiguration:
+        Fn::If:
+          - SendData
+          - Role: !GetAtt ReplicationRole.Arn
+            Rules:
+              - Destination:
+                  Bucket: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${SendDataToAccountID}-security-hub"
+                  StorageClass: STANDARD
+                Id: ReplicateSecurityHubData
+                Prefix: !Sub "${CFDataName}/"
+                Status: Enabled
+          - !Ref 'AWS::NoValue'
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W51 #S3 bucket should likely have a bucket policy
+            reason: "No bucket policy required by default"
+          - id: W35 #S3 Bucket should have access logging configured
+            reason: "The bucket is used with Athena and logging can be extensive."
+      cfn-lint:
+        config:
+          ignore_checks:
+            - W3045 # Need to use AccessControl for replication
+
+  DestinationBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DestinationBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowSSLOnly
+            Action: s3:*
+            Effect: Deny
+            Principal: "*"
+            Resource: !Sub "${DestinationBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+          - Sid: AllowTLS12Only
+            Action: s3:*
+            Effect: Deny
+            Principal: "*"
+            Resource: !Sub "${DestinationBucket.Arn}/*"
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+          - Fn::If:
+              - AcceptData
+              - Sid: AllowReplicationWrite
+                Effect: Allow
+                Principal:
+                  AWS: !Split [',', !Ref AcceptDataFromAccountIDs]
+                Action:
+                  - s3:ReplicateDelete
+                  - s3:ReplicateObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${DestinationBucket}/*'
+              - !Ref 'AWS::NoValue'
+          - Fn::If:
+              - AcceptData
+              - Sid: AllowReplicationListAndVersioning
+                Effect: Allow
+                Principal:
+                  AWS: !Split [',', !Ref AcceptDataFromAccountIDs]
+                Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                  - s3:GetBucketVersioning
+                  - s3:PutBucketVersioning
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${DestinationBucket}'
+              - !Ref 'AWS::NoValue'
+
+  GlueDatabase:
+    Type: "AWS::Glue::Database"
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Description: "CID Security Hub Data"
+        Name: !Ref DatabaseName
+
+  TransformationLambdaRole:
+    Condition: CollectSecurityHubData
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-TransformationLambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: !Sub /${ResourcePrefix}/
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  EventBridgeInvokeFirehoseRole:
+    Condition: CollectSecurityHubData
+    UpdateReplacePolicy: "Delete"
+    Type: "AWS::IAM::Role"
+    DeletionPolicy: "Delete"
+    Properties:
+      Path: "/service-role/"
+      MaxSessionDuration: 3600
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-EventBridgeInvokeFirehose"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Action: "sts:AssumeRole"
+          Effect: "Allow"
+          Principal:
+            Service: "events.amazonaws.com"
+      Policies:
+        - PolicyName: "Firehose-WriteAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "firehose:PutRecord"
+                  - "firehose:PutRecordBatch"
+                Resource:
+                  - !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  KinesisFirehoseRole:
+    Condition: CollectSecurityHubData
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-KinesisFireHoseRole"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Condition:
+              StringEquals:
+                'sts:ExternalId': !Ref 'AWS::AccountId'
+      Path: /
+      Policies:
+        - PolicyName: "ResourcesAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                - "s3:PutObject"
+                - "s3:GetObject"
+                - "s3:ListBucketMultipartUploads"
+                - "s3:AbortMultipartUpload"
+                Resource:
+                - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                  - "s3:GetBucketLocation"
+                Resource:
+                - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
+              - Effect: "Allow"
+                Action:
+                  - "lambda:InvokeFunction"
+                  - "lambda:GetFunctionConfiguration"
+                Resource:
+                - !GetAtt TransformationLambda.Arn
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  EventRuleSecurityHubKinesisIntegration:
+    Condition: CollectSecurityHubData
+    Type: "AWS::Events::Rule"
+    Properties:
+      EventPattern:
+        detail-type:
+        - "Security Hub Findings - Imported"
+        source:
+        - "aws.securityhub" # only AWS can send events with source aws.*
+        # - "cid.test" # uncomment for testing
+      Targets:
+      - Arn: !GetAtt SecHubEventsFirehoseDeliveryStream.Arn
+        RoleArn: !GetAtt EventBridgeInvokeFirehoseRole.Arn
+        Id: "Firehose"
+      State: "ENABLED"
+      Name: !Sub "${ResourcePrefix}${CFDataName}-SecurityHubToFirehose"
+
+  BackfillStateMachineRole:
+    Condition: CollectSecurityHubData
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: !Sub 'states.${AWS::Region}.amazonaws.com'
+        Version: '2012-10-17'
+      Path: /
+      Policies:
+        - PolicyName: "SecurityHub-S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Action: lambda:InvokeFunction
+                Effect: Allow
+                Resource:
+                  - !GetAtt BackfillLambda.Arn
+
+  BackfillStateMachine:
+    Condition: CollectSecurityHubData
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${ResourcePrefix}${CFDataName}-BackfillData"
+      RoleArn: !GetAtt BackfillStateMachineRole.Arn
+      DefinitionString: !Sub '
+        {
+          "StartAt": "GetSecurityHubFindings",
+          "States": {
+            "GetSecurityHubFindings": {
+              "Next": "Check for NextToken in Security Hub Findings response.",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException","Lambda.AWSLambdaException","Lambda.SdkClientException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                },{
+                  "ErrorEquals": ["States.ALL"],
+                  "IntervalSeconds": 10,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Type": "Task",
+              "InputPath": "$",
+              "OutputPath": "$",
+              "Resource": "arn:${AWS::Partition}:states:::lambda:invoke",
+              "Parameters":{
+                "FunctionName": "${BackfillLambda.Arn}",
+                "Payload.$": "$"
+              }
+            },
+            "Check for NextToken in Security Hub Findings response.": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.Payload.NextToken",
+                  "IsNull":false,
+                  "Next": "GetSecurityHubFindings"
+                }
+              ],
+              "Default": "Security Hub Export Succeeded"
+            },
+            "Security Hub Export Succeeded": {"Type": "Succeed"}
+          }
+        }'
+
+  TransformationLambda:
+    Condition: CollectSecurityHubData
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-TransformationLambda'
+      Description: "Lambda function to transform Security Hub events"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          ''' This function just transforms Security Hub events before it is written by Firehose.
+          '''
+          import re
+          import json
+          import logging
+          import base64
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def rename_keys(payload):
+              """Recursively rename all special characters in keys to '_'. """
+              if isinstance(payload, dict):
+                  return {re.sub(r'\W+', '_', key).lower(): rename_keys(value) for key, value in payload.items()}
+              elif isinstance(payload, list):
+                  return [rename_keys(item) for item in payload]
+              return payload
+
+          def lambda_handler(event, context):
+              payload = event['records']
+              transformed_records = []
+              separators = (',', ':') # saving one space character
+              for record in payload:
+                  try:
+                      data = record['data']
+                      decoded_data = base64.b64decode(data).decode('utf-8')
+                      logger.debug(f"Input record: {json.dumps(decoded_data)}")
+                      renamed_payload = rename_keys(json.loads(decoded_data))
+                      flattened_data = json.dumps(renamed_payload, separators=separators) + '\n'
+                      transformed_record = {
+                          'recordId': record['recordId'],
+                          'result': 'Ok',
+                          'data': base64.b64encode(flattened_data.encode('utf-8')).decode('utf-8')
+                      }
+                      logger.debug(f"Transformed record: {json.dumps(transformed_record)}")
+                      transformed_records.append(transformed_record)
+                  except Exception as exc:
+                      logger.error(f'Error while processing record {exc}. Please activate debug log to get more info')
+              return {'records': transformed_records}
+      Handler: "index.lambda_handler"
+      MemorySize: 2688
+      Timeout: 900
+      Role: !GetAtt TransformationLambdaRole.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  BackfillLambdaRole:
+    Condition: CollectSecurityHubData
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-BackfillLambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: "SecurityHub-ReadAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "securityhub:GetFindings"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:securityhub:*:*:*"
+        - PolicyName: "S3-WriteAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:PutObjectAcl"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}/*"
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+
+  BackfillLambda:
+    Condition: CollectSecurityHubData
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-BackfillLambda'
+      Description: !Sub "Lambda function to Backfill SecurityHub Active & Archived findings for last 90days ${CFDataName}"
+      Role: !GetAtt BackfillLambdaRole.Arn
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+      Handler: index.lambda_handler
+      MemorySize: 4096
+      ReservedConcurrentExecutions: 100
+      Timeout: 900
+      Code:
+        ZipFile: |
+          """ This function pulls the data from Security Hub and stores it on the S3.
+          It supposed to be One time operation for Backfill data after installation.
+
+          This lambda must be used with StepFunction. StepFunction manages pagination for large Backfill jobs.
+
+          Heavily inspired by the work done by Jonathan Nguyen. Please check:
+          https://aws.amazon.com/blogs/security/export-historical-security-hub-findings-to-an-s3-bucket-to-enable-complex-analytics/
+          """
+          import os
+          import re
+          import gzip
+          import time
+          import json
+          import uuid
+          import datetime
+          import logging
+          from io import BytesIO
+
+          import boto3
+          from botocore.exceptions import ClientError
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          BUCKET_NAME = os.environ['BUCKET_NAME']
+          PREFIX = os.environ['PREFIX']
+          REGION = os.environ['AWS_REGION']
+
+          securityhub = boto3.client('securityhub')
+          s3 = boto3.resource('s3')
+
+          def rename_keys(payload):
+              """Recursively rename all special characters in keys to '_'. """
+              if isinstance(payload, dict):
+                  return {re.sub(r'\W+', '_', key).lower(): rename_keys(value) for key, value in payload.items()}
+              elif isinstance(payload, list):
+                  return [rename_keys(item) for item in payload]
+              return payload
+
+          def get_findings(securityhub, finding_filter, next_token, account, max_iterator=50):
+              ''' get findings
+              '''
+              results = []
+              logger.info("Running export for Security Hub findings...")
+              for x in range(0, max_iterator, 1):
+                  try:
+                      response = securityhub.get_findings(
+                          Filters=finding_filter,
+                          NextToken=next_token,
+                          MaxResults=100,
+                      )
+                      results.extend(response["Findings"])
+                      if "NextToken" in response:
+                          next_token = response['NextToken']
+                      else:
+                          logger.info("NextToken not found. Ending Security Hub finding export.")
+                          next_token = None
+                          break
+                  except ClientError as error_handle:
+                      if error_handle.response['Error']['Code'] == 'TooManyRequestsException':
+                          time.sleep(5)
+                          logger.warning('Catching Security Hub API Throttle...')
+                          next_token = response['NextToken']
+                  except Exception as exception_handle:
+                      logger.error(exception_handle)
+                      next_token = response['NextToken']
+              logger.info("Consolidating {} findings...".format(len(results)))
+              return next_token, results
+
+          def put_obj_to_s3(results, account):
+              ''' Upload to s3
+              '''
+              date = datetime.datetime.now()
+              key = date.strftime(f"{PREFIX}/securityhub_events/%Y/%m/%d/{account}-backfill-{uuid.uuid4()}.gz")
+              try:
+                  # Compress the JSON data with GZip
+                  compressed_data = BytesIO()
+                  with gzip.GzipFile(fileobj=compressed_data, mode='w') as gz_file:
+                      for result in results:
+                          json_obj = json.dumps({
+                              "version": "0",
+                              "id": str(uuid.uuid4()),
+                              "detail_type": "Security Hub Findings - Backfill",
+                              "source": "backfill", # = 'aws.securityhub' if arrives via EventBridge
+                              "account": account, # This is an account of data collection, not account of finding
+                              "time": date.isoformat(),
+                              "region": REGION, # This is a region of data collection, not region of finding
+                              "resources": [
+                                  f.get('productfields', {}).get('aws_securityhub_findingid', '')
+                                  for f in results
+                                  if 'aws_securityhub_findingid' in f.get('productfields', {})
+                              ],
+                              "detail": {
+                                  "findings": [rename_keys(result)]
+                              }
+                          })
+                          gz_file.write(json_obj.encode() + b'\n')
+                  compressed_data.seek(0)
+                  response = s3.Bucket(BUCKET_NAME).put_object(
+                      Key=key,
+                      Body=compressed_data
+                  )
+                  logger.info(f"Successfully exported {len(results)} findings to s3://{BUCKET_NAME}/{key}")
+              except ClientError as error_handle:
+                  if error_handle.response['Error']['Code'] == 'ConnectTimeoutError':
+                      time.sleep(5)
+                      logger.warning('Catching Connection Timeout Error...')
+              except Exception as exception_handle:
+                  logger.error(exception_handle)
+
+          def lambda_handler(event, context):
+              # print(event)
+              account = context.invoked_function_arn.split(":")[4]
+              if 'Payload' in event:
+                  next_token = event['Payload']['NextToken']
+                  logger.info(f"NextToken {next_token} detected for Security Hub findings.")
+              else:
+                  next_token = ''
+                  logger.info("NextToken not detected for Security Hub findings.")
+              finding_filter = {
+                  'ProductName': [ 
+                      {
+                          'Value': 'Security Hub',
+                          'Comparison': 'NOT_EQUALS', 
+                      }
+                  ]
+              }
+              runs = 25
+              for a in range(0, runs, 1):
+                  if (next_token is not None):
+                      next_token, results = get_findings(securityhub, finding_filter, next_token, account)
+                      put_obj_to_s3(results, account)
+                  else:
+                      logger.info("NextToken not found... Ending Security Hub finding export.")
+                      break
+              return {
+                  'NextToken': next_token,
+              }
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  BackfillCustomResourceLambdaRole:
+    Condition: CollectSecurityHubData
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: StepFunctionsStartExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: states:StartExecution
+                Resource: !GetAtt BackfillStateMachine.Arn
+  BackfillCustomResourceLambda:
+    Condition: CollectSecurityHubData
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: "Custom Resource for Triggering Backfill of Security Hub Data Collection "
+      Runtime: python3.12
+      Architectures: [x86_64]
+      MemorySize: 2688
+      Timeout: 60
+      Handler: index.handler
+      Role: !GetAtt BackfillCustomResourceLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+          def handler(event, context):
+              try:
+                  if event['RequestType'] == 'Create':
+                      response = boto3.client('stepfunctions').start_execution(stateMachineArn=event['ResourceProperties']['StateMachineArn'], input='{}')
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  TriggerBackfillStateMachine:
+    Condition: CollectSecurityHubData
+    Type: Custom::TriggerBackfillStateMachine
+    Properties:
+      ServiceToken: !GetAtt BackfillCustomResourceLambda.Arn
+      StateMachineArn: !Ref BackfillStateMachine
+
+
+  FirehoseLogGroup:
+    Condition: CollectSecurityHubData
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/kinesis/${ResourcePrefix}${CFDataName}-detail-stream"
+      RetentionInDays: 60
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W84 # CloudWatchLogs LogGroup should specify a KMS Key Id to encrypt the log data
+            reason: "No need for KMS key in this case"
+
+  SecHubEventsFirehoseDeliveryStream:
+    Condition: CollectSecurityHubData
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamName: !Sub '${ResourcePrefix}${CFDataName}-detail-stream'
+      DeliveryStreamType: DirectPut
+      DeliveryStreamEncryptionConfigurationInput:
+        KeyType: AWS_OWNED_CMK
+      ExtendedS3DestinationConfiguration:
+        BucketARN: !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+        Prefix: !Sub "${CFDataName}/securityhub_events/!{timestamp:yyyy}/!{timestamp:MM}/!{timestamp:dd}/${AWS::AccountId}-"
+        ErrorOutputPrefix: !Sub "${CFDataName}/securityhub_errors/!{timestamp:yyyy/MM/}/!{firehose:error-output-type}"
+        RoleARN: !GetAtt KinesisFirehoseRole.Arn
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: !Ref FirehoseLogGroup
+          LogStreamName: SecHubEventsFirehoseDeliveryStreamLog
+        BufferingHints:
+          IntervalInSeconds: 900
+          SizeInMBs: 30
+        CompressionFormat: "GZIP"
+        ProcessingConfiguration:
+          Enabled: true
+          Processors:
+          - Type: Lambda
+            Parameters:
+            - ParameterName: LambdaArn
+              ParameterValue: !GetAtt TransformationLambda.Arn
+            - ParameterName: BufferIntervalInSeconds
+              ParameterValue: 600 # Buffer for X seconds before processing. This reduces number of lambda invocations.
+            - ParameterName: BufferSizeInMBs 
+              ParameterValue: 3 # Must be less then Lambda payload size (6MB)
+
+  TableSecurityHubEvents:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref "AWS::AccountId"
+      DatabaseName: !Ref DatabaseName
+      TableInput:
+        Name: securityhub_events
+        TableType: EXTERNAL_TABLE
+        PartitionKeys:
+        - { Name: datehour,    Type: string }
+        StorageDescriptor:
+          Columns:
+          - { Name: version,     Type: string }
+          - { Name: id,          Type: string }
+          - { Name: detail_type, Type: string }
+          - { Name: source,      Type: string }
+          - { Name: account,     Type: string }
+          - { Name: time,        Type: string }
+          - { Name: region,      Type: string }
+          - { Name: resources,   Type: array<string> }
+          - { Name: detail,      Type: string }
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          Location: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/"
+          Parameters: {}
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              serialization.format: '1'
+        Parameters:
+          EXTERNAL: 'TRUE'
+          projection.datehour.format: yyyy/MM/dd
+          projection.datehour.interval: '1'
+          projection.datehour.interval.unit: DAYS
+          projection.datehour.range: 2024/07/01,NOW
+          projection.datehour.type: date
+          projection.enabled: 'true'
+          storage.location.template: !Sub "s3://${DestinationBucket}/${CFDataName}/securityhub_events/${!datehour}"
+
+  ReadAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub ${ResourcePrefix}SecurityHubReadAccess
+      Description: 'Policy for QuickSight'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowGlue
+            Effect: Allow
+            Action:
+              - glue:GetPartition
+              - glue:GetPartitions
+              - glue:GetDatabase
+              - glue:GetDatabases
+              - glue:GetTable
+              - glue:GetTables
+            Resource:
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*
+              - !Sub arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}
+          - Sid: AllowListBucket
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub
+          - Sid: AllowReadBucket
+            Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${DestinationBucketPrefix}${AWS::AccountId}-security-hub/*
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: 'W28'
+            reason: "Need an explicit name for reference"
+
+Outputs:
+  ReadAccessPolicyARN:
+    Description: "Read Access Policy"
+    Value: !Ref ReadAccessPolicy
+    Export: { Name: "cid-SecurityHub-ReadAccessPolicyARN" }

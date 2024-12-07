@@ -57,7 +57,7 @@ aws s3api create-bucket --bucket $bucket
 
 Cloud Formation:
 ```bash
-./data-collection/utils/lint.sh
+./data-collection/lint.sh
 ```
 
 Pylint:
