@@ -45,6 +45,9 @@ Parameters:
   StepFunctionTemplate:
     Type: String
     Description: S3 key to the JSON template for the StepFunction
+  GeneralDatasetsStepFunctionTemplate:
+    Type: String
+    Description: S3 key to the JSON template for the General Datasets StepFunction
   StepFunctionExecutionRoleARN:
     Type: String
     Description: Common role for Step Function execution
@@ -58,6 +61,10 @@ Parameters:
     Type: CommaDelimitedList
     Default: OpensearchDomains, ElasticacheClusters, RdsDbInstances, EBS, AMI, Snapshot, Ec2Instances, VpcInstances, RdsDbSnapshots, EKSClusters, LambdaFunctions, RdsDbClusters
     Description: Services for pulling price data
+  AwsGeneralDatasets:
+    Type: CommaDelimitedList
+    Default: EbsOptimizedInstances
+    Description: General datasets used by inventory based dashboards or predefined queries for inventory optimisation
 
 Mappings:
   ServicesMap:
@@ -1003,6 +1010,35 @@ Mappings:
                 paths: functionname, functionarn, runtime, role, handler, codesize, dedscription, timeout, memorysize, lastmodified, codesha256, version, tracingconfig, revisionid, packagetype, architectures, ephemeralstorage, snapstart, loggingconfig, accountid, collection_date, region, layers, vpcconfig
               SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
           TableType: EXTERNAL_TABLE
+  
+  GeneralDatasetsMap:
+    EbsOptimizedInstances:
+      path: ebs-optimized-instances
+      table:
+        - Name: inventory_ebs_optimized_instances_data
+          Parameters: { "classification" : "json", "compressionType": "none" }
+          StorageDescriptor:
+            Columns:
+            - Name: instance_type
+              Type: string
+            - Name: max_bandwidth
+              Type: string
+            - Name: max_iops
+              Type: string
+            - Name: max_throughput
+              Type: string
+            - Name: region
+              Type: string
+            - Name: collection_date
+              Type: string
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub s3://${DestinationBucket}/inventory/inventory-ebs-optimized-instances-data/
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            SerdeInfo:
+              Parameters:
+                paths: instanceType, maxBandwidth, maxIops, maxThroughput, region, collection_date
+              SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+          TableType: EXTERNAL_TABLE
 
 Resources:
   LambdaRole:
@@ -1360,6 +1396,207 @@ Resources:
             Mode: 'FLEXIBLE'
           Target:
             Arn: !GetAtt [!Sub 'StepFunction${AwsObject}', Arn]
+            RoleArn: !Ref SchedulerExecutionRoleARN
+  
+  GeneralDatasetsLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-GeneralDatasets-Lambda'
+      Description: !Sub "Lambda Function to retrieve ${CFDataName}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          """ Retrieve general datasets and store info to s3 bucket
+          """
+          import os
+          import json
+          import logging
+          from functools import lru_cache
+          from datetime import datetime, date
+
+          import boto3
+          from botocore.client import Config
+
+          TMP_FILE = "/tmp/data.json"
+          PREFIX = os.environ['PREFIX']
+          BUCKET = os.environ["BUCKET_NAME"]
+          ROLENAME = os.environ['ROLENAME']
+          TRACKING_TAGS = os.environ.get("TRACKING_TAGS")
+          TAG_LIST = TRACKING_TAGS.split(",") if TRACKING_TAGS else []
+
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          def to_json(obj):
+              """json helper for date time data"""
+              return json.dumps(
+                  obj,
+                  default=lambda x:
+                      x.isoformat() if isinstance(x, (date, datetime)) else None
+              )
+          @lru_cache(maxsize=1)
+          def assume_session(region):
+              """assume role in data collection account"""
+              sts_client = boto3.client('sts', region_name=region)
+              account_id = sts_client.get_caller_identity().get("Account")
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
+              credentials = sts_client.assume_role(
+                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLENAME}" ,
+                  RoleSessionName="data_collection"
+              )['Credentials']
+              return boto3.session.Session(
+                  aws_access_key_id=credentials['AccessKeyId'],
+                  aws_secret_access_key=credentials['SecretAccessKey'],
+                  aws_session_token=credentials['SessionToken']
+              )
+          
+          def fetch_ebs_optimized_instances():
+              session = assume_session("us-east-1")
+              ec2_client = session.client('ec2')
+              paginator = ec2_client.get_paginator('describe_instance_types')
+              operation_parameters = {'Filters': [{'Name': 'ebs-info.ebs-optimized-support', 'Values': ['default']}]}
+              instance_types = []
+              for page in paginator.paginate(**operation_parameters):
+                  for instance_type in page['InstanceTypes']:
+                      instance_types.append({
+                          "instanceType": instance_type["InstanceType"],
+                          "maxBandwidth": instance_type["EbsInfo"]["EbsOptimizedInfo"]["MaximumBandwidthInMbps"],
+                          "maxIops": instance_type["EbsInfo"]["EbsOptimizedInfo"]["MaximumIops"],
+                          "maxThroughput": instance_type["EbsInfo"]["EbsOptimizedInfo"]["MaximumThroughputInMBps"],
+                          "region": "us-east-1"
+                      })
+              return instance_types
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              """ this lambda collects ami, snapshots and volumes from linked accounts
+              and must be called from the corresponding Step Function to orchestrate
+              """
+              logger.info(f"Event data: {event}")
+              if 'params' not in event  :
+                  raise ValueError(
+                      "Please do not trigger this Lambda manually."
+                      "Find the corresponding state machine in Step Functions and Trigger from there."
+                  )
+              params = [p for p in event.get('params', '').split() if p]
+              name = params[0]
+
+              sub_modules = {
+                  'ebs-optimized-instances': fetch_ebs_optimized_instances
+              }
+
+              func = sub_modules[name]
+              counter = 0
+              logger.info(f"Collecting {name}")
+              collection_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+              try:
+                  with open(TMP_FILE, "w", encoding='utf-8') as file_:
+                      for counter, obj in enumerate(func(), start=counter + 1):
+                          if len(TAG_LIST) > 0 and "Tags" in obj:
+                              logger.debug(f"Tags enabled and found tags {obj['Tags']}")
+                              for tag in obj["Tags"]:
+                                  if tag["Key"] in TAG_LIST:
+                                      obj[f"tag_{tag['Key']}"] = tag["Value"]
+                          obj['collection_date'] = collection_date
+                          if 'Environment' in obj and name == 'lambda-functions':
+                              obj['Environment'] = to_json(obj['Environment']) # this property breaks crawler as it has a different key structure
+                          file_.write(to_json(obj) + "\n")
+                  logger.info(f"Collected {counter} total {name} instances")
+                  upload_to_s3(name)
+              except Exception as exc:   #pylint: disable=broad-exception-caught
+                  logger.info(f"{name}: {type(exc)} - {exc}" )
+
+          def upload_to_s3(name):
+              """upload"""
+              if os.path.getsize(TMP_FILE) == 0:
+                  logger.info(f"No data in file for {name}")
+                  return
+              key = f"{PREFIX}/{PREFIX}-{name}-data/data.json"
+              s3client = boto3.client("s3", config=Config(s3={"addressing_style": "path"}))
+              try:
+                  s3client.upload_file(TMP_FILE, BUCKET, key)
+                  logger.info(f"Data in s3 - {BUCKET}/{key}")
+              except Exception as exc:  #pylint: disable=broad-exception-caught
+                  logger.info(exc)
+
+      Handler: 'index.lambda_handler'
+      MemorySize: 5376
+      Timeout: 300
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+          ROLENAME: !Ref MultiAccountRoleName
+
+  GeneralDatasetsLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${GeneralDatasetsLambdaFunction}"
+      RetentionInDays: 60
+
+  'Fn::ForEach::GeneralDatasets':
+    - AwsGeneralDataset
+    - !Ref AwsGeneralDatasets
+    - 'Crawler${AwsGeneralDataset}':
+        Type: AWS::Glue::Crawler
+        Properties:
+          Name: !Sub '${ResourcePrefix}${CFDataName}-GD-${AwsGeneralDataset}-Crawler'
+          Role: !Ref GlueRoleARN
+          DatabaseName: !Ref DatabaseName
+          Targets:
+            S3Targets:
+              - Path:
+                  Fn::Sub:
+                  - "s3://${DestinationBucket}/inventory/inventory-${path}-data/"
+                  - path: !FindInMap [GeneralDatasetsMap, !Ref AwsGeneralDataset, path]
+          Configuration: |
+            {
+              "Version": 1.0,
+              "Grouping": {
+                "TableGroupingPolicy": "CombineCompatibleSchemas"
+              },
+              "CrawlerOutput": {
+                "Tables": {
+                  "TableThreshold": 1
+                }
+              }
+            }
+      'Table${AwsGeneralDataset}':
+        Type: Custom::ManageGlueTable
+        Properties:
+          ServiceToken: !Ref LambdaManageGlueTableARN
+          TableInput: !Select [0, !FindInMap [GeneralDatasetsMap, !Ref AwsGeneralDataset, table]]
+
+      'StepFunction${AwsGeneralDataset}':
+        Type: AWS::StepFunctions::StateMachine
+        Properties:
+          StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-GD-${AwsGeneralDataset}-StateMachine'
+          StateMachineType: STANDARD
+          RoleArn: !Ref StepFunctionExecutionRoleARN
+          DefinitionS3Location:
+            Bucket: !Ref CodeBucket
+            Key: !Ref GeneralDatasetsStepFunctionTemplate
+          DefinitionSubstitutions:
+            ModuleLambdaARN: !GetAtt GeneralDatasetsLambdaFunction.Arn
+            Crawlers: !Sub '["${ResourcePrefix}${CFDataName}-GD-${AwsGeneralDataset}-Crawler"]'
+            Params: !FindInMap [GeneralDatasetsMap, !Ref AwsGeneralDataset, path]
+            Module: !Ref CFDataName
+            DeployRegion: !Ref AWS::Region
+            Account: !Ref AWS::AccountId
+            Prefix: !Ref ResourcePrefix
+      'RefreshSchedule${AwsGeneralDataset}':
+        Type: AWS::Scheduler::Schedule
+        Properties:
+          Description: !Sub 'Scheduler for the ODC ${CFDataName} ${AwsGeneralDataset} module'
+          Name: !Sub '${ResourcePrefix}${CFDataName}-GD-${AwsGeneralDataset}-RefreshSchedule'
+          ScheduleExpression: !Ref Schedule
+          State: ENABLED
+          FlexibleTimeWindow:
+            MaximumWindowInMinutes: 30
+            Mode: 'FLEXIBLE'
+          Target:
+            Arn: !GetAtt [!Sub 'StepFunction${AwsGeneralDataset}', Arn]
             RoleArn: !Ref SchedulerExecutionRoleARN
 
   AnalyticsExecutor:
@@ -1767,3 +2004,54 @@ Resources:
       Name: backward_compat_pricing_region_names
       QueryString: !Sub |
         CREATE OR REPLACE VIEW pricing_region_names AS SELECT * FROM ${DatabaseName}.pricing_regionnames_data
+  
+  AthenaEC2OverProvisionedIOPS:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: Identifies EBS volumes attached to EC2 instances that have P-IOPS higher than the instance's maximum
+      Name: inventory_ec2_overprovisioned_iops
+      QueryString: !Sub |
+        WITH instances_and_volumes AS (
+          SELECT ebs.accountid,
+            ebs.volumeid,
+            ebs.attachments[1].instanceid AS instanceid,
+            instances.instancetype as instancetype,
+            ebs.volumetype,
+            ebs.iops as provisionediops,
+            ebs.throughput as provisionedthroughput
+          FROM ${DatabaseName}.inventory_ebs_data as ebs
+            left outer join ${DatabaseName}.inventory_ec2_instances_data as instances on attachments[1].instanceid = instances.instanceid
+          WHERE cardinality(ebs.attachments) = 1
+        )
+        SELECT accountid,
+          volumeid,
+          instanceid,
+          instances_and_volumes.instancetype as instancetype,
+          volumetype,
+          provisionediops,
+          maxiops,
+          provisionedthroughput,
+          maxthroughput
+        FROM instances_and_volumes
+          LEFT OUTER JOIN ${DatabaseName}.inventory_ebs_optimized_instances_data ON instances_and_volumes.instancetype = ${DatabaseName}.inventory_ebs_optimized_instances_data.instancetype
+        WHERE provisionediops > maxiops
+  
+  AthenaRDSOverProvisionedIOPS:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: Identifies EBS volumes attached to RDS DB instances that have P-IOPS higher than the instance's maximum
+      Name: inventory_rds_overprovisioned_iops
+      QueryString: !Sub |
+        SELECT rds.accountid,
+          rds.dbinstanceidentifier,
+          rds.dbinstanceclass,
+          rds.storagetype,
+          rds.storagethroughput AS provisioned_storagethroughput,
+          rds.iops as provisioned_iops,
+          ebs.maxiops
+        FROM ${DatabaseName}.inventory_rds_db_instances_data AS rds
+          LEFT OUTER JOIN ${DatabaseName}.inventory_ebs_optimized_instances_data AS ebs ON rds.dbinstanceclass = CONCAT('db.', ebs.instancetype)
+        WHERE storagetype IN ('gp3', 'io1', 'io2')
+          AND rds.iops > ebs.maxiops

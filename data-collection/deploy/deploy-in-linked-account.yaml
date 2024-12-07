@@ -224,6 +224,7 @@ Resources:
           - Effect: "Allow"
             Action:
               - "ec2:DescribeImages"
+              - "ec2:DescribeInstanceTypes"
               - "ec2:DescribeVolumes"
               - "ec2:DescribeSnapshots"
               - "ec2:DescribeRegions"
