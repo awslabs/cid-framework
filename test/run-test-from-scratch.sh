@@ -10,4 +10,4 @@ export bucket
 ./data-collection/utils/upload.sh  "$bucket"
 
 # run test
-python3 ./data-collection/test/test_from_scratch.py "$@"
+python3 ./test/test_from_scratch.py "$@"
