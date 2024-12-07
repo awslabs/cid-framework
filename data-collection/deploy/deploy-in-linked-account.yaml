@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Linked Account v3.3.2
+Description: CID Data Collection - Role for Linked Account v3.5.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -17,7 +17,9 @@ Metadata:
         - IncludeInventoryCollectorModule
         - IncludeRDSUtilizationModule
         - IncludeTAModule
+        - IncludeSupportCasesModule
         - IncludeTransitGatewayModule
+        - IncludeServiceQuotasModule
     ParameterLabels:
       DataCollectionAccountID:
         default: 'Data Collection Account ID'
@@ -27,6 +29,8 @@ Metadata:
         default: "Role Prefix"
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
+      IncludeSupportCasesModule:
+        default: 'Include AWS Support Cases Data Collection Module'
       IncludeInventoryCollectorModule:
         default: 'Include Inventory Collector Module'
       IncludeECSChargebackModule:
@@ -37,6 +41,9 @@ Metadata:
         default: 'Include Budgets Collection Module'
       IncludeTransitGatewayModule:
         default: 'Include Transit Gateway Module'
+      IncludeServiceQuotasModule:
+        default: 'Include Service Quotas Module'
+
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -52,6 +59,11 @@ Parameters:
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
+  IncludeSupportCasesModule:
+    Type: String
+    Description: Collects AWS Support Cases data
     AllowedValues: ['yes', 'no']
     Default: 'no'
   IncludeInventoryCollectorModule:
@@ -79,10 +91,18 @@ Parameters:
     Description: Collects TransitGateway from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeServiceQuotasModule:
+    Type: String
+    Description: Collects Service Quotas from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   IncludeTAModulePolicy: !Equals
     - !Ref IncludeTAModule
+    - "yes"
+  IncludeSupportCasesModulePolicy: !Equals
+    - !Ref IncludeSupportCasesModule
     - "yes"
   IncludeInventoryCollectorModulePolicy: !Equals
     - !Ref IncludeInventoryCollectorModule
@@ -98,6 +118,9 @@ Conditions:
     - "yes"
   IncludeTransitGatewayModulePolicy: !Equals
     - !Ref IncludeTransitGatewayModule
+    - "yes"
+  IncludeServiceQuotasModulePolicy: !Equals
+    - !Ref IncludeServiceQuotasModule
     - "yes"
 
 Outputs:
@@ -116,16 +139,18 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                - !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
+                - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}budgets-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}ecs-chargeback-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}inventory-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}budgets-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}ecs-chargeback-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}inventory-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}rds-usage-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}transit-gateway-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}trusted-advisor-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}support-cases-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}service-quotas-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -152,6 +177,26 @@ Resources:
         rules_to_suppress:
           - id: W12
             reason: "Policy is used for scanning of a wide range of resources"
+  SupportCasesPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeSupportCasesModulePolicy
+    Properties:
+      PolicyName: SupportCasesPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "support:DescribeCases"
+              - "support:DescribeCommunications"
+            Resource: "*" ## Policy is used for scanning of a wide range of resources
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
   BudgetsReadOnlyPolicy:
     Type: 'AWS::IAM::Policy'
     Condition: IncludeBudgetsModulePolicy
@@ -165,7 +210,7 @@ Resources:
               - "budgets:ViewBudget"
               - "budgets:DescribeBudgets"
               - "budgets:ListTagsForResource"
-            Resource: "arn:aws:budgets::*:budget/*"
+            Resource: !Sub "arn:${AWS::Partition}:budgets::*:budget/*"
       Roles:
         - Ref: LambdaRole
   InventoryCollectorPolicy:
@@ -263,6 +308,33 @@ Resources:
               - "cloudwatch:Get*"
               - "cloudwatch:List*"
             Resource: "*" ## Policy is used for scanning of a wide range of resources
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  ServiceQuotasReadOnlyPolicy:
+    Type: 'AWS::IAM::Policy'
+    Condition: IncludeServiceQuotasModulePolicy
+    Properties:
+      PolicyName: ServiceQuotasReadOnlyPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "servicequotas:ListRequestedServiceQuotaChangeHistory"
+              - "servicequotas:GetServiceQuota"
+              - "servicequotas:GetAWSDefaultServiceQuota"
+              - "rds:DescribeAccountAttributes"
+              - "elasticloadbalancing:DescribeAccountLimits"
+              - "dynamodb:DescribeLimits"
+              - "cloudformation:DescribeAccountLimits"
+              - "autoscaling:DescribeAccountLimits"
+              - "route53:GetAccountLimit"
+            Resource: "*" ## Policy is used for scanning a wide range of resources. All service quotas in this case. All of them.
       Roles:
         - Ref: LambdaRole
     Metadata:

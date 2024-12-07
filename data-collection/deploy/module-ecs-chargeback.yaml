@@ -75,7 +75,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "AssumeMultiAccountRole"
@@ -84,7 +84,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${MultiAccountRoleName}"
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${MultiAccountRoleName}"
         - PolicyName: "S3Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -105,7 +105,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
       Description: !Sub "Lambda function to retrieve ${CFDataName}"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
         ZipFile: |
@@ -189,8 +189,9 @@ Resources:
                   logging.warning(exc)
 
           def assume_session(account_id, region):
+              partition = boto3.session.Session().get_partition_for_region(region_name=region)
               cred = boto3.client('sts', region_name=region).assume_role(
-                  RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
+                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}",
                   RoleSessionName="data_collection"
               )['Credentials']
               return boto3.Session(

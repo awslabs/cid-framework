@@ -41,7 +41,7 @@ Resources:
                 - lambda.amazonaws.com
         Version: 2012-10-17
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
         - PolicyName: "AssumeManagementRole"
@@ -50,7 +50,7 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "sts:AssumeRole"
-                Resource: !Sub "arn:aws:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ManagementRoleName}" # Need to assume a Read role in all Management Accounts
         - PolicyName: "CloudWatch"
           PolicyDocument:
             Version: "2012-10-17"
@@ -61,7 +61,7 @@ Resources:
                   - "logs:CreateLogStream"
                   - "logs:PutLogEvents"
                   - "logs:DescribeLogStreams"
-                Resource: !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
+                Resource: !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/*"
         - PolicyName: "SSM"
           PolicyDocument:
             Version: "2012-10-17"
@@ -69,7 +69,7 @@ Resources:
               - Effect: "Allow"
                 Action:
                   - "ssm:GetParameter"
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cid/${ResourcePrefix}*"
         - PolicyName: "Lambda"
           PolicyDocument:
             Version: "2012-10-17"
@@ -99,7 +99,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${ResourcePrefix}account-collector-Lambda'
       Description: "Lambda function to retrieve the account list"
-      Runtime: python3.10
+      Runtime: python3.12
       Architectures: [x86_64]
       Code:
           ZipFile: |
@@ -114,9 +114,10 @@ Resources:
             RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
             MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
             BUCKET = os.environ['BUCKET_NAME']
-            PREDEF_ACCOUNT_LIST_KEY = os.environ['PREDEF_ACCOUNT_LIST_KEY']
-            LINKED_ACCOUNT_LIST_KEY = os.environ['LINKED_ACCOUNT_LIST_KEY']
-            PAYER_ACCOUNT_LIST_KEY = os.environ['PAYER_ACCOUNT_LIST_KEY']
+            PREDEF_ACCOUNT_LIST_KEY = os.environ.get('PREDEF_ACCOUNT_LIST_KEY')
+            LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
+            PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
+            EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
             TMP_FILE = "/tmp/data.json"
 
             logger = logging.getLogger(__name__)
@@ -145,8 +146,7 @@ Resources:
                     raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
 
                 account_iterator = functions[account_type]
-
-                with open(TMP_FILE, "w") as f:
+                with open(TMP_FILE, "w", encoding='utf-8') as f:
                     count = 0
                     f.write("[\n")
                     for account in account_iterator():
@@ -185,7 +185,7 @@ Resources:
                 defined_accounts, ext = get_defined_list(BUCKET, PREDEF_ACCOUNT_LIST_KEY)
                 try:
                     if defined_accounts:
-                        logger.info(f'Using defined account list instead of payer organization')
+                        logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY} instead of payer organization')
                         for account_data in defined_accounts:
                             if ext == "json":
                                 account = json.loads(account_data)
@@ -194,11 +194,20 @@ Resources:
                                 account = account_data.split(',')
                                 yield format_account(account[0], account[1], account[2])
                     else:
-                        logger.info(f'Using payer organization for the account list')
+                        logger.info('Using payer organization for the account list')
+                        excluded_accounts = get_from_bucket(BUCKET, EXCLUDED_ACCOUNT_LIST_KEY)
+                        if excluded_accounts:
+                            logger.info(f'Found list of accounts to exclude in s3://{BUCKET}/{EXCLUDED_ACCOUNT_LIST_KEY}. Will only collect accounts that are not in the list')
+                            excluded_accounts = [a.strip() for a in excluded_accounts[0].split(',') if a]
                         for org_account_data in iterate_admins_accounts('organizations'):
+                            logger.info(f'Collecting accounts for payer {org_account_data}')
                             org_account = json.loads(org_account_data['account'])
+                            logger.info(f'org_account: {org_account}')
                             organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
                             for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
+                                if excluded_accounts and account.get('Id') in excluded_accounts:
+                                    logger.debug(f'Excluding account {account.get("Id")}')
+                                    continue
                                 yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
                 except Exception as exc: #pylint: disable=broad-exception-caught
                     logger.error(f'{org_account}: {exc}')
@@ -207,13 +216,19 @@ Resources:
                 s3 = boto3.client("s3")
                 exts = [".json", ".csv"]
                 for ext in exts:
-                    try:
-                        accts = s3.get_object(Bucket=bucket, Key=f"{key}{ext}")
-                        return accts['Body'].read().decode('utf-8').strip('\n').split('\n'), ext
-                    except Exception as exc: #pylint: disable=broad-exception-caught
-                        continue
+                    accts = get_from_bucket(bucket, key, s3)
+                    if accts:
+                        return accts, ext
                 logger.debug(f'Predefined account list not retrieved or not being used')
                 return None, None
+
+            def get_from_bucket(bucket, key, client=None):
+                s3 = client if client else boto3.client("s3")
+                try:
+                    data = s3.get_object(Bucket=bucket, Key=key)
+                    return data['Body'].read().decode('utf-8').strip('\n').split('\n')
+                except Exception: #pylint: disable=broad-exception-caught
+                    return None
 
             def format_account(account_id, account_name, payer_id):
                 return {
@@ -226,8 +241,9 @@ Resources:
 
 
             def get_client_with_role(account_id, service, region):
+                partition = boto3.session.Session().get_partition_for_region(region_name=region)
                 credentials = boto3.client('sts').assume_role(
-                    RoleArn=f"arn:aws:iam::{account_id}:role/{ROLE_NAME}",
+                    RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}",
                     RoleSessionName="data_collection"
                 )['Credentials']
                 return boto3.client(
@@ -250,6 +266,7 @@ Resources:
           PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
           LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
           PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
+          EXCLUDED_ACCOUNT_LIST_KEY: "account-list/excluded-linked-account-list.csv"
     Metadata:
       cfn_nag:
         rules_to_suppress:

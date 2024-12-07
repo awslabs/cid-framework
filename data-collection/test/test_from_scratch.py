@@ -41,6 +41,8 @@ from utils import athena_query
 logger = logging.getLogger(__name__)
 
 
+def test_deployment_works(athena):
+    pass
 
 def test_budgets_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."budgets_data" LIMIT 10;')
@@ -56,6 +58,17 @@ def test_cost_anomaly_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."cost_anomaly_data" LIMIT 10;')
     assert len(data) > 0, 'cost_anomaly_data is empty'
 
+def test_support_cases_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_data" LIMIT 10;')
+    assert len(data) > 0, 'support_cases_data is empty'
+
+def test_support_cases_communications(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_communications" LIMIT 10;')
+    assert len(data) > 0, 'support_cases_communications is empty'
+
+def test_support_cases_status(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."support_cases_status" LIMIT 10;')
+    assert len(data) > 0, 'test_support_cases_status is empty'
 
 def test_ecs_chargeback_data(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."ecs_chargeback_data" LIMIT 10;')
@@ -171,6 +184,25 @@ def test_license_manager_licenses(athena):
     data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."license_manager_licenses" LIMIT 10;')
     assert len(data) > 0, 'license_manager_licenses is empty'
 
+def test_quicksight_users(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_user_data" LIMIT 10;')
+    assert len(data) > 0, 'quicksight_user_data is empty'
+
+def test_quicksight_groups(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_group_data" LIMIT 10;')
+    assert len(data) > 0, 'quicksight_group_data is empty'
+
+def test_quicksight_groupmembership(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."quicksight_groupmembership_data" LIMIT 10;')
+    assert len(data) > 0, 'quicksight_groupmembership_data is empty'
+
+def test_servicequotas_data(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."service_quotas_data" LIMIT 10;')
+    assert len(data) > 0, 'service_quotas_data is empty'
+
+def test_servicequotas_history(athena):
+    data = athena_query(athena=athena, sql_query='SELECT * FROM "optimization_data"."service_quotas_history" LIMIT 10;')
+    assert len(data) > 0, 'service_quotas_history is empty'
 
 if __name__ == '__main__':
     pytest.params = {}

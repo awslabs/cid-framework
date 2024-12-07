@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection - Role for Management Account v3.3.2
+Description: CID Data Collection - Role for Management Account v3.5.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -15,9 +15,11 @@ Metadata:
           - IncludeBackupModule
           - IncludeComputeOptimizerModule
           - IncludeCostAnomalyModule
+          - IncludeSupportCasesModule
           - IncludeHealthEventsModule
           - IncludeRightsizingModule
           - IncludeLicenseManagerModule
+          - IncludeServiceQuotasModule
     ParameterLabels:
       ManagementAccountRole:
         default: "Management account role"
@@ -29,6 +31,8 @@ Metadata:
         default: "Include AWS Compute Optimizer Data Collection Module"
       IncludeCostAnomalyModule:
         default: "Include Cost Anomalies Data Collection Module"
+      IncludeSupportCasesModule:
+        default: "Include Support Cases Data Collection Module"
       IncludeRightsizingModule:
         default: "Include Rightsizing Recommendations Data Collection Module"
       IncludeBackupModule:
@@ -37,6 +41,8 @@ Metadata:
         default: "Include Health Events Module"
       IncludeLicenseManagerModule:
         default: "Include Marketplace Licensing Module"
+      IncludeServiceQuotasModule:
+        default: "Include Service Quotas Module"
 Parameters:
   DataCollectionAccountID:
     Type: String
@@ -59,6 +65,11 @@ Parameters:
     Description: "Collects AWS Cost Explorer Cost Anomalies Recommendations"
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeSupportCasesModule:
+    Type: String
+    Description: "Collects AWS Support Cases data"
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
   IncludeRightsizingModule:
     Type: String
     Description: "Collects AWS Cost Explorer Rightsizing Recommendations"
@@ -79,14 +90,21 @@ Parameters:
     Description: Collects Marketplace Licensing Information from your accounts
     AllowedValues: ['yes', 'no']
     Default: 'no'
+  IncludeServiceQuotasModule:
+    Type: String
+    Description: Collects Service Quotas Information from your accounts
+    AllowedValues: ['yes', 'no']
+    Default: 'no'
 
 Conditions:
   EnableComputeOptimizerModule: !Equals [!Ref IncludeComputeOptimizerModule, "yes"]
   EnableCostAnomaliesModule: !Equals [!Ref IncludeCostAnomalyModule, "yes"]
+  EnableSupportCasesModule: !Equals [!Ref IncludeSupportCasesModule, "yes"]
   EnableRightsizingModule: !Equals [!Ref IncludeRightsizingModule, "yes"]
   EnableBackupModule: !Equals [!Ref IncludeBackupModule, "yes"]
   EnableHealthEventsModule: !Equals [!Ref IncludeHealthEventsModule, "yes"]
   EnableLicenseManagerModule: !Equals [!Ref IncludeLicenseManagerModule, "yes"]
+  EnableServiceQuotasModule: !Equals [!Ref IncludeServiceQuotasModule, "yes"]
 
 Outputs:
   LambdaRole:
@@ -105,19 +123,22 @@ Resources:
             Effect: Allow
             Principal:
               AWS:
-                - !Sub "arn:aws:iam::${DataCollectionAccountID}:root"
+                - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:root"
             Condition:
               ForAnyValue:ArnEquals:
                 aws:PrincipalArn:
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}account-collector-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}organizations-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}compute-optimizer-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-anomaly-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-explorer-rightsizing-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
-                  - !Sub "arn:aws:iam::${DataCollectionAccountID}:role/${ResourcePrefix}RLS-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}account-collector-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}organizations-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}compute-optimizer-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-anomaly-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}support-cases-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}support-cases-summarization-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}cost-explorer-rightsizing-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}backup-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}health-events-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}license-manager-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}RLS-LambdaRole"
+                  - !Sub "arn:${AWS::Partition}:iam::${DataCollectionAccountID}:role/${ResourcePrefix}service-quotas-LambdaRole"
       Path: /
     Metadata:
       cfn_nag:
@@ -185,6 +206,26 @@ Resources:
           - Effect: "Allow"
             Action:
               - "ce:GetAnomalies"
+            Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  SupportCasesPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableSupportCasesModule
+    Properties:
+      PolicyName: SupportCasesPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "support:DescribeCases"
+              - "support:DescribeCommunications"
             Resource: "*"
       Roles:
         - Ref: LambdaRole
@@ -315,6 +356,33 @@ Resources:
               - "license-manager:ListReceivedLicenses"
               - "license-manager:ListReceivedGrantsForOrganization"
             Resource: "*"
+      Roles:
+        - Ref: LambdaRole
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  ServiceQuotasPolicy:
+    Type: "AWS::IAM::Policy"
+    Condition: EnableServiceQuotasModule
+    Properties:
+      PolicyName: ServiceQuotasPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - "servicequotas:ListRequestedServiceQuotaChangeHistory"
+              - "servicequotas:GetServiceQuota"
+              - "servicequotas:GetAWSDefaultServiceQuota"
+              - "rds:DescribeAccountAttributes"
+              - "elasticloadbalancing:DescribeAccountLimits"
+              - "dynamodb:DescribeLimits"
+              - "cloudformation:DescribeAccountLimits"
+              - "autoscaling:DescribeAccountLimits"
+              - "route53:GetAccountLimit"
+            Resource: "*" ## Policy is used for scanning a wide range of resources. All service quotas in this case. All of them.
       Roles:
         - Ref: LambdaRole
     Metadata:

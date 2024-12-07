@@ -1,0 +1,361 @@
+#IAKOV's version
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Retrieves Quicksight User, Group, Group Members data in Data Collection Account only
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: Name of the Athena database to be created to hold lambda information
+    Default: optimization_data
+  DestinationBucket:
+    Type: String
+    Description: Name of the S3 Bucket to be created to hold data information
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+  DestinationBucketARN:
+    Type: String
+    Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: quicksight
+  GlueRoleARN:
+    Type: String
+    Description: Arn for the Glue Crawler role
+  Schedule:
+    Type: String
+    Description: EventBridge Schedule to trigger the data collection
+    Default: "rate(1 day)"
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all roles created. Note you may wish to add a dash at the end to make more readable
+  LambdaAnalyticsARN:
+    Type: String
+    Description: Arn of lambda for Analytics
+  CodeBucket:
+    Type: String
+    Description: Source code bucket
+  StepFunctionTemplate:
+    Type: String
+    Description: S3 key to the JSON template for the StepFunction
+  StepFunctionExecutionRoleARN:
+    Type: String
+    Description: Common role for Step Function execution
+  SchedulerExecutionRoleARN:
+    Type: String
+    Description: Common role for module Scheduler execution
+
+Outputs:
+  StepFunctionARN:
+    Description: ARN for the module's Step Function
+    Value: !GetAtt ModuleStepFunction.Arn
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: "QuickSightAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "quicksight:ListNamespaces"
+                  - "quicksight:ListUsers"
+                  - "quicksight:ListUserGroups"
+                  - "quicksight:ListGroups"
+                  - "quicksight:ListGroupMemberships"
+                Resource: "*" ## Policy is used for scanning of a wide range of resources
+        - PolicyName: "S3Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                Resource:
+                  - !Sub "${DestinationBucketARN}/*"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
+            reason: "Need explicit name to identify role actions"
+          - id: W12
+            reason: "Policy is used for scanning of a wide range of resources"
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ResourcePrefix}${CFDataName}-Lambda'
+      Description: !Sub "Lambda function to retrieve ${CFDataName}"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          """
+          Lambda to collect QuickSight User, Groups, and Membership in the local data collection account
+          Author: Soham Majumder
+          """
+          import os
+          import json
+          import logging
+          import datetime
+          from json import JSONEncoder
+          import boto3
+
+          BUCKET = os.environ["BUCKET_NAME"]
+          PREFIX = os.environ["PREFIX"]
+          TMP_FILE = "/tmp/tmp.json"
+
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          class DateTimeEncoder(JSONEncoder):
+              """encoder for json with time object"""
+              def default(self, o):
+                  if isinstance(o, (datetime.date, datetime.datetime)):
+                      return o.isoformat()
+                  return None
+
+
+          def lambda_handler(event, context): #pylint: disable=W0613
+              """Starting Point for Lambda"""
+              account_id = context.invoked_function_arn.split(":")[4]
+              logger.debug("Collecting data for account: %s", account_id)
+              quicksight_client = boto3.client("quicksight")
+              namespaces = list_namespaces(account_id=account_id, quicksight=quicksight_client)
+
+              users = []
+              groups = []
+              memberships = []
+
+              for namespace in namespaces:
+                  logger.debug(f"processing namespace={namespace}")
+                  capacity_region = namespace['CapacityRegion']
+                  if quicksight_client.meta.region_name != capacity_region:
+                      logger.debug("Switching to %s", capacity_region)
+                      quicksight_client = boto3.client("quicksight", region_name=capacity_region)
+
+                  namespace_users = list_users(
+                      account_id=account_id,
+                      namespace=namespace['Name'],
+                      quicksight=quicksight_client
+                  )
+                  users.extend(namespace_users)
+
+                  namespace_groups = list(list_groups(
+                      account_id=account_id,
+                      namespace=namespace['Name'],
+                      quicksight=quicksight_client
+                  ))
+                  groups.extend(namespace_groups)
+
+                  for group in namespace_groups:
+                      group_members = list(list_group_memberships(
+                          account_id=account_id,
+                          namespace=namespace['Name'],
+                          group_name=group['GroupName'],
+                          quicksight=quicksight_client,
+                      ))
+                      for group_member in group_members:
+                          group_member["GroupName"] = group['GroupName']
+                          group_member["GroupArn"] = group['Arn']
+                      memberships.extend(group_members)
+
+              #Upload the User, Groups, GroupMembershipData to S3
+              s3_upload(account_id=account_id, item_list=users, data_type="user")
+              s3_upload(account_id=account_id, item_list=groups, data_type="group")
+              s3_upload(account_id=account_id, item_list=memberships, data_type="groupmembership")
+
+
+          def list_namespaces(account_id, quicksight):
+              """Listing of Namespaces"""
+              try:
+                  return (
+                      quicksight
+                          .get_paginator('list_namespaces')
+                          .paginate(AwsAccountId=account_id)
+                          .search('Namespaces')
+                  )
+              except quicksight.exceptions.ResourceNotFoundException as e:
+                  logger.debug("No Namespace data found. Error: %s", e)
+              except Exception as e:
+                  logger.error("Error in list_namespaces: %s",e)
+              return []
+
+          def list_users(account_id, namespace, quicksight):
+              """Listing of Users under Namespace in the Account"""
+              try:
+                  return (
+                      quicksight
+                          .get_paginator('list_users')
+                          .paginate(AwsAccountId=account_id, Namespace=namespace)
+                          .search('UserList')
+                  )
+              except quicksight.exceptions.ResourceNotFoundException as e:
+                  logger.debug("No User data found. %s", e)
+              except Exception as e:
+                  logger.error('Error in list_users %s', e)
+              return []
+
+          def list_groups(account_id, namespace, quicksight):
+              """Listing of Groups under Namespace in the Account"""
+              try:
+                  return (
+                      quicksight
+                          .get_paginator('list_groups')
+                          .paginate(AwsAccountId=account_id, Namespace=namespace)
+                          .search('GroupList')
+                  )
+              except quicksight.exceptions.ResourceNotFoundException as exc:
+                  logger.debug("No Group data found. %s", exc)
+              except Exception as exc:
+                  logger.error('Error in list_groups %s', exc)
+              return []
+
+          def list_group_memberships(account_id, namespace, group_name, quicksight):
+              """Listing User & Group mapping"""
+              try:
+                  return (
+                      quicksight
+                        .get_paginator('list_group_memberships')
+                        .paginate(AwsAccountId=account_id, Namespace=namespace, GroupName=group_name)
+                        .search('GroupMemberList')
+                  )
+              except quicksight.exceptions.ResourceNotFoundException as exc:
+                  logger.debug("No Group Membership data found. %s", exc)
+              except Exception as exc:
+                  logger.error('Error in list_group_membership %s', exc)
+              return []
+
+          def s3_upload(account_id, item_list, data_type):
+              """Upload data to S3 Bucket"""
+              count = 0
+              with open(TMP_FILE, "w", encoding='utf-8') as f:
+                  for item in item_list:
+                      item['account_id'] = account_id
+                      item['namespace'] = item.get('Arn','/').split('/')[1] #getting namespace from object ARN
+                      f.write(json.dumps(item, cls=DateTimeEncoder) + "\n")
+                      count += 1
+              logger.info("%s collected:%s", data_type, count)
+              key = datetime.datetime.now().strftime(f"{PREFIX}/{PREFIX}-{data_type}-data/{data_type}-{account_id}.json")
+              boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
+              logger.info("Quicksight data for %s stored at s3://%s/%s", account_id, BUCKET, key)
+      Handler: 'index.lambda_handler'
+      MemorySize: 2688
+      Timeout: 300
+      Role: !GetAtt LambdaRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref DestinationBucket
+          PREFIX: !Ref CFDataName
+
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${LambdaFunction}"
+      RetentionInDays: 60
+
+  QuickSightDataCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+      Role: !Ref GlueRoleARN
+      DatabaseName: !Ref DatabaseName
+      Targets:
+        S3Targets:
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-groupmembership-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-group-data/"
+          - Path: !Sub "s3://${DestinationBucket}/${CFDataName}/${CFDataName}-user-data/"
+
+  ModuleStepFunction:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ResourcePrefix}${CFDataName}-StateMachine'
+      StateMachineType: STANDARD
+      RoleArn: !Ref StepFunctionExecutionRoleARN
+      DefinitionS3Location:
+        Bucket: !Ref CodeBucket
+        Key: !Ref StepFunctionTemplate
+      DefinitionSubstitutions:
+        ModuleLambdaARN: !GetAtt LambdaFunction.Arn
+        Crawler: !Sub '${ResourcePrefix}${CFDataName}-Crawler'
+        Params: ''
+        Module: !Ref CFDataName
+        DeployRegion: !Ref AWS::Region
+        Account: !Ref AWS::AccountId
+        Prefix: !Ref ResourcePrefix
+
+  ModuleRefreshSchedule:
+    Type: 'AWS::Scheduler::Schedule'
+    Properties:
+      Description: !Sub 'Scheduler for the ODC ${CFDataName} module'
+      Name: !Sub '${ResourcePrefix}${CFDataName}-RefreshSchedule'
+      ScheduleExpression: !Ref Schedule
+      State: ENABLED
+      FlexibleTimeWindow:
+        MaximumWindowInMinutes: 30
+        Mode: 'FLEXIBLE'
+      Target:
+        Arn: !GetAtt ModuleStepFunction.Arn
+        RoleArn: !Ref SchedulerExecutionRoleARN
+
+  AnalyticsExecutor:
+    Type: Custom::LambdaAnalyticsExecutor
+    Properties:
+      ServiceToken: !Ref LambdaAnalyticsARN
+      Name: !Ref CFDataName
+
+  AthenaQuery:
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref DatabaseName
+      Description: "Provides a view of QS Users and their Groups"
+      Name: !Sub "${CFDataName} quicksight_users_view"
+      QueryString: |
+        CREATE OF REPLACE VIEW quicksight_users_view AS
+        SELECT
+          quser.account_id,
+          quser.arn AS userarn,
+          quser.username,
+          quser.email,
+          quser.role,
+          quser.active,
+          quser.principalid,
+          ARRAY_AGG(grp.groupname) AS groupnames
+        FROM quicksight_groupmembership_data grpmem
+          JOIN "quicksight_user_data" quser ON
+                    quser.arn = grpmem.arn
+                AND quser.account_id = grpmem.account_id
+                AND quser.namespace = grpmem.namespace
+          JOIN quicksight_group_data grp ON
+                    grp.arn = grpmem.grouparn
+                AND grp.account_id = grpmem.account_id
+                AND grp.namespace = grpmem.namespace
+        GROUP BY
+          quser.account_id,
+          quser.arn,
+          quser.username,
+          quser.email,
+          quser.role,
+          quser.active,
+          quser.principalid
