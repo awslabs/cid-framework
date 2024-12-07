@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Bedrock Guardrail Template Stack
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+            default: 'Amazon Bedrock Guardrail parameters'
+        Parameters:
+          - BlockedInputMessage
+          - BlockedOutputMessage
+      - Label:
+            default: 'Technical parameters'
+        Parameters:
+          - CFDataName
+          - ResourcePrefix
+
+Parameters:
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: bedrock-guardrails
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable (e.g. 'prefix-'). This parameter CANNOT BE UPDATED. Delete and re-create stack if needed an update.
+    Default: "CID-DC-"
+  BlockedInputMessage:
+    Type: String
+    Description: Message to return when the Amazon Bedrock Guardrail blocks a prompt.
+    MaxLength: 500
+    Default: 'Your input was blocked by the content policy.'
+  BlockedOutputMessage:
+    Type: String
+    Description: Message to return when the Amazon Bedrock Guardrail blocks a model response.
+    MaxLength: 500
+    Default: 'The model response was blocked by the content policy.'
+
+Resources:
+  BedrockGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+       Name: !Sub "${ResourcePrefix}${CFDataName}-Guardrail"
+       Description: Amazon Bedrock Guardrail
+       BlockedInputMessaging: !Ref BlockedInputMessage
+       BlockedOutputsMessaging: !Ref BlockedOutputMessage
+       ContentPolicyConfig:
+        FiltersConfig: 
+          - InputStrength: HIGH
+            OutputStrength: HIGH
+            Type: SEXUAL
+          - InputStrength: HIGH
+            OutputStrength: HIGH
+            Type: VIOLENCE
+          - InputStrength: HIGH
+            OutputStrength: HIGH
+            Type: HATE
+          - InputStrength: HIGH
+            OutputStrength: HIGH
+            Type: INSULTS
+          - InputStrength: HIGH
+            OutputStrength: HIGH
+            Type: MISCONDUCT
+          - InputStrength: NONE
+            OutputStrength: NONE
+            Type: PROMPT_ATTACK
+
+  BedrockGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      Description: Amazon Bedrock Guardrail
+      GuardrailIdentifier: !Ref BedrockGuardrail
+  

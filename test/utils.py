@@ -1,7 +1,8 @@
-
+import os
 import json
 import time
 import logging
+import subprocess #nosec B404
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -19,10 +20,14 @@ END = '\033[0m'
 BOLD = '\033[1m'
 UNDERLINE = '\033[4m'
 
+region = boto3.session.Session().region_name
+account_id = boto3.client('sts').get_caller_identity()['Account']
+
 PREFIX = "CID-DC-"
 BUCKET_PREFIX='cid-data-'
-
 REGIONS = "us-east-1,eu-west-1"
+TMP_BUCKET_PREFIX =  f'cid-{account_id}-test'
+TMP_BUCKET = f'{TMP_BUCKET_PREFIX}-{region}'
 
 def clean_bucket(s3, s3client, account_id, full=True):
     try:
@@ -233,10 +238,21 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
         ]
     )
 
+    deploy_stack(
+        cloudformation=cloudformation,
+        stack_name=f'{PREFIX}SupportCaseSummarizationStack',
+        url=upload_to_s3('case-summarization/deploy/case-summarization.yaml'),
+        parameters=[
+            # FIXME: use a lambda layer from the current version of the code
+           # {'ParameterKey': 'LambdaLayerBucketPrefix',                  'ParameterValue': f"cid-{account_id}-test"},
+        ]
+    )
+
     logger.info('Waiting for stacks')
     watch_stacks(cloudformation, [
         f'{PREFIX}OptimizationDataReadPermissionsStack',
         f'{PREFIX}OptimizationDataCollectionStack',
+        f'{PREFIX}SupportCaseSummarizationStack'
     ])
 
 
@@ -399,6 +415,7 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
     for stack_name in [
         f'{PREFIX}OptimizationDataReadPermissionsStack',
         f'{PREFIX}OptimizationDataCollectionStack',
+        f'{PREFIX}SupportCaseSummarizationStack'
         ]:
         try:
             cloudformation.delete_stack(StackName=stack_name)
@@ -409,6 +426,7 @@ def cleanup_stacks(cloudformation, account_id, s3, s3client, athena, glue):
     watch_stacks(cloudformation, [
         f'{PREFIX}OptimizationDataReadPermissionsStack',
         f'{PREFIX}OptimizationDataCollectionStack',
+        f'{PREFIX}SupportCaseSummarizationStack',
     ])
     try:
         logger.info('Deleting all athena tables in optimization_data')
@@ -428,3 +446,64 @@ def prepare_stacks(cloudformation, account_id, org_unit_id, s3, s3client, bucket
     initial_deploy_stacks(cloudformation=cloudformation, account_id=account_id, org_unit_id=org_unit_id, bucket=bucket)
     clean_bucket(s3=s3, s3client=s3client,  account_id=account_id, full=True)
     trigger_update(account_id=account_id)
+
+def build_layer():
+    """delete all content and the bucket"""
+    folder = './case-summarization/utils/layer/support-cases-summarization'
+    layer_file = subprocess.check_output(folder + '/build-layer.sh').decode().strip() #nosec B603
+    upload_to_s3(folder + '/' + layer_file, path=f'cid-llm-lambda-layer/{layer_file}')
+    
+def upload_to_s3(filename, path=None): # move to tools
+    """upload file object to a temporary bucket and return a public url"""
+    path = path or os.path.basename(filename)
+    s3c = boto3.client('s3')
+    bucket = TMP_BUCKET
+    try:
+        params = {
+            "Bucket": bucket,
+        }
+        if region !='us-east-1':
+            params['CreateBucketConfiguration'] = {'LocationConstraint': region}
+        s3c.create_bucket(**params)
+    except (s3c.exceptions.BucketAlreadyExists, s3c.exceptions.BucketAlreadyOwnedByYou):
+        pass
+    s3c.upload_file(filename, bucket, path)
+    return f'https://{bucket}.s3.amazonaws.com/{path}'
+
+def create_case(support, subject, service_code, severity_code, category_code, communication, cc_email_addresses, language, issue_type):
+    """ Creates a support case and returns case information """
+    support_case = support.create_case(
+        subject=subject,
+        serviceCode=service_code,
+        severityCode=severity_code,
+        categoryCode=category_code,
+        communicationBody=communication,
+        ccEmailAddresses=cc_email_addresses,
+        language=language,
+        issueType=issue_type
+    )
+    return support_case
+
+def trigger_collection(lambda_client, account_id):
+    lambda_client.invoke(
+        FunctionName='CID-DC-support-cases-Lambda',
+        InvocationType='Event',
+        Payload=json.dumps(
+            {
+                "params": "",
+                "account": json.dumps(
+                    {
+                        "account_id": account_id,
+                        "account_name": "Test",
+                        "payer_id": account_id
+                    }
+                )
+            }
+        )
+    )
+
+def get_case_data(s3client, account_id, case_id):
+    current = datetime.now(timezone.utc)
+    bucket_name = f"{BUCKET_PREFIX}{account_id}"
+
+    return json.loads(s3client.get_object(Bucket=bucket_name, Key=f'support-cases/support-cases-data/payer_id={account_id}/account_id={account_id}/year={current.year}/month={current.month}/day={current.day}/{case_id}.json')['Body'].read().decode('utf-8'))
