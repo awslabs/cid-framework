@@ -7,7 +7,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-folder=$(git rev-parse --show-toplevel)/data-collection/deploy
+folder=$(git rev-parse --show-toplevel)
 success_count=0
 failure_count=0
 

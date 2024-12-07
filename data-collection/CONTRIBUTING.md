@@ -57,19 +57,19 @@ aws s3api create-bucket --bucket $bucket
 
 Cloud Formation:
 ```bash
-./data-collection/utils/lint.sh
+./utils/lint.sh
 ```
 
 Pylint:
 ```bash
-python3 ./data-collection/utils/pylint.py
+python3 ./utils/pylint.py
 ```
 
 
 3. Upload the code to a bucket and run integration tests in your testing environment
 
 ```bash
-./data-collection/test/run-test-from-scratch.sh --no-teardown
+./test/run-test-from-scratch.sh --no-teardown
 ```
 
 The test will install stacks from scratch in a single account, then it will check the presence of Athena tables. After running tests, it will delete the stacks and all artifacts that are not deleted by CFN. You can avoid teardown by providing a flag `--no-teardown`.
