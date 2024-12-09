@@ -385,15 +385,20 @@ Resources:
 
   SummarizationQueue:
     Type: AWS::SQS::Queue
+    # Skipping the Checkov check "AWS SQS Queue not configured with server side encryption" as this is reporting a false positive. More on the issue to be fixed in here: https://github.com/bridgecrewio/checkov/issues/5869
+    # checkov:skip=CKV_AWS_27:Ensure all data stored in the SQS queue is encrypted
     Properties:
       QueueName: !Sub "${ResourcePrefix}${CFDataName}-Queue"
       VisibilityTimeout: 900  # 15 minutes = Timeout of Lambda
+      SqsManagedSseEnabled: true
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt SummarizationDLQ.Arn
         maxReceiveCount: 3
 
   SummarizationDLQ:
     Type: AWS::SQS::Queue
+    # Skipping the Checkov check "AWS SQS Queue not configured with server side encryption" as this is reporting a false positive. More on the issue to be fixed in here: https://github.com/bridgecrewio/checkov/issues/5869
+    # checkov:skip=CKV_AWS_27:Ensure all data stored in the SQS queue is encrypted
     Properties:
       QueueName: !Sub "${ResourcePrefix}${CFDataName}-DLQ"
       SqsManagedSseEnabled: true
