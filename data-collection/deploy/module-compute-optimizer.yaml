@@ -71,7 +71,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              Service: cloudformation.amazonaws.com
+              Service: !Sub "cloudformation.${AWS::URLSuffix}"
             Action:
               - 'sts:AssumeRole'
       Policies:
@@ -202,14 +202,14 @@ Resources:
                 Statement:
                 - Effect: Allow
                   Principal:
-                    Service: compute-optimizer.amazonaws.com
+                    Service: !Sub "compute-optimizer.${AWS::URLSuffix}"
                   Action:
                   - s3:GetBucketAcl
                   - s3:GetBucketPolicyStatus
                   Resource: !Sub "arn:${AWS::Partition}:s3:::${Name}.${AWS::Region}"
                 - Effect: Allow
                   Principal:
-                    Service: compute-optimizer.amazonaws.com
+                    Service: !Sub "compute-optimizer.${AWS::URLSuffix}"
                   Action: s3:PutObject
                   Condition:
                     StringEquals:
@@ -244,7 +244,8 @@ Resources:
                 - Action: ['sts:AssumeRole']
                   Effect: Allow
                   Principal:
-                    Service: [s3.amazonaws.com]
+                    Service:
+                      - !Sub "s3.${AWS::URLSuffix}"
               Policies:
               - PolicyName: Replication
                 PolicyDocument:
@@ -321,7 +322,7 @@ Resources:
             Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
         Version: 2012-10-17
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
@@ -586,7 +587,7 @@ Resources:
           - Effect: Allow
             Principal:
               Service:
-                - lambda.amazonaws.com
+                - !Sub "lambda.${AWS::URLSuffix}"
             Action:
               - sts:AssumeRole
       Path: /
