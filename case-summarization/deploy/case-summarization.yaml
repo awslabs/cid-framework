@@ -83,11 +83,11 @@ Parameters:
   GuardrailId:
     Type: String
     Default: ''
-    Description: "Amazon Bedrock Guardrail ID to be used (Use this parameter in case you are using an externally managed Guardrail configuration or not planning to use Amazon Bedrock Guardrail)"
+    Description: "Amazon Bedrock Guardrail ID to be used (Use this parameter in case you are using an externally managed Guardrail configuration. Leave empty if not planning to use Amazon Bedrock Guardrail)"
   GuardrailVersion:
     Type: String
     Default: ''
-    Description: "Amazon Bedrock Guardrail Version to be used (leave empty in case you're not using Amazon Bedrock Guardrails)"
+    Description: "Amazon Bedrock Guardrail Version to be used (Use this parameter in case you are using an externally managed Guardrail configuration. Leave empty if not planning to use Amazon Bedrock Guardrail)"
 
 Conditions:
   LambdaLayerBucketPrefixIsManaged: !Equals [!Ref LambdaLayerBucketPrefix, 'aws-managed-cost-intelligence-dashboards']
