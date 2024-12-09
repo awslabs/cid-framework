@@ -192,6 +192,11 @@ Resources:
        WordPolicyConfig:
         ManagedWordListsConfig: 
           - Type: PROFANITY
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E3032 # Guardrail FiltersConfig Variabilization False Positive
 
   BedrockGuardrailVersion:
     Type: AWS::Bedrock::GuardrailVersion
