@@ -1,0 +1,451 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS Support Cases Summarization Stack v0.0.1
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+            default: 'LLM parameters'
+        Parameters:
+          - BedrockRegion
+          - Instructions
+          - Provider
+          - FoundationModel
+          - InferenceType
+          - Temperature
+          - MaxTokens
+          - MaxRetries
+          - Timeout
+          - BatchSize
+      - Label:
+            default: 'Technical parameters'
+        Parameters:
+          - LambdaLayerBucketPrefix
+          - CFDataName
+          - ResourcePrefix
+
+Parameters:
+  LambdaLayerBucketPrefix:
+    Type: String
+    Description: Name of the S3 Bucket Containing Lambda Layer
+    AllowedPattern: (?=^.{3,63}$)(?!^(\d+\.)+\d+$)(^(([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])\.)*([a-z0-9]|[a-z0-9][a-z0-9\-]*[a-z0-9])$)
+    Default: aws-managed-cost-intelligence-dashboards
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: support-cases-summarization
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable (e.g. 'prefix-'). This parameter CANNOT BE UPDATED. Delete and re-create stack if needed an update.
+    Default: "CID-DC-"
+  Provider:
+    Type: String
+    Description: Provider
+    Default: "anthropic"
+  FoundationModel:
+    Type: String
+    Description: FoundationModel
+    Default: "Claude 3.5 Sonnet"
+  InferenceType:
+    Type: String
+    Description: Change to PROVISIONED if you use Provisioned Throughput.
+    Default: "ON_DEMAND" # see https://docs.aws.amazon.com/bedrock/latest/userguide/prov-throughput.html
+    AllowedValues: ["ON_DEMAND", "PROVISIONED"]
+  Temperature:
+    Type: String
+    Description: Temperature, Choose a lower value to influence the model to select higher-probability outputs.
+    Default: 0
+  MaxTokens:
+    Type: String
+    Description: The maximum number of tokens to generate before stopping.
+    Default: 8096 # see https://docs.anthropic.com/en/docs/about-claude/models#model-comparison-table
+  MaxRetries:
+    Type: String
+    Description: Number of possible retries when calling Amazon Bedrock API
+    Default: 30
+  Timeout:
+    Type: String
+    Description: Timeout when calling Amazon Bedrock API
+    Default: 60
+  Instructions:
+    Type: String
+    Description: Additional Instructions for LLM, if needed
+    Default: ''
+  BedrockRegion:
+    Type: String
+    Description: The region from where the Summarization through Amazon Bedrock will be triggered
+    Default: 'us-east-1'
+  BatchSize:
+    Type: String
+    Description: Number of processing in parallel. Use 1 to avoid Throttling.
+    Default: '1'
+
+Conditions:
+  LambdaLayerBucketPrefixIsManaged: !Equals [!Ref LambdaLayerBucketPrefix, 'aws-managed-cost-intelligence-dashboards']
+
+Mappings:
+  RegionMap:
+    ap-northeast-1: {BucketName: aws-managed-cost-intelligence-dashboards-ap-northeast-1}
+    ap-northeast-2: {BucketName: aws-managed-cost-intelligence-dashboards-ap-northeast-2}
+    ap-south-1:     {BucketName: aws-managed-cost-intelligence-dashboards-ap-south-1}
+    ap-southeast-1: {BucketName: aws-managed-cost-intelligence-dashboards-ap-southeast-1}
+    ap-southeast-2: {BucketName: aws-managed-cost-intelligence-dashboards-ap-southeast-2}
+    ca-central-1:   {BucketName: aws-managed-cost-intelligence-dashboards-ca-central-1}
+    eu-central-1:   {BucketName: aws-managed-cost-intelligence-dashboards-eu-central-1}
+    eu-north-1:     {BucketName: aws-managed-cost-intelligence-dashboards-eu-north-1}
+    eu-west-1:      {BucketName: aws-managed-cost-intelligence-dashboards-eu-west-1}
+    eu-west-2:      {BucketName: aws-managed-cost-intelligence-dashboards-eu-west-2}
+    eu-west-3:      {BucketName: aws-managed-cost-intelligence-dashboards-eu-west-3}
+    sa-east-1:      {BucketName: aws-managed-cost-intelligence-dashboards-sa-east-1}
+    us-east-1:      {BucketName: aws-managed-cost-intelligence-dashboards-us-east-1}
+    us-east-2:      {BucketName: aws-managed-cost-intelligence-dashboards-us-east-2}
+    us-west-1:      {BucketName: aws-managed-cost-intelligence-dashboards-us-west-1}
+    us-west-2:      {BucketName: aws-managed-cost-intelligence-dashboards-us-west-2}
+    #todo: add af-south-1
+    #todo: add ap-southeast-3
+    #todo: add eu-south-1
+    #todo: add eu-central-2
+
+Resources:
+
+  LlmLambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: !Sub "${ResourcePrefix}llm-layer"
+      Description: Layer for Support Case Summarization Lambda
+      Content:
+        S3Bucket: !If
+          - LambdaLayerBucketPrefixIsManaged
+          - !FindInMap [RegionMap, !Ref 'AWS::Region', BucketName]
+          - !Sub '${LambdaLayerBucketPrefix}-${AWS::Region}'
+        S3Key: 'cid-llm-lambda-layer/llm-0.0.1.zip'
+      CompatibleArchitectures:
+        - x86_64
+      CompatibleRuntimes:
+        - python3.10
+        - python3.11
+        - python3.12
+        - python3.13
+
+  SummarizationLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ResourcePrefix}${CFDataName}-LambdaRole"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - !Sub "lambda.${AWS::URLSuffix}"
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+      Path: /
+      Policies:
+        - PolicyName: "S3-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:PutObjectAcl"
+                Resource:
+                  - Fn::Sub:
+                      - "arn:${AWS::Partition}:s3:::${DestinationBucket}/support-cases/*"
+                      - DestinationBucket: {"Fn::ImportValue": "cid-DataCollection-Bucket"}
+              - Effect: "Allow"
+                Action:
+                  - "s3:ListBucket"
+                Resource:
+                  - Fn::Sub:
+                      - "arn:${AWS::Partition}:s3:::${DestinationBucket}"
+                      - DestinationBucket: {"Fn::ImportValue": "cid-DataCollection-Bucket"}
+        - PolicyName: "Bedrock-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "bedrock:ListFoundationModels"
+                  - "bedrock:InvokeModel"
+                Resource: "*" # cannot restrict this
+        - PolicyName: "SQS-Access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "sqs:SendMessage"
+                Resource: !GetAtt SummarizationDLQ.Arn
+              - Effect: "Allow"
+                Action:
+                  - "sqs:ReceiveMessage"
+                  - "sqs:DeleteMessage"
+                  - "sqs:GetQueueAttributes"
+                Resource: !GetAtt SummarizationQueue.Arn
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11 # IAM role should not allow * resource on its permissions policy
+            reason: "cannot restrict ListFoundationModels and InvokeModel "
+
+  SummarizationLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${ResourcePrefix}support-case-summarization-Lambda
+      Description: "Lambda function to summarize aws support cases"
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Code:
+        ZipFile: |
+          import os
+          import json
+          import logging
+
+          import boto3
+          from pydantic import BaseModel, Field
+          from llama_index.core.program import LLMTextCompletionProgram
+          from llama_index.llms.bedrock import Bedrock
+          from botocore.config import Config
+
+          logger = logging.getLogger(__name__)
+          logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
+
+          REGION = os.environ.get("REGION", "us-east-1")
+          PROVIDER = os.environ.get("PROVIDER", "anthropic")
+          FOUNDATION_MODEL = os.environ.get("FOUNDATION_MODEL", "Claude 3.5 Sonnet")
+          INFERENCE_TYPE = os.environ.get("INFERENCE_TYPE", "ON_DEMAND")
+          TEMPERATURE = os.environ.get("TEMPERATURE", 1)
+          MAX_TOKENS = os.environ.get("MAX_TOKENS", 8096)
+          MAX_RETRIES = os.environ.get("MAX_RETRIES", 30)
+          TIMEOUT = os.environ.get("TIMEOUT", 60)
+          INSTRUCTIONS = os.environ.get("INSTRUCTIONS", '')
+          PROMPT_TEMPLATE = f"""
+          System: You are an expert technical writer specializing in creating concise, neutral summaries of AWS customers support interactions. Your task is to summarize conversations between customers and AWS Support, maintaining objectivity and clarity. Here is the Conversation to be summarized:
+          <conversation>
+          ${{conversation}}
+          </conversation>
+          ${INSTRUCTIONS}
+          Assistant:
+          """
+
+          class Summary(BaseModel):
+              executive_summary: str = Field(
+                  description="Start first with an executive summary of the issue. Make sure to inform if the case is still open."
+              )
+              proposed_solutions: str = Field(
+                  description="Focus on the main elements of the conversation and highlight the proposed solutions. If no specific solution, skip this section."
+              )
+              actions: str = Field(
+                  description="Finish off with any action items or next steps highlighting ownership of actions or next steps."
+              )
+              references: list[str] = Field(
+                  description=(
+                      "Make sure to reference any links that would eventually be shared by the AWS Support representative that are linked to the issue."
+                      " If no links are found, dismiss this section from the summary. Avoid referencing any links the case itself or to meeting platforms like zoom, chime or microsoft teams."
+                  )
+              )
+              tam_involved: str = Field(
+                  description=(
+                      "If TAM was involved or referenced in the case summarize that, if not skip this section."
+                  )
+              )
+              feedback: str = Field(
+                  description=(
+                      "If the AWS Support is asking for feedback, make sure to ask the customer for his satisfaction."
+                      " Skip this section if the AWS Support is not asking for feedback at all."
+                  ),
+                  default=""
+              )
+
+          def get_llm_program(conversation, model_id):
+              llm = Bedrock(
+                  model=model_id,
+                  region_name=REGION,
+                  temperature=float(TEMPERATURE),
+                  max_tokens=int(MAX_TOKENS),
+                  max_retries=int(MAX_RETRIES),
+                  timeout=float(TIMEOUT)
+              )
+              return LLMTextCompletionProgram.from_defaults(
+                  llm=llm,
+                  output_cls=Summary,
+                  prompt_template_str=PROMPT_TEMPLATE.format(conversation=conversation),
+                  verbose=True,
+              )
+
+          def get_model_id():
+              logger.info("Retrieving Model Id from Amazon Bedrock ...")
+              config = Config(retries={"max_attempts": int(MAX_RETRIES), "mode": "adaptive"})
+              bedrock = boto3.client(service_name="bedrock", region_name=REGION, config=config)
+              foundation_models = bedrock.list_foundation_models(
+                  byProvider=PROVIDER,
+                  byOutputModality="TEXT",
+                  byInferenceType=INFERENCE_TYPE
+              )
+              for model in foundation_models['modelSummaries']:
+                  if model['modelName'] == FOUNDATION_MODEL:
+                      model_id = model['modelId']
+                      logger.info(f"Model Id for {FOUNDATION_MODEL} ({PROVIDER}) is {model_id}.")
+                      return model_id
+              raise Exception(f"Model Id for {FOUNDATION_MODEL} ({PROVIDER}) not found.")
+
+          def process_record(record):
+              s3_client = boto3.client('s3')
+              detail = json.loads(record['body'])['detail']
+
+              bucket = detail['Bucket']
+              communications_file_key = detail['CommunicationsKey']
+              data_file_key = detail.get('DataKey', communications_file_key.replace("-communications/", "-data/"))
+
+              logger.info("Downloading the support case communication file")
+              support_case_data = s3_client.get_object(Bucket=bucket, Key=data_file_key)
+              case_data_content = json.loads(support_case_data['Body'].read().decode('utf-8'))
+              communications_data = s3_client.get_object(Bucket=bucket, Key=communications_file_key)
+              communications_content = communications_data['Body'].read().decode('utf-8')
+
+              logger.info("Processing support case communication")
+              communications = [json.loads(line) for line in  communications_content.splitlines() if line.strip()]
+              communications.reverse()
+
+              logger.info("support case summarization starting")
+              model_id = get_model_id()
+                            
+              llm_program = get_llm_program(communications, model_id)
+              try:
+                  case_data_content['Summary'] = llm_program().model_dump_json()
+              except Exception as exc:
+                  if "You don't have access to the model with the specified model ID" in str(exc):
+                      raise Exception(f"You don't have access to the model with the specified model ID = {model_id} {FOUNDATION_MODEL} ({PROVIDER}). Open https://console.aws.amazon.com/bedrock/home?#/modelaccess .")
+                  raise
+
+              logger.info("Uploading Summary")
+              s3_client.put_object(Bucket=bucket, Key=data_file_key, Body=json.dumps(case_data_content), ContentType='application/json')
+
+              logger.info("File updated with summary.")
+              logger.debug(f"Data stored to s3://{bucket}/{data_file_key}")
+
+          def lambda_handler(event, context): #pylint: disable=unused-argument
+              for record in event['Records']:
+                  try:
+                      process_record(record)
+                  except Exception as exc:
+                      logger.error(f'error {exc} when processing {record}')
+
+
+      Handler: 'index.lambda_handler'
+      MemorySize: 2688
+      Timeout: 900
+      Role: !GetAtt SummarizationLambdaRole.Arn
+      Layers:
+        - !Ref LlmLambdaLayer
+      Environment:
+        Variables:
+          PROVIDER: !Ref Provider
+          FOUNDATION_MODEL: !Ref FoundationModel
+          INFERENCE_TYPE: !Ref InferenceType
+          TEMPERATURE: !Ref Temperature
+          MAX_TOKENS: !Ref MaxTokens
+          MAX_RETRIES: !Ref MaxRetries
+          TIMEOUT: !Ref Timeout
+          INSTRUCTIONS: !Ref Instructions
+          REGION: !Ref BedrockRegion # FIXME: use default if empty
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W89 # Lambda functions should be deployed inside a VPC
+            reason: "No need for VPC in this case"
+          - id: W92 #  Lambda functions should define ReservedConcurrentExecutions to reserve simultaneous executions
+            reason: "No need for simultaneous execution"
+
+  SummarizationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${SummarizationLambda}"
+      RetentionInDays: 60
+
+  EventBridgeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${ResourcePrefix}SupportCaseSummarizationRule"
+      EventPattern: |
+        {
+          "detail-type": ["Event"],
+          "source": ["supportcases.datacollection.cid.aws"],
+          "version": ["0"]
+        }
+      State: ENABLED
+      Description: 'CID Send Support Cases Event to Bedrock Summarization Queue'
+      EventBusName: default
+      Targets:
+        - Arn: !GetAtt SummarizationQueue.Arn
+          Id: "SendToSQS"
+
+  SummarizationQueue:
+    Type: AWS::SQS::Queue
+    # Skipping the Checkov check "AWS SQS Queue not configured with server side encryption" as this is reporting a false positive. More on the issue to be fixed in here: https://github.com/bridgecrewio/checkov/issues/5869
+    # checkov:skip=CKV_AWS_27:Ensure all data stored in the SQS queue is encrypted
+    Properties:
+      QueueName: !Sub "${ResourcePrefix}${CFDataName}-Queue"
+      VisibilityTimeout: 900  # 15 minutes = Timeout of Lambda
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt SummarizationDLQ.Arn
+        maxReceiveCount: 3
+
+  SummarizationDLQ:
+    Type: AWS::SQS::Queue
+    # Skipping the Checkov check "AWS SQS Queue not configured with server side encryption" as this is reporting a false positive. More on the issue to be fixed in here: https://github.com/bridgecrewio/checkov/issues/5869
+    # checkov:skip=CKV_AWS_27:Ensure all data stored in the SQS queue is encrypted
+    Properties:
+      QueueName: !Sub "${ResourcePrefix}${CFDataName}-DLQ"
+      SqsManagedSseEnabled: true
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  # EventBridge Permission to Send to SQS
+  EventBridgeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: !Sub "events.${AWS::URLSuffix}"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EventBridgeSQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt SummarizationQueue.Arn
+
+  EventBridgeToToSqsPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Sid: AllowEventBridgeSendMessage
+          Effect: Allow
+          Principal:
+            Service: !Sub "events.${AWS::URLSuffix}"
+          Action: sqs:SendMessage
+          Resource: !GetAtt SummarizationQueue.Arn
+          Condition:
+            ArnEquals:
+              aws:SourceArn: !GetAtt EventBridgeRule.Arn
+      Queues:
+        - !Ref SummarizationQueue
+
+  QueueEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: !Ref BatchSize  # Process N messages at a time to avoid Bedrock Tootling
+      Enabled: true
+      EventSourceArn: !GetAtt SummarizationQueue.Arn
+      FunctionName: !Ref SummarizationLambda
