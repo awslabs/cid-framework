@@ -6,7 +6,6 @@ This plugin is aimed at augmenting the exerience of the AWS Support Cases Radar 
 
 This plugin contains the following elements:
 * [case-summarization](README.md) - a CloudFormation Template for deploying the AWS Support Case Summarization Plugin that integrates seamlessly with the Data Collection Framework.
-* [guardrails](/plugins/support-case-summarization/deploy/deploy-bedrock-guardails/README.md) - a CloudFormation Template for deploying a minimalistic setup of Amazon Bedrock Guardrail.Customers that haven't designed and deployed one already, could use this template as a quickstart. 
 
 ### Architecture
 
@@ -34,11 +33,6 @@ This plugin comes with the following reasonable defaults that can be overriden t
 #### 1. Enable Amazon Bedrock Target Model Access In the Data Collection Account
 
 - See [Add or remove access to Amazon Bedrock foundation models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for guidance.
-
-#### 2. In case you do not have one already, Deploy an Amazon Bedrock Guardrail in the Data Collection Account
-
-- See [Stop harmful content in models using Amazon Bedrock Guardrails](https://docs.aws.amazon.com/bedrock/latest/userguide/guardrails.html) for comprehensive documentation on how to use and deploy Amazon Bedrock Guardrails.
-- See [deploy-bedrock-guardrails](/plugins/support-case-summarization/deploy/deploy-bedrock-guardails/README.md) for a quickstart, but not comprehensive, template.
 
 #### 2. Deploy the AWS Support Case Summarization Stack In the Data Collection Account
 

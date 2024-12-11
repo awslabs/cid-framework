@@ -15,8 +15,6 @@ Metadata:
           - MaxTokens
           - MaxRetries
           - Timeout
-          - GuardrailId
-          - GuardrailVersion
           - BatchSize
       - Label:
             default: 'Technical parameters'
