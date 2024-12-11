@@ -51,7 +51,6 @@ See [SECURITY](SECURITY.md) for more information.
 As of today, the AWS Support Cases Summarization plugin does not make use of Amazon Guardrails.
 Amazon Bedrock Guardrails is a crucial security feature for generative AI applications that helps implement safeguards based on specific use cases and responsible AI policies. It provides an additional layer of protection on top of the native safeguards offered by foundation models (FMs).
 
-This feature will be added in a future release.
 
 ### Further Reading
 
