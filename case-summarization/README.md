@@ -48,7 +48,7 @@ See [SECURITY](SECURITY.md) for more information.
 
 ## Limitations
 
-As of today, the AWS Support Cases Summarization plugin does not make use of Amazon Guardrails.
+As of today, the AWS Support Cases Summarization plugin does not make use of Amazon Bedrock Guardrails. See [issue](https://github.com/run-llama/llama_index/issues/17217).
 
 ## License
 
