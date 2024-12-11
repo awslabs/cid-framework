@@ -80,19 +80,9 @@ Parameters:
     Type: String
     Description: Number of processing in parallel. Use 1 to avoid Throttling.
     Default: '1'
-  GuardrailId:
-    Type: String
-    Default: ''
-    Description: "Amazon Bedrock Guardrail ID to be used (Use this parameter in case you are using an externally managed Guardrail configuration. Leave empty if not planning to use Amazon Bedrock Guardrail)"
-  GuardrailVersion:
-    Type: String
-    Default: ''
-    Description: "Amazon Bedrock Guardrail Version to be used (Use this parameter in case you are using an externally managed Guardrail configuration. Leave empty if not planning to use Amazon Bedrock Guardrail)"
 
 Conditions:
   LambdaLayerBucketPrefixIsManaged: !Equals [!Ref LambdaLayerBucketPrefix, 'aws-managed-cost-intelligence-dashboards']
-  HasGuardrailId: !Not [!Equals [!Ref GuardrailId, ""]]
-  HasGuardrailVersion: !Not [!Equals [!Ref GuardrailVersion, ""]]
 
 Mappings:
   RegionMap:
@@ -235,8 +225,6 @@ Resources:
           MAX_RETRIES = os.environ.get("MAX_RETRIES", 30)
           TIMEOUT = os.environ.get("TIMEOUT", 60)
           INSTRUCTIONS = os.environ.get("INSTRUCTIONS", '')
-          GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", None)
-          GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", "DRAFT")
           PROMPT_TEMPLATE = f"""
           System: You are an expert technical writer specializing in creating concise, neutral summaries of AWS customers support interactions. Your task is to summarize conversations between customers and AWS Support, maintaining objectivity and clarity. Here is the Conversation to be summarized:
           <conversation>
@@ -275,15 +263,14 @@ Resources:
                   default=""
               )
 
-          def get_llm_program(conversation, model_id, guardrails_config):
+          def get_llm_program(conversation, model_id):
               llm = Bedrock(
                   model=model_id,
                   region_name=REGION,
                   temperature=float(TEMPERATURE),
                   max_tokens=int(MAX_TOKENS),
                   max_retries=int(MAX_RETRIES),
-                  timeout=float(TIMEOUT),
-                  kwargs=guardrails_config
+                  timeout=float(TIMEOUT)
               )
               return LLMTextCompletionProgram.from_defaults(
                   llm=llm,
@@ -328,20 +315,8 @@ Resources:
 
               logger.info("support case summarization starting")
               model_id = get_model_id()
-              
-              if GUARDRAIL_ID == None:
-                  logger.info("support case summarization isn't using any Amazon Bedrock Guardrail Configuration.")
-                  guardrails_config = None
-              elif GUARDRAIL_ID != None:
-                  logger.info(f"support case summarization is using Amazon Bedrock Guardrail id: {GUARDRAIL_ID} (Version {GUARDRAIL_VERSION})")
-                  guardrails_config = {
-                      "guardrailConfig": {
-                          "guardrailIdentifier": GUARDRAIL_ID,
-                          "guardrailVersion": GUARDRAIL_VERSION
-                      }
-                  }
-              
-              llm_program = get_llm_program(communications, model_id, guardrails_config)
+                            
+              llm_program = get_llm_program(communications, model_id)
               try:
                   case_data_content['Summary'] = llm_program().model_dump_json()
               except Exception as exc:
@@ -379,14 +354,6 @@ Resources:
           MAX_RETRIES: !Ref MaxRetries
           TIMEOUT: !Ref Timeout
           INSTRUCTIONS: !Ref Instructions
-          GUARDRAIL_ID: !If 
-            - HasGuardrailId
-            - !Ref GuardrailId
-            - !Ref AWS::NoValue
-          GUARDRAIL_VERSION: !If 
-            - HasGuardrailVersion
-            - !Ref GuardrailVersion
-            - !Ref AWS::NoValue
           REGION: !Ref BedrockRegion # FIXME: use default if empty
     Metadata:
       cfn_nag:
