@@ -1163,12 +1163,12 @@ Resources:
                               cluster_data["NodeGroups"].append({
                                   "NodeGroupName": node_group_details["nodegroup"].get("nodegroupName"),
                                   "NodeRole": node_group_details["nodegroup"].get("nodeRole"),
-                                  "InstanceTypes": node_group_details["nodegroup"].get("instanceTypes"),
-                                  "ScalingConfig": node_group_details["nodegroup"].get("scalingConfig"),
-                                  "Subnets": node_group_details["nodegroup"].get("subnets"),
-                                  "Status": node_group_details["nodegroup"].get("status"),
-                                  "AMIType": node_group_details["nodegroup"].get("amiType"),
-                                  "Version": node_group_details["nodegroup"].get("version"),
+                                  "InstanceTypes": node_group_details["nodegroup"].get("instanceTypes",[]),
+                                  "ScalingConfig": node_group_details["nodegroup"].get("scalingConfig",{}),
+                                  "Subnets": node_group_details["nodegroup"].get("subnets",[]),
+                                  "Status": node_group_details["nodegroup"].get("status","Unknown"),
+                                  "AMIType": node_group_details["nodegroup"].get("amiType","Unknown"),
+                                  "Version": node_group_details["nodegroup"].get("version","Unknown"),
                                   "CreatedAt": datetime.strftime(
                                       node_group_details["nodegroup"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
                                   ),
