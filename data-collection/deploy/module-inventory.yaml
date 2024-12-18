@@ -1161,14 +1161,14 @@ Resources:
                           for node_group in node_groups:
                               node_group_details = client.describe_nodegroup(clusterName=cluster_name, nodegroupName=node_group)
                               cluster_data["NodeGroups"].append({
-                                  "NodeGroupName": node_group_details["nodegroup"]["nodegroupName"],
-                                  "NodeRole": node_group_details["nodegroup"]["nodeRole"],
-                                  "InstanceTypes": node_group_details["nodegroup"]["instanceTypes"],
-                                  "ScalingConfig": node_group_details["nodegroup"]["scalingConfig"],
-                                  "Subnets": node_group_details["nodegroup"]["subnets"],
-                                  "Status": node_group_details["nodegroup"]["status"],
-                                  "AMIType": node_group_details["nodegroup"]["amiType"],
-                                  "Version": node_group_details["nodegroup"]["version"],
+                                  "NodeGroupName": node_group_details["nodegroup"].get("nodegroupName"),
+                                  "NodeRole": node_group_details["nodegroup"].get("nodeRole"),
+                                  "InstanceTypes": node_group_details["nodegroup"].get("instanceTypes"),
+                                  "ScalingConfig": node_group_details["nodegroup"].get("scalingConfig"),
+                                  "Subnets": node_group_details["nodegroup"].get("subnets"),
+                                  "Status": node_group_details["nodegroup"].get("status"),
+                                  "AMIType": node_group_details["nodegroup"].get("amiType"),
+                                  "Version": node_group_details["nodegroup"].get("version"),
                                   "CreatedAt": datetime.strftime(
                                       node_group_details["nodegroup"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
                                   ),
