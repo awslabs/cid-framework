@@ -1128,57 +1128,57 @@ Resources:
                   logger.info(f'scan {service}/{account_id}/{region}: {exc}')
 
           def eks_clusters_scan(account_id, region):
-               """special function to scan EKS clusters"""
-               service = "eks"
-               session = assume_session(account_id, region)
-               client = session.client(service, region_name=region)
-               try:
-                   for cluster_name in (
-                       client.get_paginator("list_clusters")
-                       .paginate(
-                           PaginationConfig={
-                               "PageSize": 100,
-                           }
-                       )
-                       .search("clusters")
-                   ):
-                       # Get cluster details
-                       cluster = client.describe_cluster(name=cluster_name)
-                       cluster_data = {
-                           "Arn": cluster["cluster"]["arn"],
-                           "Name": cluster["cluster"]["name"],
-                           "CreatedAt": datetime.strftime(
-                               cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
-                           ),
-                           "Version": cluster["cluster"]["version"],
-                           "Region": region,
-                           "AccountId": account_id,
-                       }
-                       # Get node groups for the cluster
-                       try:
-                           node_groups = client.list_nodegroups(clusterName=cluster_name).get("nodegroups", [])
-                           cluster_data["NodeGroups"] = []
-                           for node_group in node_groups:
-                               node_group_details = client.describe_nodegroup(clusterName=cluster_name, nodegroupName=node_group)
-                               cluster_data["NodeGroups"].append({
-                                   "NodeGroupName": node_group_details["nodegroup"]["nodegroupName"],
-                                   "NodeRole": node_group_details["nodegroup"]["nodeRole"],
-                                   "InstanceTypes": node_group_details["nodegroup"]["instanceTypes"],
-                                   "ScalingConfig": node_group_details["nodegroup"]["scalingConfig"],
-                                   "Subnets": node_group_details["nodegroup"]["subnets"],
-                                   "Status": node_group_details["nodegroup"]["status"],
-                                   "AMIType": node_group_details["nodegroup"]["amiType"],
-                                   "Version": node_group_details["nodegroup"]["version"],
-                                   "CreatedAt": datetime.strftime(
-                                       node_group_details["nodegroup"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
-                                   ),
-                               })
-                       except Exception as ng_exc:  # Catch node group-specific issues
-                           logger.error(f"Error fetching node groups for {cluster_name} in {region}: {ng_exc}")
-                       yield cluster_data
-               except Exception as exc: #pylint: disable=W0718
-                   logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
-               return []
+              """special function to scan EKS clusters"""
+              service = "eks"
+              session = assume_session(account_id, region)
+              client = session.client(service, region_name=region)
+              try:
+                  for cluster_name in (
+                      client.get_paginator("list_clusters")
+                      .paginate(
+                          PaginationConfig={
+                              "PageSize": 100,
+                          }
+                      )
+                      .search("clusters")
+                  ):
+                      # Get cluster details
+                      cluster = client.describe_cluster(name=cluster_name)
+                      cluster_data = {
+                          "Arn": cluster["cluster"]["arn"],
+                          "Name": cluster["cluster"]["name"],
+                          "CreatedAt": datetime.strftime(
+                              cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+                          ),
+                          "Version": cluster["cluster"]["version"],
+                          "Region": region,
+                          "AccountId": account_id,
+                      }
+                      # Get node groups for the cluster
+                      try:
+                          node_groups = client.list_nodegroups(clusterName=cluster_name).get("nodegroups", [])
+                          cluster_data["NodeGroups"] = []
+                          for node_group in node_groups:
+                              node_group_details = client.describe_nodegroup(clusterName=cluster_name, nodegroupName=node_group)
+                              cluster_data["NodeGroups"].append({
+                                  "NodeGroupName": node_group_details["nodegroup"]["nodegroupName"],
+                                  "NodeRole": node_group_details["nodegroup"]["nodeRole"],
+                                  "InstanceTypes": node_group_details["nodegroup"]["instanceTypes"],
+                                  "ScalingConfig": node_group_details["nodegroup"]["scalingConfig"],
+                                  "Subnets": node_group_details["nodegroup"]["subnets"],
+                                  "Status": node_group_details["nodegroup"]["status"],
+                                  "AMIType": node_group_details["nodegroup"]["amiType"],
+                                  "Version": node_group_details["nodegroup"]["version"],
+                                  "CreatedAt": datetime.strftime(
+                                      node_group_details["nodegroup"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
+                                  ),
+                              })
+                      except Exception as ng_exc:  # Catch node group-specific issues
+                          logger.error(f"Error fetching node groups for {cluster_name} in {region}: {ng_exc}")
+                      yield cluster_data
+              except Exception as exc: #pylint: disable=W0718
+                  logger.error(f"Cannot get info from {account_id}/{region}: {type(exc)}-{exc}")
+              return []
 
           def lambda_handler(event, context): #pylint: disable=unused-argument
               """ this lambda collects ami, snapshots and volumes from linked accounts
