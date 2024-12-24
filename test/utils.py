@@ -243,8 +243,8 @@ def initial_deploy_stacks(cloudformation, account_id, org_unit_id, bucket):
         stack_name=f'{PREFIX}SupportCaseSummarizationStack',
         url=upload_to_s3('case-summarization/deploy/case-summarization.yaml'),
         parameters=[
-            # FIXME: use a lambda layer from the current version of the code
-           # {'ParameterKey': 'LambdaLayerBucketPrefix',                  'ParameterValue': f"cid-{account_id}-test"},
+           # FIXME: use a lambda layer from the current version of the code
+           # {'ParameterKey': 'LambdaLayerBucketPrefix',                  'ParameterValue': f"cid-{account_id}-layer"},
         ]
     )
 
