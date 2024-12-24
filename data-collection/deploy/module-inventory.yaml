@@ -1150,9 +1150,7 @@ Resources:
                           "CreatedAt": datetime.strftime(
                               cluster["cluster"]["createdAt"].astimezone(tz=timezone.utc), "%Y-%m-%dT%H:%M:%SZ"
                           ),
-                          "Version": cluster["cluster"]["version"],
-                          "Region": region,
-                          "AccountId": account_id,
+                          "Version": cluster["cluster"]["version"]
                       }
                       # Get node groups for the cluster
                       try:
