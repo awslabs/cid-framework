@@ -38,9 +38,8 @@
             "Glue.ThrottlingException"
           ],
           "BackoffRate": 2,
-          "IntervalSeconds": 1,
-          "MaxAttempts": 3,
-          "MaxDelaySeconds": 1,
+          "IntervalSeconds": 5,
+          "MaxAttempts": 5,
           "JitterStrategy": "FULL"
         }
       ]
@@ -76,9 +75,8 @@
             "Glue.ThrottlingException"
           ],
           "BackoffRate": 2,
-          "IntervalSeconds": 1,
-          "MaxAttempts": 3,
-          "MaxDelaySeconds": 1,
+          "IntervalSeconds": 5,
+          "MaxAttempts": 5,
           "JitterStrategy": "FULL"
         }
       ]
@@ -102,9 +100,8 @@
             "Glue.ThrottlingException"
           ],
           "BackoffRate": 2,
-          "IntervalSeconds": 1,
-          "MaxAttempts": 3,
-          "MaxDelaySeconds": 1,
+          "IntervalSeconds": 5,
+          "MaxAttempts": 5,
           "JitterStrategy": "FULL"
         }
       ]
