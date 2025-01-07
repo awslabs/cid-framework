@@ -172,7 +172,7 @@ Resources:
                     s3 = boto3.client('s3')
                     s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
                     location = f"s3://{BUCKET}/{key}"
-                    log_entry = create_log_entry(module=module, module_function=PREFIX, params=params, region="us-east-1", record_count=count,
+                    log_entry = create_log_entry(module=module, module_function=PREFIX+'-lambda', params=params, region="us-east-1", record_count=count,
                                                 location=location, run_uuid=run_uuid, record_context="account", sub_uuid=sub_uuid)
                     return {'statusCode': 200, 'accountList': key, 'bucket': BUCKET, 'logEntry': log_entry['logEntry']}
                 except Exception as exc: #pylint: disable=broad-exception-caught
@@ -191,7 +191,7 @@ Resources:
                     else:
                         status_code = None
                         description = None
-                    create_log_entry(module=module, module_function=PREFIX, region="us-east-1", status_code=status_code, description=description, error=exc, run_uuid=run_uuid, sub_uuid=sub_uuid)
+                    create_log_entry(module=module, module_function=PREFIX+'-lambda', region="us-east-1", status_code=status_code, description=description, error=exc, run_uuid=run_uuid, sub_uuid=sub_uuid)
                     raise exc
 
             def get_all_payers():
