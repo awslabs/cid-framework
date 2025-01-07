@@ -110,10 +110,10 @@ Resources:
 
             import boto3
 
-            ROLE_NAME = os.environ['ROLE_NAME']
-            RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
-            MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-            BUCKET = os.environ['BUCKET_NAME']
+            ROLE_NAME = os.environ.get('ROLE_NAME')
+            RESOURCE_PREFIX = os.environ.get('RESOURCE_PREFIX')
+            MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
+            BUCKET = os.environ.get('BUCKET_NAME')
             PREDEF_ACCOUNT_LIST_KEY = os.environ.get('PREDEF_ACCOUNT_LIST_KEY')
             LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
             PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
@@ -185,14 +185,14 @@ Resources:
                 defined_accounts, ext = get_defined_list(BUCKET, PREDEF_ACCOUNT_LIST_KEY)
                 try:
                     if defined_accounts:
-                        logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY} instead of payer organization')
+                        logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY}{ext} instead of payer organization')
                         for account_data in defined_accounts:
                             if ext == "json":
                                 account = json.loads(account_data)
                                 yield format_account(account['account_id'], account['account_name'], account['payer_id'])
                             else:
                                 account = account_data.split(',')
-                                yield format_account(account[0], account[1], account[2])
+                                yield format_account(account[0].strip(), account[1].strip(), account[2].strip())
                     else:
                         logger.info('Using payer organization for the account list')
                         excluded_accounts = get_from_bucket(BUCKET, EXCLUDED_ACCOUNT_LIST_KEY)
@@ -210,13 +210,13 @@ Resources:
                                     continue
                                 yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
                 except Exception as exc: #pylint: disable=broad-exception-caught
-                    logger.error(f'{org_account}: {exc}')
+                    logger.error( f'{type(exc).__name__}: When trying to build linked account list. {exc} ')
 
             def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
                 exts = [".json", ".csv"]
                 for ext in exts:
-                    accts = get_from_bucket(bucket, key, s3)
+                    accts = get_from_bucket(bucket, key+ext, s3)
                     if accts:
                         return accts, ext
                 logger.debug(f'Predefined account list not retrieved or not being used')
