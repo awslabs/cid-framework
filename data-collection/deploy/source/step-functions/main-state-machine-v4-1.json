@@ -1,0 +1,442 @@
+{
+  "Comment": "Orchestrate the collection of ${Module} data",
+  "StartAt": "SetGlobalVariables1",
+  "States": {
+    "SetGlobalVariables1": {
+      "Type": "Pass",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "RunUUID": "{% $split($states.context.Execution.Id, ':')[7] %}",
+        "ExecutionStartTime": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
+        "Module": "${Module}",
+        "Params": "${Params}",
+        "DataCollectionRegion": "${DeployRegion}",
+        "DataCollectionAccountId": "${Account}",
+        "Type": "${CollectionType}",
+        "Bucket": "${Bucket}"
+      },
+      "Next": "SetGlobalVariables2"
+    },
+    "SetGlobalVariables2": {
+      "Type": "Pass",
+      "QueryLanguage": "JSONata",
+      "Assign": {
+        "LogKeyBase": "{% 'logs/year='&$ExecutionStartTime[0]&'/month='&$ExecutionStartTime[1]&'/day='&$ExecutionStartTime[2]&'/'&$Module&'-stepfunction-' %}"
+      },
+      "Next": "AccountCollector"
+    },
+    "AccountCollector": {
+      "Type": "Task",
+      "QueryLanguage": "JSONata",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Next": "AccountCollectorExecutionLog",
+      "Arguments": {
+        "FunctionName": "${AccountCollectorLambdaARN}",
+        "Payload": {
+          "Module": "{% $Module %}",
+          "Type": "{% $Type %}",
+          "RunUUID": "{% $RunUUID %}",
+          "Params": "{% $Params %}"
+        }
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Output": {
+        "StartTime": "{% $states.context.State.EnteredTime %}",
+        "StatusCode": 200,
+        "Description": "Account Collection Step Function task completed successfully"
+      },
+      "Assign": {
+        "AccountListKey": "{% $states.result.Payload.accountList %}"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "AccountCollectorExecutionLog",
+          "Output": {
+            "StartTime": "{% $states.context.State.EnteredTime %}",
+            "StatusCode": 500,
+            "Description": "{% $states.errorOutput %}"
+          }
+        }
+      ]
+    },
+    "AccountCollectorExecutionLog": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "Bucket": "{% $Bucket %}",
+        "Key": "{% $LogKeyBase&'AccountCollector-'&$RunUUID&'.json' %}",
+        "Body": {
+          "StartTime": "{% $states.input.StartTime %}",
+          "EndTime": "{% $now() %}",
+          "DataCollectionRegion": "{% $DataCollectionRegion %}",
+          "DataCollectionAccountId": "{% $DataCollectionAccountId %}",
+          "Module": "{% $Module %}",
+          "ModuleFunction": "account-collector-task",
+          "Params": "{% $Params %}",
+          "PayerId": "",
+          "AccountId": "",
+          "Region": "",
+          "StatusCode": "{% $states.input.StatusCode %}",
+          "SubCode": "",
+          "RecordCount": "",
+          "Description": "{% $states.input.Description %}",
+          "DataLocation": "",
+          "RunUUID": "{% $RunUUID %}",
+          "SubUUID": "",
+          "Service": "StepFunction"
+        }
+      },
+      "Output": {
+        "StatusCode": "{% $states.input.StatusCode %}"
+      },
+      "Next": "IsAccountCollectorFail",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "IsAccountCollectorFail"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "IsAccountCollectorFail": {
+      "Type": "Choice",
+      "QueryLanguage": "JSONata",
+      "Default": "AccountMap",
+      "Choices": [
+        {
+          "Next": "Fail",
+          "Condition": "{% $states.input.StatusCode = 500 %}"
+        }
+      ],
+      "Output": {
+        "AccountListKey": "{% $AccountListKey %}"
+      }
+    },
+    "AccountMap": {
+      "Type": "Map",
+      "QueryLanguage": "JSONata",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "DISTRIBUTED",
+          "ExecutionType": "STANDARD"
+        },
+        "StartAt": "ModuleLambda",
+        "States": {
+          "ModuleLambda": {
+            "Type": "Task",
+            "QueryLanguage": "JSONata",
+            "Resource": "arn:aws:states:${DeployRegion}:${Account}:lambda:invoke",
+            "Arguments": {
+              "FunctionName": "${ModuleLambdaARN}",
+              "Payload": {
+                "account": "{% $states.input.account %}",
+                "params": "${Params}",
+                "run_uuid": "{% $states.input.run_uuid %}"
+              }
+            },
+            "Output": {
+              "StartTime": "{% $states.context.State.EnteredTime %}",
+              "ExecutionStartTime": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
+              "Account": "{% $parse($states.input.account) %}",
+              "Description": ""
+            },
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "Lambda.ServiceException",
+                  "Lambda.AWSLambdaException",
+                  "Lambda.SdkClientException",
+                  "Lambda.TooManyRequestsException"
+                ],
+                "IntervalSeconds": 2,
+                "MaxAttempts": 6,
+                "BackoffRate": 2,
+                "JitterStrategy": "FULL"
+              }
+            ],
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "Output": {
+                  "StartTime": "{% $states.context.State.EnteredTime %}",
+                  "ExecutionStartTime": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
+                  "Account": "{% $parse($states.input.account) %}",
+                  "Description": "{% $states.errorOutput %}"
+                },
+                "Next": "ModuleLambdaExecutionLog"
+              }
+            ],
+            "Next": "Continue"
+          },
+          "ModuleLambdaExecutionLog": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+            "QueryLanguage": "JSONata",
+            "Arguments": {
+              "Bucket": "${Bucket}",
+              "Key": "{% 'logs/year='&$states.input.ExecutionStartTime[0]&'/month='&$states.input.ExecutionStartTime[1]&'/day='&$states.input.ExecutionStartTime[2]&'/${Module}-stepfunction-ModuleLambda'&$split($states.context.Execution.Id, ':')[7]&'-'&$random()&'.json' %}",
+              "Body": {
+                "StartTime": "{% $states.input.StartTime %}",
+                "EndTime": "{% $now() %}",
+                "DataCollectionRegion": "${DeployRegion}",
+                "DataCollectionAccountId": "${Account}",
+                "Module": "${Module}",
+                "ModuleFunction": "module-lambda-task",
+                "Params": "${Params}",
+                "PayerId": "{% $states.input.Account.payer_id %}",
+                "AccountId": "{% $states.input.Account.account_id %}",
+                "Region": "",
+                "StatusCode": 500,
+                "SubCode": "",
+                "RecordCount": "",
+                "Description": "{% $states.input.Description %}",
+                "DataLocation": "",
+                "RunUUID": "{% $split($states.context.Execution.Id, ':')[7] %}",
+                "SubUUID": "",
+                "Service": "StepFunction"
+              }
+            },
+            "Next": "Continue",
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.All"
+                ],
+                "Next": "Continue"
+              }
+            ],
+            "Retry": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "BackoffRate": 2,
+                "IntervalSeconds": 1,
+                "MaxAttempts": 3
+              }
+            ]
+          },
+          "Continue": {
+            "Type": "Succeed"
+          }
+        }
+      },
+      "MaxConcurrency": 60,
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:getObject",
+        "ReaderConfig": {
+          "InputType": "JSON"
+        },
+        "Arguments": {
+          "Bucket": "{% $Bucket %}",
+          "Key": "{% $AccountListKey %}"
+        }
+      },
+      "Output": {
+        "StartTime": "{% $states.context.State.EnteredTime %}",
+        "StatusCode": 200,
+        "Description": "Account Map Step Function task completed successfully"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Output": {
+            "StartTime": "{% $states.context.State.EnteredTime %}",
+            "StatusCode": 500,
+            "Description": "{% $states.errorOutput %}"
+          },
+          "Next": "AccountMapExecutionLog"
+        }
+      ],
+      "Next": "AccountMapExecutionLog"
+    },
+    "AccountMapExecutionLog": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "Bucket": "{% $Bucket %}",
+        "Key": "{% $LogKeyBase&'AccountMap-'&$RunUUID&'.json' %}",
+        "Body": {
+          "StartTime": "{% $states.input.StartTime %}",
+          "EndTime": "{% $now() %}",
+          "DataCollectionRegion": "{% $DataCollectionRegion %}",
+          "DataCollectionAccountId": "{% $DataCollectionAccountId %}",
+          "Module": "{% $Module %}",
+          "ModuleFunction": "account-map-processor-task",
+          "Params": "{% $Params %}",
+          "PayerId": "",
+          "AccountId": "",
+          "Region": "",
+          "StatusCode": "{% $states.input.StatusCode %}",
+          "SubCode": "",
+          "RecordCount": "",
+          "Description": "{% $states.input.Description %}",
+          "DataLocation": "",
+          "RunUUID": "{% $RunUUID %}",
+          "SubUUID": "",
+          "Service": "StepFunction"
+        }
+      },
+      "Next": "CrawlerStepFunction",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "CrawlerStepFunction"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "CrawlerStepFunction": {
+      "Type": "Task",
+      "QueryLanguage": "JSONata",
+      "Resource": "arn:aws:states:::states:startExecution.sync:2",
+      "Arguments": {
+        "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:${Prefix}CrawlerExecution-StateMachine",
+        "Input": {
+          "behavior": "WAIT",
+          "crawlers": ${Crawlers}
+        }
+      },
+      "Output": {
+        "StartTime": "{% $states.context.State.EnteredTime %}",
+        "StatusCode": 200,
+        "Description": "Crawler Step Function task completed successfully"
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "CrawlerStepFunctionExecutionLog",
+          "Output": {
+            "StartTime": "{% $states.context.State.EnteredTime %}",
+            "StatusCode": 500,
+            "Description": "{% $states.errorOutput %}"
+          }
+        }
+      ],
+      "Next": "CrawlerStepFunctionExecutionLog"
+    },
+    "CrawlerStepFunctionExecutionLog": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+      "QueryLanguage": "JSONata",
+      "Arguments": {
+        "Bucket": "{% $Bucket %}",
+        "Key": "{% $LogKeyBase&'Crawler-'&$RunUUID&'.json' %}",
+        "Body": {
+          "StartTime": "{% $states.input.StartTime %}",
+          "EndTime": "{% $now() %}",
+          "DataCollectionRegion": "{% $DataCollectionRegion %}",
+          "DataCollectionAccountId": "{% $DataCollectionAccountId %}",
+          "Module": "{% $Module %}",
+          "ModuleFunction": "crawler-task",
+          "Params": "{% $Params %}",
+          "PayerId": "",
+          "AccountId": "",
+          "Region": "",
+          "StatusCode": "{% $states.input.StatusCode %}",
+          "SubCode": "",
+          "RecordCount": "",
+          "Description": "{% $states.input.Description %}",
+          "DataLocation": "",
+          "RunUUID": "{% $RunUUID %}",
+          "SubUUID": "",
+          "Service": "StepFunction"
+        }
+      },
+      "Next": "LogCrawlerStepFunction",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "LogCrawlerStepFunction"
+        }
+      ],
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "BackoffRate": 2,
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3
+        }
+      ]
+    },
+    "LogCrawlerStepFunction": {
+      "Type": "Task",
+      "QueryLanguage": "JSONata",
+      "Resource": "arn:aws:states:::states:startExecution",
+      "Arguments": {
+        "StateMachineArn": "arn:aws:states:${DeployRegion}:${Account}:stateMachine:CID-DC-CrawlerExecution-StateMachine",
+        "Input": {
+          "behavior": "NOWAIT",
+          "crawlers": [
+            "CID-DC-logs-Crawler"
+          ]
+        }
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "Success"
+        }
+      ],
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "Fail": {
+      "Type": "Fail"
+    }
+  },
+  "TimeoutSeconds": 10800
+}

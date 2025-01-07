@@ -118,21 +118,27 @@ Resources:
       Architectures: [x86_64]
       Code:
         ZipFile: |
+          #Module detail:
+          # Name: Backup
+          # Account scope: Payers
+          # Region(s): us-east-1
           import os
           import json
+          import uuid
           import logging
           import itertools
           from datetime import date, timedelta, datetime
 
           import boto3
 
+          BUCKET = os.environ.get('BUCKET_NAME')
+          ROLE_NAME = os.environ.get('ROLE_NAME')
+          PREFIX = os.environ.get('PREFIX')
+          TMP_FILE = "/tmp/data.json"
+          START_TIME = str(datetime.now().isoformat())+"Z"
+
           logger = logging.getLogger()
           logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
-
-          BUCKET_NAME = os.environ['BUCKET_NAME']
-          ROLENAME = os.environ['ROLENAME']
-          PREFIX = os.environ['PREFIX']
-          TMP_FILE = "/tmp/data.json"
 
           def to_json(obj):
               """json helper for date, time and data"""
@@ -147,12 +153,11 @@ Resources:
                   for count, record in enumerate(records, start=1):
                       json_file.write(to_json(record) + '\n')
               if not count:
-                  logger.info(f"No records for {path}")
-                  return count
+                  return 0, None
               key = date.today().strftime(f"{path}/year=%Y/month=%m/day=%d/%Y-%m-%d.json")
-              boto3.client('s3').upload_file(TMP_FILE, BUCKET_NAME, key)
-              logger.info(f'Uploaded {count} records to s3://{BUCKET_NAME}/{key}')
-              return count
+              boto3.client('s3').upload_file(TMP_FILE, BUCKET, key)
+              location = f"s3://{BUCKET}/{key}"
+              return count, location
 
           def iterate_paginated_results(client, function, search, params=None):
               yield from client.get_paginator(function).paginate(**(params or {})).search(search)
@@ -175,7 +180,7 @@ Resources:
               s3_content_iterator = iterate_paginated_results(
                   client=boto3.client('s3'),
                   function='list_objects_v2',
-                  params=dict(Bucket=BUCKET_NAME, Prefix=s3_path), #pylint: disable=R1735
+                  params=dict(Bucket=BUCKET, Prefix=s3_path), #pylint: disable=R1735
                   search='Contents',
               )
               s3_content_iterator = filter(lambda x: x is not None, s3_content_iterator)
@@ -187,56 +192,140 @@ Resources:
               and must be called from the corresponding Step Function to orchestrate
               """
               logger.info(f"Event data: {event}")
-              if 'account' not in event or 'params' not in event  :
-                  raise ValueError(
-                      "Please do not trigger this Lambda manually."
-                      "Find the corresponding state machine in Step Functions and Trigger from there."
-                  )
-              params = [p for p in event.get('params', '').split() if p]
-              name = params[0]
-              account = json.loads(event["account"])
-              account_id = account["account_id"]
-              payer_id = account["payer_id"]
-              region = boto3.session.Session().region_name
-              partition = boto3.session.Session().get_partition_for_region(region_name=region)
-              creds = boto3.client('sts').assume_role(
-                  RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLENAME}",
-                  RoleSessionName="cross_acct_lambda"
-              )['Credentials']
-              backup = boto3.client(
-                  "backup",
-                  "us-east-1",     #FIXME: what about other regions?
-                  aws_access_key_id=creds['AccessKeyId'],
-                  aws_secret_access_key=creds['SecretAccessKey'],
-                  aws_session_token=creds['SessionToken'],
-              )
-              s3_prefix = f'{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}'
-              start_date = last_updated_date(s3_prefix)
-              end_date = datetime.now().date()
-              data_iterator = iterate_paginated_results(
-                  client=backup,
-                  function='list_' + name.replace("-", "_"), # ex: copy-jobs -> list_copy_jobs
-                  search=name.title().replace("-", ""),      # ex: copy-jobs -> CopyJobs
-                  params=dict( #pylint: disable=R1735
-                      ByCompleteAfter=str(start_date),
-                      ByCompleteBefore=str(end_date),
-                      ByAccountId='*',
-                  ),
-              )
-              flatten_data_iterator = map(flatten_dict, data_iterator)
+              sub_uuid = [context.aws_request_id, context.log_group_name, context.log_stream_name]
               count = 0
+              region = "us-east-1" #FIXME: what about other regions?
+              run_uuid = event.get("run_uuid", str(uuid.uuid4()))
+
               try:
-                  count = store_to_s3(flatten_data_iterator, s3_prefix)
-              except backup.exceptions.ClientError as exc:
-                  if 'Insufficient privileges to perform this action.' in str(exc):
-                      raise Exception(
-                        'You need to activate cross account jobs monitoring '
-                        'https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account'
-                      ) from exc #pylint: disable=broad-exception-raised
-                  raise
+                  account = json.loads(event.get("account","{}"))
+                  payer_id = account.get("payer_id")
+                  account_id = account.get("account_id")
+                  params = [p for p in event.get("params", "").split() if p]
+                  name = params[0] if len(params) else None
+                  if not (payer_id and account_id and name):
+                      raise Exception(STATUS_NOT_ACCEPTABLE) #pylint: disable=broad-exception-raised
 
-              return f"Recorded {count}"
+                  partition = boto3.session.Session().get_partition_for_region(region_name=boto3.session.Session().region_name)
+                  creds = boto3.client('sts').assume_role(
+                      RoleArn=f"arn:{partition}:iam::{account_id}:role/{ROLE_NAME}",
+                      RoleSessionName="cross_acct_lambda"
+                  )['Credentials']
+                  backup = boto3.client(
+                      "backup",
+                      region,
+                      aws_access_key_id=creds['AccessKeyId'],
+                      aws_secret_access_key=creds['SecretAccessKey'],
+                      aws_session_token=creds['SessionToken'],
+                  )
+                  s3_prefix = f'{PREFIX}/{PREFIX}-{name}-data/payer_id={payer_id}'
+                  start_date = last_updated_date(s3_prefix)
+                  end_date = datetime.now().date()
+                  data_iterator = iterate_paginated_results(
+                      client=backup,
+                      function='list_' + name.replace("-", "_"), # ex: copy-jobs -> list_copy_jobs
+                      search=name.title().replace("-", ""),      # ex: copy-jobs -> CopyJobs
+                      params=dict( #pylint: disable=R1735
+                          ByCompleteAfter=str(start_date),
+                          ByCompleteBefore=str(end_date),
+                          ByAccountId='*',
+                      ),
+                  )
+                  flatten_data_iterator = map(flatten_dict, data_iterator)
+                  count, location = store_to_s3(flatten_data_iterator, s3_prefix)
+                  description = f"Searched range from {start_date} to {end_date}"
+                  return create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=name, record_count=count, location=location,
+                                          description=description, run_uuid=run_uuid, sub_uuid=sub_uuid, record_context=f"{PREFIX} {name}")
 
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  is_not_activated = 'Insufficient privileges to perform this action.' in str(exc)
+                  status_code = STATUS_FORBIDDEN if is_not_activated else None
+                  description = None if not is_not_activated else ('You need to activate cross account jobs monitoring. '
+                                                                  'See https://docs.aws.amazon.com/aws-backup/latest/devguide/manage-cross-account.html#enable-cross-account')
+                  return create_log_entry(payer_id=payer_id, account_id=account_id, region=region, params=name,
+                                          status_code=status_code, description=description, record_count=count, error=exc, run_uuid=run_uuid, sub_uuid=sub_uuid)
+
+          def create_log_entry(payer_id="", account_id=None, start_time=None, status_code=None, region="", module=None, module_function="module-lambda", sub_code="",
+                              params="", record_count=0, record_context="", description=None, location="", error=None, run_uuid="", sub_uuid=[], is_summary=False, store_it=True): # pylint: disable=too-many-locals
+              """Format log entry for logging."""
+              try:
+                  # get the local account and region
+                  dc_region = boto3.session.Session().region_name
+                  dc_account_id = boto3.client('sts').get_caller_identity()['Account']
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  dc_region = ""
+                  dc_account_id = ""
+                  logger.error(f"{type(exc).__name__}: When trying to obtain local region and account information. Message: {str(exc)}")
+
+              status_code, description = status_handler(error, record_count, is_summary, status_code, description, record_context)
+              log_entry = {
+                  "StartTime": start_time if start_time else START_TIME,
+                  "EndTime":  str(datetime.now().isoformat())+"Z",
+                  "DataCollectionRegion": dc_region,
+                  "DataCollectionAccountId": dc_account_id,
+                  "Module": module if module else PREFIX,
+                  "ModuleFunction": module_function,
+                  "Params": params,
+                  "PayerId": payer_id,
+                  "AccountId": account_id if account_id else payer_id,
+                  "Region": region,
+                  "StatusCode": status_code,
+                  "SubCode": sub_code,
+                  "RecordCount": record_count,
+                  "Description": description,
+                  "DataLocation": location if record_count > 0 else "",
+                  "RunUUID": run_uuid,
+                  "SubUUID": sub_uuid if isinstance(sub_uuid, list) else [sub_uuid],
+                  "Service": "Lambda"
+              }
+              if status_code >= 400:
+                  logger.error(description)
+              if store_it:
+                  store_log_entry(log_entry)
+              logger.info(f"Result: {log_entry}")
+              return {"statusCode": status_code, "logEntry": log_entry}
+
+          def status_handler(error=None, record_count=0, is_summary=False, status_code=None, description="", record_context=""):
+              """Codify status codes and descriptions for consistent logging."""
+              if status_code:
+                  return status_code, description
+              if error:
+                  exc_msg = str(error)
+                  if exc_msg == str(STATUS_NOT_ACCEPTABLE):
+                      return STATUS_NOT_ACCEPTABLE, ("InvocationError: Account parameters are not properly defined in request."
+                          f"Please only trigger this Lambda from the corresponding StepFunction for this module.{' '+description if description else ''}")
+                  if "AccessDenied" in exc_msg:
+                      return STATUS_NOT_AUTHORIZED, f"AccessDenied: Unable to assume role {ROLE_NAME}. Please make sure the role exists. {exc_msg}"
+                  if 'The security token included in the request is invalid' in exc_msg:
+                      return STATUS_FORBIDDEN, f'{type(error).__name__}: Region might not be activated.'
+                  return STATUS_SERVER_ERROR, f"{type(error).__name__}: with message {exc_msg}"
+              # For all others, assume success
+              description = f"Lambda execution successful: {record_count} {(record_context+' ') if record_context else ''}record{'s' if (record_count > 1 or record_count == 0) else ''} found.{' '+description if description else ''}"
+              if is_summary:
+                  return STATUS_MULTI_STATUS, "Multi-part "+description
+              if record_count == 0:
+                  return STATUS_OKAY_NO_CONTENT, description
+              return STATUS_OKAY, description
+
+          def store_log_entry(log_entry):
+              """Store the log entry to S3."""
+              key = datetime.now().strftime(f"logs/year=%Y/month=%m/day=%d/{PREFIX}-{uuid.uuid4()}.json")
+              try:
+                  boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
+              except Exception as exc: #pylint: disable=broad-exception-caught
+                  logger.error(f"Error storing log entry to S3: {exc}")
+
+          STATUS_OKAY = 200
+          STATUS_OKAY_NO_CONTENT = 204
+          STATUS_MULTI_STATUS = 207
+          STATUS_NOT_AUTHORIZED = 401
+          STATUS_FORBIDDEN = 403
+          STATUS_NOT_FOUND = 404
+          STATUS_NOT_ACCEPTABLE = 406
+          STATUS_CONFLICT = 409
+          STATUS_TOO_MANY_REQUESTS = 429
+          STATUS_SERVER_ERROR = 500
+          STATUS_NOT_IMPLEMENTED = 501
       Handler: "index.lambda_handler"
       MemorySize: 2688
       Timeout: 600
@@ -245,7 +334,7 @@ Resources:
         Variables:
           BUCKET_NAME: !Ref DestinationBucket
           PREFIX: !Ref CFDataName
-          ROLENAME: !Ref ManagementRoleName
+          ROLE_NAME: !Ref ManagementRoleName
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -303,6 +392,7 @@ Resources:
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
             Prefix: !Ref ResourcePrefix
+            Bucket: !Ref DestinationBucket
       'RefreshSchedule${AwsObject}':
         Type: AWS::Scheduler::Schedule
         Properties:

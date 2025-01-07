@@ -1348,6 +1348,7 @@ Resources:
             DeployRegion: !Ref AWS::Region
             Account: !Ref AWS::AccountId
             Prefix: !Ref ResourcePrefix
+            Bucket: !Ref DestinationBucket
       'RefreshSchedule${AwsObject}':
         Type: AWS::Scheduler::Schedule
         Properties:

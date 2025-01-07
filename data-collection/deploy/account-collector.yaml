@@ -105,65 +105,94 @@ Resources:
           ZipFile: |
             import os
             import json
+            import uuid
             import logging
+            from datetime import datetime
             from functools import partial
 
             import boto3
 
-            ROLE_NAME = os.environ['ROLE_NAME']
-            RESOURCE_PREFIX = os.environ['RESOURCE_PREFIX']
-            MANAGEMENT_ACCOUNT_IDS = os.environ['MANAGEMENT_ACCOUNT_IDS']
-            BUCKET = os.environ['BUCKET_NAME']
+            ROLE_NAME = os.environ.get('ROLE_NAME')
+            RESOURCE_PREFIX = os.environ.get('RESOURCE_PREFIX')
+            MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
+            BUCKET = os.environ.get('BUCKET_NAME')
             PREDEF_ACCOUNT_LIST_KEY = os.environ.get('PREDEF_ACCOUNT_LIST_KEY')
             LINKED_ACCOUNT_LIST_KEY = os.environ.get('LINKED_ACCOUNT_LIST_KEY')
             PAYER_ACCOUNT_LIST_KEY = os.environ.get('PAYER_ACCOUNT_LIST_KEY')
             EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
             TMP_FILE = "/tmp/data.json"
+            PREFIX = "account-collector"
+            START_TIME = str(datetime.now().isoformat())+"Z"
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
 
             def lambda_handler(event, context): #pylint: disable=unused-argument
                 logger.info(f"Incoming event: {event}")
-                # need to confirm that the Lambda concurrency limit is sufficient to avoid throttling
-                lambda_limit = boto3.client('lambda').get_account_settings()['AccountLimit']['ConcurrentExecutions']
-                if lambda_limit < 500:
-                    message = (f'Lambda concurrent executions limit of {lambda_limit} is not sufficient to run the Data Collection framework. '
-                                'Please increase the limit to at least 500 (1000 is recommended). '
-                                'See https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html.')
-                    logger.error(message)
-                    raise Exception(message) #pylint: disable=broad-exception-raised
-
-                functions = { # keep keys same as boto3 services
-                    'linked': iterate_linked_accounts,
-                    'payers': partial(iterate_admins_accounts, None),
-                    'organizations': partial(iterate_admins_accounts, 'organizations'),
-                    'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
-                    'backup': partial(iterate_admins_accounts, 'backup'),
-                }
+                sub_uuid = [context.aws_request_id, context.log_group_name, context.log_stream_name]
                 account_type = event.get("Type", '').lower()
-                if account_type not in functions:
-                    raise Exception(f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})") #pylint: disable=broad-exception-raised
+                module = event.get("Module", '').lower()
+                run_uuid = event.get("RunUUID", str(uuid.uuid4()))
+                params = event.get("Params", "")
+                try:
+                    # need to confirm that the Lambda concurrency limit is sufficient to avoid throttling
+                    lambda_limit = boto3.client('lambda').get_account_settings()['AccountLimit']['ConcurrentExecutions']
+                    if lambda_limit < 500:
+                        raise Exception(STATUS_CONFLICT) #pylint: disable=broad-exception-raised
 
-                account_iterator = functions[account_type]
-                with open(TMP_FILE, "w", encoding='utf-8') as f:
-                    count = 0
-                    f.write("[\n")
-                    for account in account_iterator():
-                        if count > 0:
-                            f.write(",\n")
-                        f.write(json.dumps(account))
-                        count += 1
-                    f.write("\n]")
+                    functions = { # keep keys same as boto3 services
+                        'linked': iterate_linked_accounts,
+                        'payers': partial(iterate_admins_accounts, None),
+                        'organizations': partial(iterate_admins_accounts, 'organizations'),
+                        'compute-optimizer': partial(iterate_admins_accounts, 'compute-optimizer'),
+                        'backup': partial(iterate_admins_accounts, 'backup'),
+                    }
 
-                if count == 0:
-                    raise Exception('No accounts found. Check the log.') #pylint: disable=broad-exception-raised
+                    if account_type not in functions:
+                        account_type = None
+                        raise Exception(STATUS_NOT_ACCEPTABLE) #pylint: disable=broad-exception-raised
 
-                key = LINKED_ACCOUNT_LIST_KEY if account_type == 'linked' else PAYER_ACCOUNT_LIST_KEY
-                s3 = boto3.client('s3')
-                s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
+                    account_iterator = functions[account_type]
+                    logger.info(f"Looking for accounts")
+                    with open(TMP_FILE, "w", encoding='utf-8') as f:
+                        count = 0
+                        f.write("[\n")
+                        for account in account_iterator():
+                            account['run_uuid'] = run_uuid
+                            if count > 0:
+                                f.write(",\n")
+                            f.write(json.dumps(account))
+                            count += 1
+                        f.write("\n]")
 
-                return {'statusCode': 200, 'accountList': key, 'bucket': BUCKET}
+                    if count == 0:
+                        raise Exception(STATUS_NOT_FOUND) #pylint: disable=broad-exception-raised
+
+                    key = f"{PREFIX}/{module+'-'+(params+'-' if params else '')+(LINKED_ACCOUNT_LIST_KEY if account_type == 'linked' else PAYER_ACCOUNT_LIST_KEY)}"
+                    s3 = boto3.client('s3')
+                    s3.upload_file(TMP_FILE, Bucket=BUCKET, Key=key)
+                    location = f"s3://{BUCKET}/{key}"
+                    log_entry = create_log_entry(module=module, module_function=PREFIX, params=params, region="us-east-1", record_count=count,
+                                                location=location, run_uuid=run_uuid, record_context="account", sub_uuid=sub_uuid)
+                    return {'statusCode': 200, 'accountList': key, 'bucket': BUCKET, 'logEntry': log_entry['logEntry']}
+                except Exception as exc: #pylint: disable=broad-exception-caught
+                    exc_msg = str(exc)
+                    if exc_msg == str(STATUS_CONFLICT):
+                        status_code = STATUS_CONFLICT
+                        description = (f'Lambda concurrent executions limit of {lambda_limit} is not sufficient to run the Data Collection framework. '
+                                    'Please increase the limit to at least 500 (1000 is recommended). '
+                                    'See https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html.')
+                    elif exc_msg == str(STATUS_NOT_ACCEPTABLE):
+                        status_code = STATUS_NOT_ACCEPTABLE
+                        description = f"Lambda event must have 'Type' parameter with value = ({list(functions.keys())})"
+                    elif exc_msg == str(STATUS_NOT_FOUND):
+                        status_code = STATUS_NOT_FOUND
+                        description = 'No accounts found. Check the log.'
+                    else:
+                        status_code = None
+                        description = None
+                    create_log_entry(module=module, module_function=PREFIX, region="us-east-1", status_code=status_code, description=description, error=exc, run_uuid=run_uuid, sub_uuid=sub_uuid)
+                    raise exc
 
             def get_all_payers():
                 for payer_id in MANAGEMENT_ACCOUNT_IDS.split(','):
@@ -179,38 +208,39 @@ Resources:
                             account_id = ssm.get_parameter(Name=ssm_key)['Parameter']['Value']
                         except ssm.exceptions.ParameterNotFound:
                             logger.warning(f'Not found ssm parameter {ssm_key}. Will use Management Account Id {payer_id}')
-                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id})}
+                    yield {"account": json.dumps({'account_id': account_id, 'account_name': '', 'payer_id': payer_id}), "runuuid": ""}
 
             def iterate_linked_accounts():
                 defined_accounts, ext = get_defined_list(BUCKET, PREDEF_ACCOUNT_LIST_KEY)
-                try:
-                    if defined_accounts:
-                        logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY} instead of payer organization')
-                        for account_data in defined_accounts:
-                            if ext == "json":
-                                account = json.loads(account_data)
-                                yield format_account(account['account_id'], account['account_name'], account['payer_id'])
-                            else:
-                                account = account_data.split(',')
-                                yield format_account(account[0], account[1], account[2])
-                    else:
-                        logger.info('Using payer organization for the account list')
-                        excluded_accounts = get_from_bucket(BUCKET, EXCLUDED_ACCOUNT_LIST_KEY)
-                        if excluded_accounts:
-                            logger.info(f'Found list of accounts to exclude in s3://{BUCKET}/{EXCLUDED_ACCOUNT_LIST_KEY}. Will only collect accounts that are not in the list')
-                            excluded_accounts = [a.strip() for a in excluded_accounts[0].split(',') if a]
-                        for org_account_data in iterate_admins_accounts('organizations'):
-                            logger.info(f'Collecting accounts for payer {org_account_data}')
-                            org_account = json.loads(org_account_data['account'])
-                            logger.info(f'org_account: {org_account}')
-                            organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
-                            for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
-                                if excluded_accounts and account.get('Id') in excluded_accounts:
-                                    logger.debug(f'Excluding account {account.get("Id")}')
-                                    continue
-                                yield format_account(account.get('Id'), account.get('Name'), org_account['payer_id'])
-                except Exception as exc: #pylint: disable=broad-exception-caught
-                    logger.error(f'{org_account}: {exc}')
+                if defined_accounts:
+                    logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY} instead of payer organization')
+                    for account_data in defined_accounts:
+                        if ext == "json":
+                            account = json.loads(account_data)
+                            yield format_account(account['account_id'], account['account_name'], account['payer_id'])
+                        else:
+                            account = account_data.split(',')
+                            yield format_account(account[0], account[1], account[2])
+                else:
+                    logger.info('Using payer organization for the account list')
+                    excluded_accounts = get_from_bucket(BUCKET, EXCLUDED_ACCOUNT_LIST_KEY)
+                    if excluded_accounts:
+                        logger.info(f'Found list of accounts to exclude in s3://{BUCKET}/{EXCLUDED_ACCOUNT_LIST_KEY}. Will only collect accounts that are not in the list')
+                        excluded_accounts = [a.strip() for a in excluded_accounts[0].split(',') if a]
+                    for org_account_data in iterate_admins_accounts('organizations'):
+                        logger.info(f'Collecting accounts for payer {org_account_data}')
+                        org_account = json.loads(org_account_data['account'])
+                        payer_id = org_account['payer_id']
+                        organizations = get_client_with_role(service="organizations", account_id=org_account['account_id'], region="us-east-1") #MUST be us-east-1
+                        count = 0
+                        for account in organizations.get_paginator("list_accounts").paginate().search("Accounts[?Status=='ACTIVE']"):
+                            account_id = account.get('Id')
+                            if excluded_accounts and account_id in excluded_accounts:
+                                logger.debug(f'Excluding account {account_id}')
+                                continue
+                            count += 1
+                            yield format_account(account_id, account.get('Name'), payer_id)
+                        logger.info(f'Found {count} accounts for payer {payer_id}')
 
             def get_defined_list(bucket, key):
                 s3 = boto3.client("s3")
@@ -253,6 +283,88 @@ Resources:
                     aws_secret_access_key=credentials['SecretAccessKey'],
                     aws_session_token=credentials['SessionToken'],
                 )
+
+            def create_log_entry(payer_id="", account_id=None, start_time=None, status_code=None, region="", module=None, module_function="module-lambda", sub_code="",
+                                params="", record_count=0, record_context="", description=None, location="", error=None, run_uuid="", sub_uuid=[], is_summary=False, store_it=True): # pylint: disable=too-many-locals
+                """Format log entry for logging."""
+                try:
+                    # get the local account and region
+                    dc_region = boto3.session.Session().region_name
+                    dc_account_id = boto3.client('sts').get_caller_identity()['Account']
+                except Exception as exc: #pylint: disable=broad-exception-caught
+                    dc_region = ""
+                    dc_account_id = ""
+                    logger.error(f"{type(exc).__name__}: When trying to obtain local region and account information. Message: {str(exc)}")
+
+                status_code, description = status_handler(error, record_count, is_summary, status_code, description, record_context)
+                log_entry = {
+                    "StartTime": start_time if start_time else START_TIME,
+                    "EndTime":  str(datetime.now().isoformat())+"Z",
+                    "DataCollectionRegion": dc_region,
+                    "DataCollectionAccountId": dc_account_id,
+                    "Module": module if module else PREFIX,
+                    "ModuleFunction": module_function,
+                    "Params": params,
+                    "PayerId": payer_id,
+                    "AccountId": account_id if account_id else payer_id,
+                    "Region": region,
+                    "StatusCode": status_code,
+                    "SubCode": sub_code,
+                    "RecordCount": record_count,
+                    "Description": description,
+                    "DataLocation": location if record_count > 0 else "",
+                    "RunUUID": run_uuid,
+                    "SubUUID": sub_uuid if isinstance(sub_uuid, list) else [sub_uuid],
+                    "Service": "Lambda"
+                }
+                if status_code >= 400:
+                    logger.error(description)
+                if store_it:
+                    store_log_entry(log_entry)
+                logger.info(f"Result: {log_entry}")
+                return {"statusCode": status_code, "logEntry": log_entry}
+
+            def status_handler(error=None, record_count=0, is_summary=False, status_code=None, description="", record_context=""):
+                """Codify status codes and descriptions for consistent logging."""
+                if status_code:
+                    return status_code, description
+                if error:
+                    exc_msg = str(error)
+                    if exc_msg == str(STATUS_NOT_ACCEPTABLE):
+                        return STATUS_NOT_ACCEPTABLE, ("InvocationError: Account parameters are not properly defined in request."
+                            f"Please only trigger this Lambda from the corresponding StepFunction for this module.{' '+description if description else ''}")
+                    if "AccessDenied" in exc_msg:
+                        return STATUS_NOT_AUTHORIZED, f"AccessDenied: Unable to assume role {ROLE_NAME}. Please make sure the role exists. {exc_msg}"
+                    if 'The security token included in the request is invalid' in exc_msg:
+                        return STATUS_FORBIDDEN, f'{type(error).__name__}: Region might not be activated.'
+                    return STATUS_SERVER_ERROR, f"{type(error).__name__}: with message {exc_msg}"
+                # For all others, assume success
+                description = f"Lambda execution successful: {record_count} {(record_context+' ') if record_context else ''}record{'s' if (record_count > 1 or record_count == 0) else ''} found.{' '+description if description else ''}"
+                if is_summary:
+                    return STATUS_MULTI_STATUS, "Multi-part "+description
+                if record_count == 0:
+                    return STATUS_OKAY_NO_CONTENT, description
+                return STATUS_OKAY, description
+
+            def store_log_entry(log_entry):
+                """Store the log entry to S3."""
+                key = datetime.now().strftime(f"logs/year=%Y/month=%m/day=%d/{PREFIX}-{uuid.uuid4()}.json")
+                try:
+                    boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
+                except Exception as exc: #pylint: disable=broad-exception-caught
+                    logger.error(f"Error storing log entry to S3: {exc}")
+
+            STATUS_OKAY = 200
+            STATUS_OKAY_NO_CONTENT = 204
+            STATUS_MULTI_STATUS = 207
+            STATUS_NOT_AUTHORIZED = 401
+            STATUS_FORBIDDEN = 403
+            STATUS_NOT_FOUND = 404
+            STATUS_NOT_ACCEPTABLE = 406
+            STATUS_CONFLICT = 409
+            STATUS_TOO_MANY_REQUESTS = 429
+            STATUS_SERVER_ERROR = 500
+            STATUS_NOT_IMPLEMENTED = 501
       Handler: 'index.lambda_handler'
       MemorySize: 2688
       Timeout: 600
@@ -263,10 +375,10 @@ Resources:
           MANAGEMENT_ACCOUNT_IDS: !Ref ManagementAccountID
           RESOURCE_PREFIX: !Ref ResourcePrefix
           BUCKET_NAME: !Ref DestinationBucket
-          PREDEF_ACCOUNT_LIST_KEY: "account-list/account-list"
-          LINKED_ACCOUNT_LIST_KEY: "account-list/linked-account-list.json"
-          PAYER_ACCOUNT_LIST_KEY: "account-list/payer-account-list.json"
-          EXCLUDED_ACCOUNT_LIST_KEY: "account-list/excluded-linked-account-list.csv"
+          PREDEF_ACCOUNT_LIST_KEY: "account-list"
+          LINKED_ACCOUNT_LIST_KEY: "linked-account-list.json"
+          PAYER_ACCOUNT_LIST_KEY: "payer-account-list.json"
+          EXCLUDED_ACCOUNT_LIST_KEY: "excluded-linked-account-list.csv"
     Metadata:
       cfn_nag:
         rules_to_suppress:
