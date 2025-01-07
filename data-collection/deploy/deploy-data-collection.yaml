@@ -116,7 +116,7 @@ Mappings:
     main-v4:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v4.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
     crawler-v2:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v2.json}
-    standalone-v1:  {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
+    standalone-v1:  {TemplatePath: cfn/data-collection/source/step-functions/standalone-state-machine-v2.json}
     he-detail-v1:   {TemplatePath: cfn/data-collection/source/step-functions/health-detail-state-machine-v1.json}
 
 Parameters:
