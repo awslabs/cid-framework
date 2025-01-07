@@ -114,7 +114,7 @@ Mappings:
   StepFunctionCode:
     main-v3:        {TemplatePath: cfn/data-collection/source/step-functions/main-state-machine-v3.json}
     crawler-v1:     {TemplatePath: cfn/data-collection/source/step-functions/crawler-state-machine-v1.json}
-    standalone-v1:  {TemplatePath: cfn/data-collection/source/step-functions/awsfeeds-state-machine-v1.json}
+    standalone-v1:  {TemplatePath: cfn/data-collection/source/step-functions/standalone-state-machine-v2.json}
 
 Parameters:
   DestinationBucket:
