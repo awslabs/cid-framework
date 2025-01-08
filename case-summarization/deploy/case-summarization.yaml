@@ -269,7 +269,7 @@ Resources:
                   description="Focus on the main elements of the conversation and highlight the proposed solutions. If no specific solution, skip this section."
               )
               actions: str = Field(
-                  description="Finish off with any action items or next steps highlighting ownership of actions or next steps."
+                  description="Finish off with any action items or next steps highlighting ownership of actions or next steps. If none, skip this section."
               )
               references: list[str] = Field(
                   description=(
@@ -360,6 +360,7 @@ Resources:
               model_id = get_model_id()
                             
               llm_program = get_llm_program(communications, model_id, GUARDRAIL_ID, GUARDRAIL_VERSION, GUARDRAIL_TRACE)
+
               try:
                   case_data_content['Summary'] = llm_program().model_dump_json()
               except Exception as exc:
@@ -493,7 +494,7 @@ Resources:
   QueueEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      BatchSize: !Ref BatchSize  # Process N messages at a time to avoid Bedrock Tootling
+      BatchSize: !Ref BatchSize  # Process N messages at a time to avoid Bedrock Throttling
       Enabled: true
       EventSourceArn: !GetAtt SummarizationQueue.Arn
       FunctionName: !Ref SummarizationLambda
