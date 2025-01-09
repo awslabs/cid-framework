@@ -16,6 +16,7 @@ Metadata:
           - Schedule
           - ScheduleFrequent
           - CFNSourceBucket
+          - DataBucketsKmsKeysArns
       - Label:
           default: 'Available modules'
         Parameters:
@@ -57,6 +58,8 @@ Metadata:
         default: "Role Prefix"
       CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
+      DataBucketsKmsKeysArns:
+        default: "" 
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -160,6 +163,10 @@ Parameters:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+    Default: ""
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -290,6 +297,7 @@ Conditions:
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
   ProdCFNTemplateUsed: !Equals [ !Ref CFNSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Resources:
   S3Bucket:
@@ -443,6 +451,21 @@ Resources:
         rules_to_suppress:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
+  
+  KmsPolicyForCidDCCrawlerRole:
+    Type: AWS::IAM::Policy
+    Condition: NeedDataBucketsKms
+    Properties:
+      PolicyName: AwsDataCollectionCrawlerKmsDecryption
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+      Roles:
+        - !Ref GlueRole
 
   LambdaAnalyticsRole: #Execution role for the custom resource for Analytics Lambda
     Type: AWS::IAM::Role
@@ -556,6 +579,22 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+  
+  KmsPolicyForCidInitRole:
+    Type: AWS::IAM::Policy
+    Condition: NeedDataBucketsKms
+    Properties:
+      PolicyName: AwsDataCollectionInitKmsDecryption
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+      Roles:
+        - !Ref LambdaInitRole
+  
   LambdaInit:
     Type: AWS::Lambda::Function
     Properties:
@@ -680,6 +719,22 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+
+  KmsPolicyForCidGlueTableRole:
+    Type: AWS::IAM::Policy
+    Condition: NeedDataBucketsKms
+    Properties:
+      PolicyName: AwsDataCollectionGlueTableKmsDecryption
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+      Roles:
+        - !Ref LambdaManageGlueTableRole
+  
   LambdaManageGlueTable:
     Type: AWS::Lambda::Function
     Properties:
@@ -852,6 +907,21 @@ Resources:
               - !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
       Roles:
         - Ref: StepFunctionExecutionRole
+
+  KmsPolicyForStepFunctionRole:
+    Type: AWS::IAM::Policy
+    Condition: NeedDataBucketsKms
+    Properties:
+      PolicyName: AwsDataCollectionStepFunctionKmsDecryption
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+      Roles:
+        - !Ref StepFunctionExecutionRole
 
   SchedulerExecutionRole:
     Type: AWS::IAM::Role
