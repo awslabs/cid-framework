@@ -206,7 +206,11 @@ Resources:
                   'TotalImpact': get_value_by_path(record, 'Impact/TotalImpact'),
                   'TotalImpactpercentage': float(get_value_by_path(record, 'Impact/TotalImpactPercentage', 0.0)),
                   'MonitorArn': get_value_by_path(record, 'MonitorArn'),
-                  'RootCauses': get_value_by_path(record, 'RootCauses', [])  # Store full array of root causes
+                  'LinkedAccountName': get_value_by_path(record, 'RootCauses/0/LinkedAccountName'), # for backward compatibility
+                  'Region': get_value_by_path(record, 'RootCauses/0/Region'), # for backward compatibility
+                  'Service': get_value_by_path(record, 'RootCauses/0/Service'), # for backward compatibility
+                  'UsageType': get_value_by_path(record, 'RootCauses/0/UsageType'), # for backward compatibility
+                  'RootCauses': get_value_by_path(record, 'RootCauses', []),  # Store full array of root causes
               }
               logger.debug("Processing record complete")
               return result
