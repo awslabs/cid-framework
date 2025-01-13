@@ -461,7 +461,7 @@ Resources:
     Type: AWS::IAM::Policy
     Condition: NeedDataBucketsKms
     Properties:
-      PolicyName: AwsDataCollectionCrawlerKmsDecryption
+      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionCrawlerKmsDecryption"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -590,7 +590,7 @@ Resources:
     Type: AWS::IAM::Policy
     Condition: NeedDataBucketsKms
     Properties:
-      PolicyName: AwsDataCollectionInitKmsDecryption
+      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionInitKmsDecryption"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -730,7 +730,7 @@ Resources:
     Type: AWS::IAM::Policy
     Condition: NeedDataBucketsKms
     Properties:
-      PolicyName: AwsDataCollectionGlueTableKmsDecryption
+      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionGlueTableKmsDecryption"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -918,7 +918,7 @@ Resources:
     Type: AWS::IAM::Policy
     Condition: NeedDataBucketsKms
     Properties:
-      PolicyName: AwsDataCollectionStepFunctionKmsDecryption
+      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionStepFunctionKmsDecryption"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
