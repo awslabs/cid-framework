@@ -36,7 +36,7 @@ This plugin comes with the following reasonable defaults that can be overriden t
 
 #### 2. Deploy the AWS Support Case Summarization Stack In the Data Collection Account
 
-    * <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards-us-east-1.s3.amazonaws.com/cfn/plugins/support-case-summarization/deploy/case-summarization.yaml&stackName=CidSupportCaseSummarizationStack&param_BedrockRegion=REPLACE%20WITH%20TARGET%20REGION)  <br> </kbd>
+    * <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards.s3.amazonaws.com/cfn/case-summarization/case-summarization.yaml&stackName=CidSupportCaseSummarizationStack)  <br> </kbd>
 
 
 ## Guardrail
