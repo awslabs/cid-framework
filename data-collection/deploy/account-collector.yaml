@@ -31,7 +31,7 @@ Outputs:
     Export:
       Name: !Sub ${ResourcePrefix}AccountCollectorLambdaARN
 Conditions:
-  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]  
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -94,7 +94,7 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-        - !If 
+        - !If
           - NeedDataBucketsKms
           - PolicyName: "KMS"
             PolicyDocument:

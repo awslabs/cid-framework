@@ -57,7 +57,7 @@ Outputs:
     Description: ARN for the module's Step Function
     Value: !GetAtt ModuleStepFunction.Arn
 Conditions:
-  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]  
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -92,7 +92,7 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
-        - !If 
+        - !If
           - NeedDataBucketsKms
           - PolicyName: "KMS"
             PolicyDocument:

@@ -52,8 +52,8 @@ Parameters:
     Default: ""
 
 Conditions:
-  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ] 
-  
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
+
 Mappings:
   ServicesMap:
 

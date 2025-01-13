@@ -59,7 +59,7 @@ Metadata:
       CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
       DataBucketsKmsKeysArns:
-        default: "" 
+        default: ""
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -402,7 +402,7 @@ Resources:
                   - s3:GetObject
                 Resource:
                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}${AWS::AccountId}/*"
-        - !If 
+        - !If
           - NeedDataBucketsKms
           - PolicyName: "KMS"
             PolicyDocument:
@@ -570,7 +570,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
-  
+
   KmsPolicyForCidResources:
     Type: AWS::IAM::Policy
     Condition: NeedDataBucketsKms
@@ -588,7 +588,7 @@ Resources:
         - !Ref StepFunctionExecutionRole
         - !Ref LambdaManageGlueTableRole
         - !Ref GlueRole
-  
+
   LambdaInit:
     Type: AWS::Lambda::Function
     Properties:
@@ -713,7 +713,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
-  
+
   LambdaManageGlueTable:
     Type: AWS::Lambda::Function
     Properties:
@@ -1374,7 +1374,7 @@ Resources:
               - s3:GetObjectVersion
             Resource:
               - !Sub ${S3Bucket.Arn}/*
-          - !If 
+          - !If
             - NeedDataBucketsKms
             - Sid: AllowKmsDecrypt
               Effect: "Allow"

@@ -57,8 +57,8 @@ Parameters:
     Default: ""
 
 Conditions:
-  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ] 
-  
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
+
 Outputs:
   StepFunctionARN:
     Description: ARN for the module's Step Function
