@@ -1431,7 +1431,7 @@ Outputs:
     Value: !Ref DataCollectionReadAccess
     Export: { Name: "cid-DataCollection-ReadAccessPolicyARN" }
   KMSPolicyARN:
-    Condition: DataBucketsKmsKeysArns
+    Condition: NeedDataBucketsKms
     Description: "KMS Policy for CID Data Collection. Attach it to QuickSight role if needed."
     Value: !Ref KmsPolicyForStepFunctionRole
     Export: { Name: "cid-DataCollection-KMSPolicy" }
