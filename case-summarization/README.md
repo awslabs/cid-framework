@@ -38,6 +38,12 @@ This plugin comes with the following reasonable defaults that can be overriden t
 
     * <kbd> <br> [Launch Stack >>](https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?&templateURL=https://aws-managed-cost-intelligence-dashboards-us-east-1.s3.amazonaws.com/cfn/plugins/support-case-summarization/deploy/case-summarization.yaml&stackName=CidSupportCaseSummarizationStack&param_BedrockRegion=REPLACE%20WITH%20TARGET%20REGION)  <br> </kbd>
 
+
+## Guardrail
+
+See [GUARDRAIL](GUARDRAIL.md) for more information.
+
+
 ## Support and Contribution
 
 See [CONTRIBUTING](CONTRIBUTING.md) for more information.

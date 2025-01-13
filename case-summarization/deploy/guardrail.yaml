@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: AWS Bedrock Guardrail Template Stack
+Description: CID AWS Bedrock Guardrail Template Stack v0.0.1
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -152,45 +152,45 @@ Resources:
        BlockedInputMessaging: !Ref BlockedInputMessage
        BlockedOutputsMessaging: !Ref BlockedOutputMessage
        ContentPolicyConfig:
-        FiltersConfig: 
-          - !If 
+        FiltersConfig:
+          - !If
             - DeploySexualContentFilter
             - InputStrength: !Ref SexualContentFilterInputStrength
               OutputStrength: !Ref SexualContentFilterOutputStrength
               Type: SEXUAL
             - !Ref AWS::NoValue
-          - !If 
+          - !If
             - DeployViolentContentFilter
             - InputStrength: !Ref ViolentContentFilterInputStrength
               OutputStrength: !Ref ViolentContentFilterOutputStrength
               Type: VIOLENCE
             - !Ref AWS::NoValue
-          - !If 
+          - !If
             - DeployHateContentFilter
             - InputStrength: !Ref HateContentFilterInputStrength
               OutputStrength: !Ref HateContentFilterOutputStrength
               Type: HATE
             - !Ref AWS::NoValue
-          - !If 
+          - !If
             - DeployInsultsContentFilter
             - InputStrength: !Ref InsultsContentFilterInputStrength
               OutputStrength: !Ref InsultsContentFilterOutputStrength
               Type: INSULTS
             - !Ref AWS::NoValue
-          - !If 
+          - !If
             - DeployMisconductContentFilter
             - InputStrength: !Ref MisconductContentFilterInputStrength
               OutputStrength: !Ref MisconductContentFilterOutputStrength
               Type: MISCONDUCT
             - !Ref AWS::NoValue
-          - !If 
+          - !If
             - DeployPromptAttackContentFilter
             - InputStrength: !Ref PromptAttackContentFilterInputStrength
               OutputStrength: 'NONE'
               Type: PROMPT_ATTACK
             - !Ref AWS::NoValue
        WordPolicyConfig:
-        ManagedWordListsConfig: 
+        ManagedWordListsConfig:
           - Type: PROFANITY
     Metadata:
       cfn-lint:
@@ -203,4 +203,3 @@ Resources:
     Properties:
       Description: Amazon Bedrock Guardrail
       GuardrailIdentifier: !Ref BedrockGuardrail
-  
