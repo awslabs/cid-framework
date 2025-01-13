@@ -456,21 +456,6 @@ Resources:
         rules_to_suppress:
           - id: W28 # Resource found with an explicit name, this disallows updates that require replacement of this resource
             reason: "Need explicit name to identify role actions"
-  
-  KmsPolicyForCidDCCrawlerRole:
-    Type: AWS::IAM::Policy
-    Condition: NeedDataBucketsKms
-    Properties:
-      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionCrawlerKmsDecryption"
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - 'kms:Decrypt'
-            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
-      Roles:
-        - !Ref GlueRole
 
   LambdaAnalyticsRole: #Execution role for the custom resource for Analytics Lambda
     Type: AWS::IAM::Role
@@ -586,11 +571,11 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
   
-  KmsPolicyForCidInitRole:
+  KmsPolicyForCidResources:
     Type: AWS::IAM::Policy
     Condition: NeedDataBucketsKms
     Properties:
-      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionInitKmsDecryption"
+      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionKmsDecryption"
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -600,6 +585,9 @@ Resources:
             Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
       Roles:
         - !Ref LambdaInitRole
+        - !Ref StepFunctionExecutionRole
+        - !Ref LambdaManageGlueTableRole
+        - !Ref GlueRole
   
   LambdaInit:
     Type: AWS::Lambda::Function
@@ -725,21 +713,6 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
-
-  KmsPolicyForCidGlueTableRole:
-    Type: AWS::IAM::Policy
-    Condition: NeedDataBucketsKms
-    Properties:
-      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionGlueTableKmsDecryption"
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - 'kms:Decrypt'
-            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
-      Roles:
-        - !Ref LambdaManageGlueTableRole
   
   LambdaManageGlueTable:
     Type: AWS::Lambda::Function
@@ -913,21 +886,6 @@ Resources:
               - !Sub "${AccountCollector.Outputs.LambdaFunctionARN}"
       Roles:
         - Ref: StepFunctionExecutionRole
-
-  KmsPolicyForStepFunctionRole:
-    Type: AWS::IAM::Policy
-    Condition: NeedDataBucketsKms
-    Properties:
-      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionStepFunctionKmsDecryption"
-      PolicyDocument:
-        Version: 2012-10-17
-        Statement:
-          - Effect: Allow
-            Action:
-              - 'kms:Decrypt'
-            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
-      Roles:
-        - !Ref StepFunctionExecutionRole
 
   SchedulerExecutionRole:
     Type: AWS::IAM::Role
