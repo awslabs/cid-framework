@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: AWS Support Cases Summarization Stack v0.0.1
+Description: AWS Support Cases Summarization Stack v0.0.2
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -16,6 +16,9 @@ Metadata:
           - MaxRetries
           - Timeout
           - BatchSize
+          - GuardRailIdentifier
+          - GuardRailVersion
+          - GuardRailTrace
       - Label:
             default: 'Technical parameters'
         Parameters:
@@ -78,6 +81,21 @@ Parameters:
     Type: String
     Description: Number of processing in parallel. Use 1 to avoid Throttling.
     Default: '1'
+  GuardRailIdentifier:
+    Type: String
+    Description: The identifier for the guardrail. Leave empty if you do not want to use Amazon Bedrock Guardrails.
+    Default: ''
+  GuardRailVersion:
+    Type: String
+    Description: The version for the guardrail. Leave empty if you do not want to use Amazon Bedrock Guardrails.
+    Default: ''
+  GuardRailTrace:
+    Type: String
+    Description: The trace behavior for the guardrail.
+    AllowedValues:
+      - ENABLED
+      - DISABLED
+    Default: 'ENABLED'
 
 Conditions:
   LambdaLayerBucketPrefixIsManaged: !Equals [!Ref LambdaLayerBucketPrefix, 'aws-managed-cost-intelligence-dashboards']
@@ -163,7 +181,7 @@ Resources:
                   - Fn::Sub:
                       - "arn:${AWS::Partition}:s3:::${DestinationBucket}"
                       - DestinationBucket: {"Fn::ImportValue": "cid-DataCollection-Bucket"}
-        - PolicyName: "Bedrock-Access"
+        - PolicyName: "Bedrock-ModelAccess"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -172,6 +190,14 @@ Resources:
                   - "bedrock:ListFoundationModels"
                   - "bedrock:InvokeModel"
                 Resource: "*" # cannot restrict this
+        - PolicyName: "Bedrock-GuardrailAccess"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "bedrock:ApplyGuardrail"
+                Resource: !Sub "arn:${AWS::Partition}:bedrock:${BedrockRegion}:${AWS::AccountId}:guardrail/*"
         - PolicyName: "SQS-Access"
           PolicyDocument:
             Version: "2012-10-17"
@@ -223,6 +249,9 @@ Resources:
           MAX_RETRIES = os.environ.get("MAX_RETRIES", 30)
           TIMEOUT = os.environ.get("TIMEOUT", 60)
           INSTRUCTIONS = os.environ.get("INSTRUCTIONS", '')
+          GUARDRAIL_ID = os.environ.get("GUARDRAIL_ID", '')
+          GUARDRAIL_VERSION = os.environ.get("GUARDRAIL_VERSION", '')
+          GUARDRAIL_TRACE = os.environ.get("GUARDRAIL_TRACE", '')
           PROMPT_TEMPLATE = f"""
           System: You are an expert technical writer specializing in creating concise, neutral summaries of AWS customers support interactions. Your task is to summarize conversations between customers and AWS Support, maintaining objectivity and clarity. Here is the Conversation to be summarized:
           <conversation>
@@ -261,15 +290,31 @@ Resources:
                   default=""
               )
 
-          def get_llm_program(conversation, model_id):
-              llm = Bedrock(
-                  model=model_id,
-                  region_name=REGION,
-                  temperature=float(TEMPERATURE),
-                  max_tokens=int(MAX_TOKENS),
-                  max_retries=int(MAX_RETRIES),
-                  timeout=float(TIMEOUT)
-              )
+          def get_llm_program(conversation, model_id, guardrail_identifier, guardrail_version, trace):
+              if guardrail_identifier == '' or guardrail_version == '':
+                  logger.info("support case summarization isn't using any Amazon Bedrock Guardrail Configuration.")
+                  llm = Bedrock(
+                    model=model_id,
+                    region_name=REGION,
+                    temperature=float(TEMPERATURE),
+                    max_tokens=int(MAX_TOKENS),
+                    max_retries=int(MAX_RETRIES),
+                    timeout=float(TIMEOUT)
+                )
+              elif guardrail_identifier != '' and guardrail_version != '':
+                  logger.info(f"support case summarization is using Amazon Bedrock Guardrail id: {guardrail_identifier} (Version {guardrail_version}) with tracing {trace}")
+                  llm = Bedrock(
+                    model=model_id,
+                    region_name=REGION,
+                    temperature=float(TEMPERATURE),
+                    max_tokens=int(MAX_TOKENS),
+                    max_retries=int(MAX_RETRIES),
+                    timeout=float(TIMEOUT),
+                    guardrail_identifier=guardrail_identifier,
+                    guardrail_version=guardrail_version,
+                    trace=trace
+                )
+              
               return LLMTextCompletionProgram.from_defaults(
                   llm=llm,
                   output_cls=Summary,
@@ -313,8 +358,9 @@ Resources:
 
               logger.info("support case summarization starting")
               model_id = get_model_id()
+                            
+              llm_program = get_llm_program(communications, model_id, GUARDRAIL_ID, GUARDRAIL_VERSION, GUARDRAIL_TRACE)
 
-              llm_program = get_llm_program(communications, model_id)
               try:
                   case_data_content['Summary'] = llm_program().model_dump_json()
               except Exception as exc:
@@ -353,6 +399,9 @@ Resources:
           TIMEOUT: !Ref Timeout
           INSTRUCTIONS: !Ref Instructions
           REGION: !Ref BedrockRegion # FIXME: use default if empty
+          GUARDRAIL_ID: !Ref GuardRailIdentifier
+          GUARDRAIL_VERSION: !Ref GuardRailVersion
+          GUARDRAIL_TRACE: !Ref GuardRailTrace
     Metadata:
       cfn_nag:
         rules_to_suppress:

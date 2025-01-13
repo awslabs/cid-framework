@@ -1,2 +1,2 @@
-llama-index-llms-bedrock
-pydantic
+llama-index-llms-bedrock>=0.3.3
+pydantic-core

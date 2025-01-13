@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CID AWS Bedrock Guardrail Template Stack v0.0.1
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+            default: 'Amazon Bedrock Guardrail parameters'
+        Parameters:
+          - BlockedInputMessage
+          - BlockedOutputMessage
+          - IncludeSexualContentFilter
+          - SexualContentFilterInputStrength
+          - SexualContentFilterOutputStrength
+          - IncludeViolentContentFilter
+          - ViolentContentFilterInputStrength
+          - ViolentContentFilterOutputStrength
+          - IncludeHateContentFilter
+          - HateContentFilterInputStrength
+          - HateContentFilterOutputStrength
+          - IncludeInsultsContentFilter
+          - InsultsContentFilterInputStrength
+          - InsultsContentFilterOutputStrength
+          - IncludeMisconductContentFilter
+          - MisconductContentFilterInputStrength
+          - MisconductContentFilterOutputStrength
+          - IncludePromptAttackContentFilter
+      - Label:
+            default: 'Technical parameters'
+        Parameters:
+          - CFDataName
+          - ResourcePrefix
+
+Parameters:
+  CFDataName:
+    Type: String
+    Description: The name of what this cf is doing.
+    Default: bedrock-guardrail
+  ResourcePrefix:
+    Type: String
+    Description: This prefix will be placed in front of all resources created. Note you may wish to add a dash at the end to make more readable (e.g. 'prefix-'). This parameter CANNOT BE UPDATED. Delete and re-create stack if needed an update.
+    Default: "CID-DC-"
+  BlockedInputMessage:
+    Type: String
+    Description: Message to return when the Amazon Bedrock Guardrail blocks a prompt.
+    MaxLength: 500
+    Default: '{"executive_summary":"Amazon Bedrock Guardrails has blocked the AWS Support Case Summarization.","proposed_solutions":"","actions":"","references":[],"tam_involved":"","feedback":""}'
+  BlockedOutputMessage:
+    Type: String
+    Description: Message to return when the Amazon Bedrock Guardrail blocks a model response.
+    MaxLength: 500
+    Default: '{"executive_summary":"Amazon Bedrock Guardrails has blocked the AWS Support Case Summarization.","proposed_solutions":"","actions":"","references":[],"tam_involved":"","feedback":""}'
+  IncludeSexualContentFilter:
+    Type: String
+    Description: "Whether to include Sexual Content Filter in the Guardrail or not"
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+  SexualContentFilterInputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to prompts. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  SexualContentFilterOutputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to model responses. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  IncludeViolentContentFilter:
+    Type: String
+    Description: "Whether to include Violent Content Filter in the Guardrail or not"
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+  ViolentContentFilterInputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to prompts. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  ViolentContentFilterOutputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to model responses. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  IncludeHateContentFilter:
+    Type: String
+    Description: "Whether to include Violent Content Filter in the Guardrail or not"
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+  HateContentFilterInputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to prompts. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  HateContentFilterOutputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to model responses. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  IncludeInsultsContentFilter:
+    Type: String
+    Description: "Whether to include Insults Content Filter in the Guardrail or not"
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+  InsultsContentFilterInputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to prompts. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  InsultsContentFilterOutputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to model responses. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  IncludeMisconductContentFilter:
+    Type: String
+    Description: "Whether to include Misconduct Content Filter in the Guardrail or not"
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+  MisconductContentFilterInputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to prompts. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  MisconductContentFilterOutputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to model responses. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+  IncludePromptAttackContentFilter:
+    Type: String
+    Description: "Whether to include Prompt Attack Content Filter in the Guardrail or not"
+    AllowedValues: ['yes', 'no']
+    Default: 'yes'
+  PromptAttackContentFilterInputStrength:
+    Type: String
+    Description: "The strength of the content filter to apply to prompts. As you increase the filter strength, the likelihood of filtering harmful content increases and the probability of seeing harmful content in your application reduces."
+    AllowedValues: ['NONE', 'LOW', 'MEDIUM', 'HIGH']
+    Default: 'HIGH'
+
+Conditions:
+  DeploySexualContentFilter: !Equals [ !Ref IncludeSexualContentFilter, "yes"]
+  DeployViolentContentFilter: !Equals [ !Ref IncludeViolentContentFilter, "yes"]
+  DeployHateContentFilter: !Equals [ !Ref IncludeHateContentFilter, "yes"]
+  DeployInsultsContentFilter: !Equals [ !Ref IncludeInsultsContentFilter, "yes"]
+  DeployMisconductContentFilter: !Equals [ !Ref IncludeMisconductContentFilter, "yes"]
+  DeployPromptAttackContentFilter: !Equals [ !Ref IncludePromptAttackContentFilter, "yes"]
+
+Resources:
+  BedrockGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+       Name: !Sub "${ResourcePrefix}${CFDataName}"
+       Description: Amazon Bedrock Guardrail
+       BlockedInputMessaging: !Ref BlockedInputMessage
+       BlockedOutputsMessaging: !Ref BlockedOutputMessage
+       ContentPolicyConfig:
+        FiltersConfig:
+          - !If
+            - DeploySexualContentFilter
+            - InputStrength: !Ref SexualContentFilterInputStrength
+              OutputStrength: !Ref SexualContentFilterOutputStrength
+              Type: SEXUAL
+            - !Ref AWS::NoValue
+          - !If
+            - DeployViolentContentFilter
+            - InputStrength: !Ref ViolentContentFilterInputStrength
+              OutputStrength: !Ref ViolentContentFilterOutputStrength
+              Type: VIOLENCE
+            - !Ref AWS::NoValue
+          - !If
+            - DeployHateContentFilter
+            - InputStrength: !Ref HateContentFilterInputStrength
+              OutputStrength: !Ref HateContentFilterOutputStrength
+              Type: HATE
+            - !Ref AWS::NoValue
+          - !If
+            - DeployInsultsContentFilter
+            - InputStrength: !Ref InsultsContentFilterInputStrength
+              OutputStrength: !Ref InsultsContentFilterOutputStrength
+              Type: INSULTS
+            - !Ref AWS::NoValue
+          - !If
+            - DeployMisconductContentFilter
+            - InputStrength: !Ref MisconductContentFilterInputStrength
+              OutputStrength: !Ref MisconductContentFilterOutputStrength
+              Type: MISCONDUCT
+            - !Ref AWS::NoValue
+          - !If
+            - DeployPromptAttackContentFilter
+            - InputStrength: !Ref PromptAttackContentFilterInputStrength
+              OutputStrength: 'NONE'
+              Type: PROMPT_ATTACK
+            - !Ref AWS::NoValue
+       WordPolicyConfig:
+        ManagedWordListsConfig:
+          - Type: PROFANITY
+    Metadata:
+      cfn-lint:
+        config:
+          ignore_checks:
+            - E3032 # Guardrail FiltersConfig Variabilization False Positive
+
+  BedrockGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      Description: Amazon Bedrock Guardrail
+      GuardrailIdentifier: !Ref BedrockGuardrail
