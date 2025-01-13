@@ -1416,6 +1416,14 @@ Resources:
               - s3:GetObjectVersion
             Resource:
               - !Sub ${S3Bucket.Arn}/*
+          - !If 
+            - NeedDataBucketsKms
+            - Sid: AllowKmsDecrypt
+              Effect: "Allow"
+              Action:
+                - "kms:Decrypt"
+              Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+            - !Ref AWS::NoValue
 
 Outputs:
   Bucket:
@@ -1430,8 +1438,3 @@ Outputs:
     Description: "Access Policy for CID Data Collection"
     Value: !Ref DataCollectionReadAccess
     Export: { Name: "cid-DataCollection-ReadAccessPolicyARN" }
-  KMSPolicyARN:
-    Condition: NeedDataBucketsKms
-    Description: "KMS Policy for CID Data Collection. Attach it to QuickSight role if needed."
-    Value: !Ref KmsPolicyForStepFunctionRole
-    Export: { Name: "cid-DataCollection-KMSPolicy" }
