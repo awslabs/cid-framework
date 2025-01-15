@@ -205,7 +205,7 @@ Resources:
                     if defined_accounts:
                         logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY}{ext} instead of payer organization')
                         for account_data in defined_accounts:
-                            if ext == "json":
+                            if ext == ".json":
                                 account = json.loads(account_data)
                                 yield format_account(account['account_id'], account['account_name'], account['payer_id'])
                             else:
