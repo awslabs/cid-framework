@@ -122,7 +122,7 @@ Resources:
             EXCLUDED_ACCOUNT_LIST_KEY = os.environ.get('EXCLUDED_ACCOUNT_LIST_KEY')
             TMP_FILE = "/tmp/data.json"
             PREFIX = "account-collector"
-            START_TIME = str(datetime.now().isoformat())+"Z"
+            START_TIME = str(datetime.now().isoformat())
 
             logger = logging.getLogger(__name__)
             logger.setLevel(getattr(logging, os.environ.get('LOG_LEVEL', 'INFO').upper(), logging.INFO))
@@ -299,7 +299,7 @@ Resources:
                 status_code, description = status_handler(error, record_count, is_summary, status_code, description, record_context)
                 log_entry = {
                     "StartTime": start_time if start_time else START_TIME,
-                    "EndTime":  str(datetime.now().isoformat())+"Z",
+                    "EndTime":  str(datetime.now().isoformat()),
                     "DataCollectionRegion": dc_region,
                     "DataCollectionAccountId": dc_account_id,
                     "Module": module if module else PREFIX,
@@ -348,7 +348,7 @@ Resources:
 
             def store_log_entry(log_entry):
                 """Store the log entry to S3."""
-                key = datetime.now().strftime(f"logs/year=%Y/month=%m/day=%d/{PREFIX}-{uuid.uuid4()}.json")
+                key = datetime.now().strftime(f"logs/%Y/%m/%d/{PREFIX}-{uuid.uuid4()}.json")
                 try:
                     boto3.client('s3').put_object(Body=json.dumps(log_entry), Bucket=BUCKET, Key=key)
                 except Exception as exc: #pylint: disable=broad-exception-caught

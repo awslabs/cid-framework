@@ -7,7 +7,7 @@
         "QueryLanguage": "JSONata",
         "Assign": {
           "RunUUID": "{% $states.input.run_uuid %}",
-          "SubUUID": "{% $split($states.context.Execution.Id, ':')[7] %}",
+          "SubUUID": ["{% $split($states.context.Execution.Id, ':')[7] %}"],
           "ExecutionStartTime": "{% $split($states.context.Execution.StartTime, /[-:T.]/) %}",
           "Module": "${Module}",
           "Params": "${Params}",
@@ -24,7 +24,7 @@
         "Type": "Pass",
         "QueryLanguage": "JSONata",
         "Assign": {
-          "LogKeyBase": "{% 'logs/year='&$ExecutionStartTime[0]&'/month='&$ExecutionStartTime[1]&'/day='&$ExecutionStartTime[2]&'/'&$Module&'-stepfunction-' %}"
+          "LogKeyBase": "{% 'logs/'&$ExecutionStartTime[0]&'/'&$ExecutionStartTime[1]&'/'&$ExecutionStartTime[2]&'/'&$Module&'-stepfunction-' %}"
         },
         "Next": "DetailProcessorMap"
       },
@@ -90,10 +90,10 @@
               "QueryLanguage": "JSONata",
               "Arguments": {
                 "Bucket": "${DeployRegion}",
-                "Key": "{% 'logs/year='&$states.input.ExecutionStartTime[0]&'/month='&$states.input.ExecutionStartTime[1]&'/day='&$states.input.ExecutionStartTime[2]&'/health-events-stepfunction-ModuleLambda'&$split($states.context.Execution.Id, ':')[7]&'-'&$random()&'.json' %}",
+                "Key": "{% 'logs/'&$states.input.ExecutionStartTime[0]&'/'&$states.input.ExecutionStartTime[1]&'/'&$states.input.ExecutionStartTime[2]&'/health-events-stepfunction-ModuleLambda'&$split($states.context.Execution.Id, ':')[7]&'-'&$random()&'.json' %}",
                 "Body": {
-                  "StartTime": "{% $states.input.StartTime %}",
-                  "EndTime": "{% $now() %}",
+                  "StartTime": "{% $replace($states.input.StartTime,'Z','') %}",
+                  "EndTime": "{% $replace($now(), 'Z', '') %}",
                   "DataCollectionRegion": "${DeployRegion}",
                   "DataCollectionAccountId": "${Account}",
                   "Module": "${Module}",
@@ -104,11 +104,11 @@
                   "Region": "",
                   "StatusCode": 500,
                   "SubCode": "",
-                  "RecordCount": "",
+                  "RecordCount": -1,
                   "Description": "{% $states.input.Description %}",
                   "DataLocation": "",
                   "RunUUID": "{% $states.input.RunUUID %}",
-                  "SubUUID": "{% $split($states.context.Execution.Id, ':')[7] %}",
+                  "SubUUID": ["{% $split($states.context.Execution.Id, ':')[7] %}"],
                   "Service": "StepFunction"
                 }
               },
@@ -184,8 +184,8 @@
           "Bucket": "{% $Bucket %}",
           "Key": "{% $LogKeyBase&'AccountMap-'&$RunUUID&'.json' %}",
           "Body": {
-            "StartTime": "{% $states.input.StartTime %}",
-            "EndTime": "{% $now() %}",
+            "StartTime": "{% $replace($states.input.StartTime,'Z','') %}",
+            "EndTime": "{% $replace($now(), 'Z', '') %}",
             "DataCollectionRegion": "{% $DataCollectionRegion %}",
             "DataCollectionAccountId": "{% $DataCollectionAccountId %}",
             "Module": "{% $Module %}",
@@ -196,7 +196,7 @@
             "Region": "",
             "StatusCode": "{% $states.input.StatusCode %}",
             "SubCode": "",
-            "RecordCount": "",
+            "RecordCount": -1,
             "Description": "{% $states.input.Description %}",
             "DataLocation": "",
             "RunUUID": "{% $RunUUID %}",
@@ -263,8 +263,8 @@
           "Bucket": "{% $Bucket %}",
           "Key": "{% $LogKeyBase&'Crawler-'&$RunUUID&'.json' %}",
           "Body": {
-            "StartTime": "{% $states.input.StartTime %}",
-            "EndTime": "{% $now() %}",
+            "StartTime": "{% $replace($states.input.StartTime,'Z','') %}",
+            "EndTime": "{% $replace($now(), 'Z', '') %}",
             "DataCollectionRegion": "{% $DataCollectionRegion %}",
             "DataCollectionAccountId": "{% $DataCollectionAccountId %}",
             "Module": "{% $Module %}",
@@ -275,7 +275,7 @@
             "Region": "",
             "StatusCode": "{% $states.input.StatusCode %}",
             "SubCode": "",
-            "RecordCount": "",
+            "RecordCount": -1,
             "Description": "{% $states.input.Description %}",
             "DataLocation": "",
             "RunUUID": "{% $RunUUID %}",
