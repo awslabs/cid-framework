@@ -11,7 +11,9 @@ code_path=$(git rev-parse --show-toplevel)/data-collection/deploy
 echo "sync to central bucket"
 aws s3 sync $code_path/       s3://$CENTRAL_BUCKET/cfn/data-collection/
 
-
+echo "sync to regional bucket with version prefix"
+version = json.load(open("data-collection/utils/version.json"))['version']
+aws s3 sync $code_path/       s3://$CENTRAL_BUCKET/cfn/data-collection/$version/
 
 aws cloudformation list-stack-instances \
   --stack-set-name $STACK_SET_NAME \
