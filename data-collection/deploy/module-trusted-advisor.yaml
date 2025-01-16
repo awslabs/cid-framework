@@ -5,6 +5,9 @@ Parameters:
     Type: String
     Description: Name of the Athena database to be created to hold lambda information
     Default: optimization_data
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: KMS Key ARNs used for encrypting data in S3 buckets (comma separated)
   DestinationBucket:
     Type: String
     Description: Name of the S3 Bucket to be created to hold data information
@@ -53,6 +56,9 @@ Outputs:
     Description: ARN for the module's Step Function
     Value: !GetAtt ModuleStepFunction.Arn
 
+Conditions:
+  NeedDataBucketsKms: !Not [!Equals [!Ref DataBucketsKmsKeysArns, '']]
+
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -71,6 +77,17 @@ Resources:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
       Path: /
       Policies:
+        - !If
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "kms:GenerateDataKey"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
         - PolicyName: "AssumeMultiAccountRole"
           PolicyDocument:
             Version: "2012-10-17"

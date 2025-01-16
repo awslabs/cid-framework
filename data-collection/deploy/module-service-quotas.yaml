@@ -50,11 +50,17 @@ Parameters:
   RegionsInScope:
     Type: String
     Description: "Comma Delimited list of AWS regions from which data about resources will be collected. Example: us-east-1,eu-west-1,ap-northeast-1"
-
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+    Default: ""
 Outputs:
   StepFunctionARN:
     Description: ARN for the module's Step Function
     Value: !GetAtt ModuleStepFunction.Arn
+
+Conditions:
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ] 
 
 Resources:
   LambdaRole:
@@ -106,6 +112,17 @@ Resources:
                   - "events:PutEvents"
                 Resource:
                   - !Sub "arn:${AWS::Partition}:events:*:${AWS::AccountId}:event-bus/default"
+        - !If 
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "kms:GenerateDataKey"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
 
     Metadata:
       cfn_nag:

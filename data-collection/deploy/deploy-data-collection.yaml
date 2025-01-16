@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: CID Data Collection Stack v3.5.0
+Description: CID Data Collection Stack v3.6.0
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -16,6 +16,7 @@ Metadata:
           - Schedule
           - ScheduleFrequent
           - CFNSourceBucket
+          - DataBucketsKmsKeysArns
       - Label:
           default: 'Available modules'
         Parameters:
@@ -57,6 +58,8 @@ Metadata:
         default: "Role Prefix"
       CFNSourceBucket:
         default: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
+      DataBucketsKmsKeysArns:
+        default: ""
       IncludeTAModule:
         default: 'Include AWS Trusted Advisor Data Collection Module'
       IncludeRightsizingModule:
@@ -161,6 +164,10 @@ Parameters:
     Type: String
     Description: "DO NOT CHANGE - A bucket that contains WA-Labs CloudFormation templates. Must be always 'aws-managed-cost-intelligence-dashboards'"
     Default: "aws-managed-cost-intelligence-dashboards"
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+    Default: ""
   IncludeTAModule:
     Type: String
     Description: Collects AWS Trusted Advisor recommendations data
@@ -291,6 +298,7 @@ Conditions:
     - !Join [ '', !Split [ ' ', !Ref RegionsInScope  ] ] # remove spaces
     - ""
   ProdCFNTemplateUsed: !Equals [ !Ref CFNSourceBucket,  'aws-managed-cost-intelligence-dashboards' ]
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 
 Resources:
   S3Bucket:
@@ -395,12 +403,17 @@ Resources:
                   - s3:GetObject
                 Resource:
                  - !Sub "arn:${AWS::Partition}:s3:::${DestinationBucket}${AWS::AccountId}/*"
-              ## Uncomment if bucket is encrypted by Custom KMS Key
-              #- Effect: Allow
-              #  Action:
-              #    - kms:Decrypt
-              #  Resource:
-              #   - !Sub "arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/key-id"
+        - !If
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "kms:Decrypt"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
         - PolicyName: "Glue"
           PolicyDocument:
             Version: "2012-10-17"
@@ -461,6 +474,7 @@ Resources:
               - sts:AssumeRole
       ManagedPolicyArns:
         - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+
   LambdaAnalytics:
     Type: AWS::Lambda::Function
     Properties:
@@ -557,6 +571,25 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+
+  KmsPolicyForCidResources:
+    Type: AWS::IAM::Policy
+    Condition: NeedDataBucketsKms
+    Properties:
+      PolicyName: !Sub "${ResourcePrefix}AwsDataCollectionKmsDecryption"
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+            Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+      Roles:
+        - !Ref LambdaInitRole
+        - !Ref StepFunctionExecutionRole
+        - !Ref LambdaManageGlueTableRole
+        - !Ref GlueRole
+
   LambdaInit:
     Type: AWS::Lambda::Function
     Properties:
@@ -681,6 +714,7 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${DatabaseName}"
                   - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${DatabaseName}/*"
+
   LambdaManageGlueTable:
     Type: AWS::Lambda::Function
     Properties:
@@ -942,6 +976,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-trusted-advisor.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -962,6 +997,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-cost-explorer-rightsizing.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -982,6 +1018,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-cost-anomaly.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -1003,6 +1040,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-support-cases.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
@@ -1023,6 +1061,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-backup.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -1045,6 +1084,7 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         GlueRoleARN: !GetAtt GlueRole.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref Schedule
@@ -1071,6 +1111,7 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         GlueRoleARN: !GetAtt GlueRole.Arn
         CodeBucket: !If [ ProdCFNTemplateUsed, !FindInMap [RegionMap, !Ref "AWS::Region", CodeBucket], !Ref CFNSourceBucket ]
         Schedule: !Ref Schedule
@@ -1093,6 +1134,7 @@ Resources:
         DestinationBucket: !Ref S3Bucket
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
         ManagementAccountID: !Ref ManagementAccountID
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         Schedule: !Ref Schedule
         ResourcePrefix: !Ref ResourcePrefix
         BucketPrefix:  !Ref DestinationBucket
@@ -1115,6 +1157,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-ecs-chargeback.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1140,6 +1183,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-rds-usage.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1165,6 +1209,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-organization.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1188,6 +1233,7 @@ Resources:
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref ScheduleFrequent
         ResourcePrefix: !Ref ResourcePrefix
@@ -1205,6 +1251,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-transit-gateway.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         GlueRoleARN: !GetAtt GlueRole.Arn
@@ -1232,6 +1279,7 @@ Resources:
         DatabaseName: !Ref DatabaseName
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         Schedule: !Ref ScheduleFrequent
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
@@ -1248,6 +1296,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-health-events.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         Schedule: !Ref ScheduleFrequent
@@ -1269,6 +1318,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-license-manager.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         ManagementRoleName: !Sub "${ResourcePrefix}${ManagementAccountRole}"
@@ -1293,6 +1343,7 @@ Resources:
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         MultiAccountRoleName: !Sub "${ResourcePrefix}${MultiAccountRoleName}"
         Schedule: !Ref ScheduleFrequent
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         GlueRoleARN: !GetAtt GlueRole.Arn
         ResourcePrefix: !Ref ResourcePrefix
         LambdaAnalyticsARN: !GetAtt LambdaAnalytics.Arn
@@ -1314,6 +1365,7 @@ Resources:
       TemplateURL: !Sub "https://${CFNSourceBucket}.s3.${AWS::URLSuffix}/cfn/data-collection/module-quicksight.yaml"
       Parameters:
         DatabaseName: !Ref DatabaseName
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
         Schedule: !Ref ScheduleFrequent
@@ -1336,6 +1388,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         DestinationBucket: !Ref S3Bucket
         DestinationBucketARN: !GetAtt S3Bucket.Arn
+        DataBucketsKmsKeysArns: !Ref DataBucketsKmsKeysArns
 
   DataCollectionReadAccess:
     Type: AWS::IAM::ManagedPolicy
@@ -1370,6 +1423,14 @@ Resources:
               - s3:GetObjectVersion
             Resource:
               - !Sub ${S3Bucket.Arn}/*
+          - !If
+            - NeedDataBucketsKms
+            - Sid: AllowKmsDecrypt
+              Effect: "Allow"
+              Action:
+                - "kms:Decrypt"
+              Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+            - !Ref AWS::NoValue
 
 Outputs:
   Bucket:

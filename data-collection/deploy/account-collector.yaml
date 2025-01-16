@@ -18,6 +18,10 @@ Parameters:
   DestinationBucketARN:
     Type: String
     Description: ARN of the S3 Bucket that exists or needs to be created to hold rightsizing information
+  DataBucketsKmsKeysArns:
+    Type: String
+    Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
+    Default: ""
 Outputs:
   LambdaFunctionName:
     Value: !Ref LambdaFunction
@@ -26,6 +30,8 @@ Outputs:
     Value: !GetAtt LambdaFunction.Arn
     Export:
       Name: !Sub ${ResourcePrefix}AccountCollectorLambdaARN
+Conditions:
+  NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
 Resources:
   LambdaRole:
     Type: AWS::IAM::Role
@@ -88,6 +94,18 @@ Resources:
                   - "s3:PutObject"
                 Resource:
                   - !Sub "${DestinationBucketARN}/*"
+        - !If
+          - NeedDataBucketsKms
+          - PolicyName: "KMS"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action:
+                    - "kms:GenerateDataKey"
+                  Resource: !Split [ ',', !Ref DataBucketsKmsKeysArns ]
+          - !Ref AWS::NoValue
+
     Metadata:
       cfn_nag:
         rules_to_suppress:
@@ -112,6 +130,10 @@ Resources:
 
             import boto3
 
+            ROLE_NAME = os.environ.get('ROLE_NAME')
+            RESOURCE_PREFIX = os.environ.get('RESOURCE_PREFIX')
+            MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
+            BUCKET = os.environ.get('BUCKET_NAME')
             ROLE_NAME = os.environ.get('ROLE_NAME')
             RESOURCE_PREFIX = os.environ.get('RESOURCE_PREFIX')
             MANAGEMENT_ACCOUNT_IDS = os.environ.get('MANAGEMENT_ACCOUNT_IDS')
@@ -215,7 +237,7 @@ Resources:
                 if defined_accounts:
                     logger.info(f'Using defined account list found in s3://{BUCKET}/{PREDEF_ACCOUNT_LIST_KEY} instead of payer organization')
                     for account_data in defined_accounts:
-                        if ext == "json":
+                        if ext == ".json":
                             account = json.loads(account_data)
                             yield format_account(account['account_id'], account['account_name'], account['payer_id'])
                         else:
@@ -246,6 +268,7 @@ Resources:
                 s3 = boto3.client("s3")
                 exts = [".json", ".csv"]
                 for ext in exts:
+                    accts = get_from_bucket(bucket, key+ext, s3)
                     accts = get_from_bucket(bucket, key+ext, s3)
                     if accts:
                         return accts, ext
