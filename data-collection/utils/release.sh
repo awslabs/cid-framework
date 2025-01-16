@@ -12,7 +12,7 @@ echo "sync to central bucket"
 aws s3 sync $code_path/       s3://$CENTRAL_BUCKET/cfn/data-collection/
 
 echo "sync to regional bucket with version prefix"
-version=$(tr -d '"{} ' < data-collection/utils/version.json | awk -F: '{print $2}')
+version=$(jq -r '.version' data-collection/utils/version.json)
 aws s3 sync $code_path/       s3://$CENTRAL_BUCKET/cfn/data-collection/$version/
 
 aws cloudformation list-stack-instances \
