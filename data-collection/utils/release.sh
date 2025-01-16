@@ -26,6 +26,7 @@ aws cloudformation list-stack-instances \
       --region $region --output text)
 
     aws s3 sync $code_path/       s3://$bucket/cfn/data-collection/ --delete
+    aws s3 sync $code_path/       s3://$bucket/cfn/data-collection/$version/ --delete
   done
 
 echo 'Done'
