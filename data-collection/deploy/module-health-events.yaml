@@ -47,11 +47,9 @@ Parameters:
   SchedulerExecutionRoleARN:
     Type: String
     Description: Common role for module Scheduler execution
-<<<<<<< HEAD
   DetailStepFunctionTemplate:
     Type: String
     Description: JSON representation of the detail retrieval StepFunction template
-=======
   DataBucketsKmsKeysArns:
     Type: String
     Description: "ARNs of KMS Keys for data buckets and/or Glue Catalog. Comma separated list, no spaces. Keep empty if data Buckets and Glue Catalog are not Encrypted with KMS. You can also set it to '*' to grant decrypt permission for all the keys."
@@ -59,7 +57,6 @@ Parameters:
 
 Conditions:
   NeedDataBucketsKms: !Not [ !Equals [ !Ref DataBucketsKmsKeysArns, "" ] ]
->>>>>>> main
 
 Outputs:
   StepFunctionARN:
